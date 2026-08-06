@@ -1,0 +1,72 @@
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
+from app.models.lancamento import LancamentoStatus
+
+
+class ItemLancamentoInput(BaseModel):
+    criterio_id: UUID
+    ocorrencias: int | None = None
+    valor: float | None = None
+    aplicado: bool | None = None
+
+
+class LancamentoCreate(BaseModel):
+    ficha_id: UUID
+    rodada_id: UUID
+    tentativa: int = 1
+    equipe_id: UUID
+    partida_id: UUID | None = None
+    client_operation_id: UUID
+    itens: list[ItemLancamentoInput]
+
+
+class LancamentoCorrigir(BaseModel):
+    justificativa: str
+    itens: list[ItemLancamentoInput]
+
+
+class ItemLancamentoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    criterio_id: UUID | None
+    criterio_snapshot: dict
+    ocorrencias: int | None
+    valor: float | None
+    pontos: float
+
+
+class LancamentoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ficha_id: UUID
+    rodada_id: UUID
+    tentativa: int
+    equipe_id: UUID
+    partida_id: UUID | None
+    arbitro_id: UUID
+    client_operation_id: UUID
+    revision: int
+    status: LancamentoStatus
+    total: float
+    itens: list[ItemLancamentoOut]
+    criado_em: datetime
+    atualizado_em: datetime
+
+
+class LancamentoAuditoriaOut(BaseModel):
+    id: UUID
+    modalidade_nome: str
+    nivel: int | None
+    equipe_nome: str
+    rodada_numero: int
+    tentativa: int
+    responsavel_nome: str
+    horario_submissao: datetime
+    status: LancamentoStatus
+    total: float
+    itens: list[ItemLancamentoOut]
