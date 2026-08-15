@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { EventoSelectPage } from "./EventoSelectPage";
 
 const navigateMock = vi.fn();
@@ -30,8 +31,17 @@ function renderPage() {
   );
 }
 
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  logarComo("COORDENADOR");
 });
 
 describe("EventoSelectPage", () => {
@@ -78,5 +88,49 @@ describe("EventoSelectPage", () => {
     await waitFor(() =>
       expect(navigateMock).toHaveBeenCalledWith("/eventos/novo-evento/modalidades"),
     );
+  });
+
+  it("arbitro nao ve o formulario de criar evento, so a lista", async () => {
+    logarComo("ARBITRO");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: {
+        itens: [{ id: "e1", nome: "TJR 2026", ano: 2026, status: "RASCUNHO" }],
+        total: 1,
+        page: 1,
+        size: 50,
+      },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    expect(await screen.findByText("TJR 2026")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /criar evento/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/nome do evento/i)).not.toBeInTheDocument();
+  });
+
+  it("secretaria tambem nao ve o formulario de criar evento", async () => {
+    logarComo("SECRETARIA");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByText(/nenhum evento cadastrado/i);
+    expect(screen.queryByRole("button", { name: /criar evento/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador continua vendo o formulario de criar evento", async () => {
+    logarComo("COORDENADOR");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /criar evento/i })).toBeInTheDocument();
   });
 });

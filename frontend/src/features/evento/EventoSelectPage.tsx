@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 
 const schema = z
   .object({
@@ -25,6 +26,7 @@ export function EventoSelectPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [erroGeral, setErroGeral] = useState<string | null>(null);
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   const { data, isLoading } = useQuery({
     queryKey: ["eventos"],
@@ -84,6 +86,7 @@ export function EventoSelectPage() {
         </ul>
       </section>
 
+      {ehCoordenador && (
       <section>
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">
           Criar novo evento
@@ -162,6 +165,7 @@ export function EventoSelectPage() {
           </button>
         </form>
       </section>
+      )}
     </main>
   );
 }

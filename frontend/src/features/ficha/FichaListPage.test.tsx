@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { FichaListPage } from "./FichaListPage";
 
 const navigateMock = vi.fn();
@@ -36,8 +37,17 @@ function renderPage() {
   );
 }
 
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  logarComo("COORDENADOR");
 });
 
 describe("FichaListPage", () => {
@@ -227,5 +237,40 @@ describe("FichaListPage", () => {
       "/api/v1/fichas/{ficha_id}/depreciar",
       expect.objectContaining({ params: { path: { ficha_id: "ficha-1" } } }),
     );
+  });
+
+  it("arbitro nao ve Criar ficha, Editar nem Excluir - so Preview", async () => {
+    logarComo("ARBITRO");
+    mockGetComFicha();
+
+    renderPage();
+
+    await screen.findByText(/rascunho/i);
+    expect(screen.queryByRole("button", { name: /criar ficha/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^editar$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /excluir/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /preview/i })).toBeInTheDocument();
+  });
+
+  it("secretaria tambem nao ve Criar ficha, Editar nem Excluir", async () => {
+    logarComo("SECRETARIA");
+    mockGetComFicha();
+
+    renderPage();
+
+    await screen.findByText(/rascunho/i);
+    expect(screen.queryByRole("button", { name: /criar ficha/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^editar$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /excluir/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador continua vendo Criar ficha, Editar e Excluir", async () => {
+    mockGetComFicha();
+
+    renderPage();
+
+    await screen.findByText(/rascunho/i);
+    expect(screen.getByRole("link", { name: /^editar$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /excluir/i })).toBeInTheDocument();
   });
 });

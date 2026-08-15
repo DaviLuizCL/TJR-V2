@@ -73,6 +73,21 @@ describe("LoginPage", () => {
     expect(useAuthStore.getState().usuario?.papel).toBe("COORDENADOR");
   });
 
+  it("permite mostrar e ocultar a senha digitada", async () => {
+    renderPage();
+
+    const campoSenha = screen.getByLabelText(/senha/i) as HTMLInputElement;
+    await userEvent.type(campoSenha, "senha-secreta");
+    expect(campoSenha.type).toBe("password");
+
+    await userEvent.click(screen.getByRole("button", { name: /mostrar/i }));
+    expect(campoSenha.type).toBe("text");
+    expect(campoSenha.value).toBe("senha-secreta");
+
+    await userEvent.click(screen.getByRole("button", { name: /ocultar/i }));
+    expect(campoSenha.type).toBe("password");
+  });
+
   it("mostra a mensagem de erro quando o login falha", async () => {
     vi.mocked(api.POST).mockResolvedValue({
       data: undefined,

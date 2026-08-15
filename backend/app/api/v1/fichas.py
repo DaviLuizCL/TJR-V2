@@ -96,7 +96,7 @@ async def simular(
     ficha_id: UUID,
     dto: SimulacaoRequest,
     db: AsyncSession = Depends(get_db),
-    usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
+    usuario: Usuario = Depends(exigir_papel(*_PAPEIS_LEITURA)),
 ) -> SimulacaoResponse:
     ficha = await ficha_service.obter_ficha_completa(db, ficha_id)
     modalidade = await obter_modalidade(db, ficha.modalidade_id)

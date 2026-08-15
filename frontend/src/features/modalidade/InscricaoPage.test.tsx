@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { InscricaoPage } from "./InscricaoPage";
 
 vi.mock("../../api/client", () => ({
@@ -65,8 +66,17 @@ function mockGet({
   });
 }
 
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  logarComo("COORDENADOR");
 });
 
 describe("InscricaoPage", () => {
@@ -126,5 +136,38 @@ describe("InscricaoPage", () => {
         expect.objectContaining({ params: { path: { inscricao_id: "ins1" } } }),
       ),
     );
+  });
+
+  it("arbitro nao ve o formulario de inscrever nem o botao remover, so a lista", async () => {
+    logarComo("ARBITRO");
+    mockGet({ inscricoes: [{ id: "ins1", equipe_id: "eq1", modalidade_id: "mod-1" }] });
+
+    renderPage();
+
+    expect(await screen.findByText("Equipe Alpha")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remover/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /inscrever/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^equipe$/i)).not.toBeInTheDocument();
+  });
+
+  it("secretaria tambem nao ve inscrever/remover", async () => {
+    logarComo("SECRETARIA");
+    mockGet({ inscricoes: [{ id: "ins1", equipe_id: "eq1", modalidade_id: "mod-1" }] });
+
+    renderPage();
+
+    await screen.findByText("Equipe Alpha");
+    expect(screen.queryByRole("button", { name: /remover/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /inscrever/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador continua vendo inscrever e remover", async () => {
+    mockGet({ inscricoes: [{ id: "ins1", equipe_id: "eq1", modalidade_id: "mod-1" }] });
+
+    renderPage();
+
+    await screen.findByText("Equipe Alpha");
+    expect(screen.getByRole("button", { name: /remover/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /inscrever/i })).toBeInTheDocument();
   });
 });

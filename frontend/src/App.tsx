@@ -23,6 +23,7 @@ import { ModalidadeWizardPage } from "./features/modalidade/ModalidadeWizardPage
 import { RodadaListPage } from "./features/modalidade/RodadaListPage";
 import { RodadaSubmissoesPage } from "./features/modalidade/RodadaSubmissoesPage";
 import { RankingPage } from "./features/ranking/RankingPage";
+import { UsuarioListPage } from "./features/usuario/UsuarioListPage";
 
 function AppLayout() {
   return (
@@ -41,6 +42,14 @@ export default function App() {
 
       <Route element={<AppLayout />}>
         <Route path="/eventos" element={<EventoSelectPage />} />
+        <Route
+          path="/usuarios"
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+              <UsuarioListPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/equipes" element={<EquipeListPage />} />
         <Route path="/equipes/:equipeId/submissoes" element={<EquipeSubmissoesPage />} />
         <Route path="/eventos/:eventoId/modalidades" element={<ModalidadeListPage />} />
@@ -87,7 +96,11 @@ export default function App() {
         />
         <Route
           path="/eventos/:eventoId/modalidades/:modalidadeId/fichas/:fichaId/editar"
-          element={<FichaEditorPage />}
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+              <FichaEditorPage />
+            </ProtectedRoute>
+          }
         />
         <Route
           path="/eventos/:eventoId/modalidades/:modalidadeId/fichas/:fichaId/preview"

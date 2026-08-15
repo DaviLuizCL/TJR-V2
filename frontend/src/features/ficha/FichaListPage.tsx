@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 
 interface FichaResumo {
   id: string;
@@ -34,6 +35,7 @@ function SlotFicha({
   onExcluida: () => void;
 }) {
   const [erro, setErro] = useState<{ codigo: string; mensagem: string } | null>(null);
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   async function excluir() {
     if (!ficha) return;
@@ -76,34 +78,40 @@ function SlotFicha({
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
               {ficha.status} · v{ficha.versao}
             </span>
-            <Link
-              to={`/eventos/${eventoId}/modalidades/${modalidadeId}/fichas/${ficha.id}/editar`}
-              className="text-sm font-medium text-slate-700 underline"
-            >
-              Editar
-            </Link>
+            {ehCoordenador && (
+              <Link
+                to={`/eventos/${eventoId}/modalidades/${modalidadeId}/fichas/${ficha.id}/editar`}
+                className="text-sm font-medium text-slate-700 underline"
+              >
+                Editar
+              </Link>
+            )}
             <Link
               to={`/eventos/${eventoId}/modalidades/${modalidadeId}/fichas/${ficha.id}/preview`}
               className="text-sm font-medium text-slate-700 underline"
             >
               Preview
             </Link>
-            <button
-              type="button"
-              onClick={excluir}
-              className="text-sm font-medium text-red-700 underline"
-            >
-              Excluir
-            </button>
+            {ehCoordenador && (
+              <button
+                type="button"
+                onClick={excluir}
+                className="text-sm font-medium text-red-700 underline"
+              >
+                Excluir
+              </button>
+            )}
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => onCriar(nivel)}
-            className="rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
-          >
-            Criar ficha
-          </button>
+          ehCoordenador && (
+            <button
+              type="button"
+              onClick={() => onCriar(nivel)}
+              className="rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+            >
+              Criar ficha
+            </button>
+          )
         )}
       </div>
 

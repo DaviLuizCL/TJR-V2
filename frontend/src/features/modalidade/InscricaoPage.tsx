@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 
 interface ModalidadeInfo {
   id: string;
@@ -28,6 +29,7 @@ export function InscricaoPage() {
   const queryClient = useQueryClient();
   const [equipeSelecionada, setEquipeSelecionada] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   const { data: modalidade } = useQuery({
     queryKey: ["modalidade", modalidadeId],
@@ -128,13 +130,15 @@ export function InscricaoPage() {
               <span className="font-medium text-slate-800">{equipe!.nome}</span>
               <span className="ml-2 text-sm text-slate-500">Nivel {equipe!.nivel}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => remover(inscricao.id)}
-              className="text-sm font-medium text-red-700 underline"
-            >
-              Remover
-            </button>
+            {ehCoordenador && (
+              <button
+                type="button"
+                onClick={() => remover(inscricao.id)}
+                className="text-sm font-medium text-red-700 underline"
+              >
+                Remover
+              </button>
+            )}
           </li>
         ))}
         {inscritas.length === 0 && (
@@ -142,33 +146,35 @@ export function InscricaoPage() {
         )}
       </ul>
 
-      <form onSubmit={inscrever} className="flex items-end gap-2">
-        <div className="flex-1">
-          <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="equipe">
-            Equipe
-          </label>
-          <select
-            id="equipe"
-            value={equipeSelecionada}
-            onChange={(e) => setEquipeSelecionada(e.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
+      {ehCoordenador && (
+        <form onSubmit={inscrever} className="flex items-end gap-2">
+          <div className="flex-1">
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="equipe">
+              Equipe
+            </label>
+            <select
+              id="equipe"
+              value={equipeSelecionada}
+              onChange={(e) => setEquipeSelecionada(e.target.value)}
+              className="w-full rounded border border-slate-300 px-3 py-2"
+            >
+              <option value="">Selecione uma equipe</option>
+              {elegiveis.map((equipe) => (
+                <option key={equipe.id} value={equipe.id}>
+                  {equipe.nome} (Nivel {equipe.nivel})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={!equipeSelecionada}
+            className="rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
           >
-            <option value="">Selecione uma equipe</option>
-            {elegiveis.map((equipe) => (
-              <option key={equipe.id} value={equipe.id}>
-                {equipe.nome} (Nivel {equipe.nivel})
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="submit"
-          disabled={!equipeSelecionada}
-          className="rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
-        >
-          Inscrever
-        </button>
-      </form>
+            Inscrever
+          </button>
+        </form>
+      )}
       {erro && <p className="mt-2 text-sm text-red-600">{erro}</p>}
     </main>
   );

@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 
 const NIVEIS = [1, 2, 3, 4] as const;
 
@@ -88,6 +89,7 @@ export function EquipeListPage() {
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [filtroNivel, setFiltroNivel] = useState<string>("");
   const [equipeEditandoId, setEquipeEditandoId] = useState<string | null>(null);
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   const { data, isLoading } = useQuery({
     queryKey: ["equipes", filtroNivel],
@@ -182,7 +184,7 @@ export function EquipeListPage() {
               key={equipe.id}
               className="flex items-center justify-between rounded border border-slate-200 bg-white px-4 py-3"
             >
-              {equipeEditandoId === equipe.id ? (
+              {ehCoordenador && equipeEditandoId === equipe.id ? (
                 <EquipeEditForm
                   equipe={equipe}
                   onSalvar={(dados) => salvarEdicao(equipe.id, dados)}
@@ -210,20 +212,24 @@ export function EquipeListPage() {
                     >
                       Submissões
                     </Link>
-                    <button
-                      type="button"
-                      onClick={() => setEquipeEditandoId(equipe.id)}
-                      className="text-sm font-medium text-slate-700 underline"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => alternarAtivo(equipe)}
-                      className="text-sm font-medium text-slate-700 underline"
-                    >
-                      {equipe.ativo ? "Desativar" : "Ativar"}
-                    </button>
+                    {ehCoordenador && (
+                      <button
+                        type="button"
+                        onClick={() => setEquipeEditandoId(equipe.id)}
+                        className="text-sm font-medium text-slate-700 underline"
+                      >
+                        Editar
+                      </button>
+                    )}
+                    {ehCoordenador && (
+                      <button
+                        type="button"
+                        onClick={() => alternarAtivo(equipe)}
+                        className="text-sm font-medium text-slate-700 underline"
+                      >
+                        {equipe.ativo ? "Desativar" : "Ativar"}
+                      </button>
+                    )}
                   </div>
                 </>
               )}
@@ -232,6 +238,7 @@ export function EquipeListPage() {
         </ul>
       </section>
 
+      {ehCoordenador && (
       <section>
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">
           Criar nova equipe
@@ -281,6 +288,7 @@ export function EquipeListPage() {
           </button>
         </form>
       </section>
+      )}
     </main>
   );
 }

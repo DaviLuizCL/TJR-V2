@@ -20,6 +20,7 @@ from app.api.v1 import (
     modalidades,
     ranking,
     rodadas,
+    usuarios,
 )
 from app.core.config import settings
 from app.core.errors import AppError
@@ -49,6 +50,7 @@ app.include_router(ranking.router, prefix="/api/v1", tags=["ranking"])
 app.include_router(chaveamento.router, prefix="/api/v1", tags=["chaveamento"])
 app.include_router(arenas.router, prefix="/api/v1", tags=["arenas"])
 app.include_router(agendamentos.router, prefix="/api/v1", tags=["agendamentos"])
+app.include_router(usuarios.router, prefix="/api/v1", tags=["usuarios"])
 
 
 @app.exception_handler(AppError)

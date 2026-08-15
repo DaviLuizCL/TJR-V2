@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { EquipeListPage } from "./EquipeListPage";
 
 vi.mock("../../api/client", () => ({
@@ -23,8 +24,17 @@ function renderPage() {
   );
 }
 
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  logarComo("COORDENADOR");
 });
 
 describe("EquipeListPage", () => {
@@ -123,5 +133,67 @@ describe("EquipeListPage", () => {
         }),
       ),
     );
+  });
+
+  it("arbitro nao ve o formulario de criar equipe nem os botoes de editar/ativar", async () => {
+    logarComo("ARBITRO");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: {
+        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+        total: 1,
+        page: 1,
+        size: 50,
+      },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByText("Equipe Alpha");
+    expect(screen.queryByRole("button", { name: /^criar equipe$/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/nome da equipe/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^editar$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /desativar/i })).not.toBeInTheDocument();
+    // leitura continua liberada
+    expect(screen.getByRole("link", { name: /submiss/i })).toBeInTheDocument();
+  });
+
+  it("secretaria tambem nao ve criar/editar/ativar, so leitura", async () => {
+    logarComo("SECRETARIA");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: {
+        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+        total: 1,
+        page: 1,
+        size: 50,
+      },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByText("Equipe Alpha");
+    expect(screen.queryByRole("button", { name: /^criar equipe$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^editar$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /desativar/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador continua vendo criar/editar/ativar", async () => {
+    vi.mocked(api.GET).mockResolvedValue({
+      data: {
+        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+        total: 1,
+        page: 1,
+        size: 50,
+      },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByText("Equipe Alpha");
+    expect(screen.getByRole("button", { name: /^criar equipe$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^editar$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /desativar/i })).toBeInTheDocument();
   });
 });

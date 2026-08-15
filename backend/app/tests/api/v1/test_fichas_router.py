@@ -106,6 +106,47 @@ async def test_fluxo_completo_ficha_grupo_criterio_e_simulacao(client, db_sessio
     assert simular_resp.json()["total"] == 30
 
 
+async def test_arbitro_pode_simular_ficha(client, db_session):
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-fichas-simular@tjr.app"
+    )
+    modalidade_id = await _criar_evento_e_modalidade(client, coord_headers)
+    ficha_resp = await client.post(
+        "/api/v1/fichas", json={"modalidade_id": modalidade_id, "nivel": 1}, headers=coord_headers
+    )
+    ficha_id = ficha_resp.json()["id"]
+    grupo_resp = await client.post(
+        f"/api/v1/fichas/{ficha_id}/grupos",
+        json={"nome": "Parte Tecnica", "ordem": 1},
+        headers=coord_headers,
+    )
+    grupo_id = grupo_resp.json()["id"]
+    criterio_resp = await client.post(
+        f"/api/v1/grupos/{grupo_id}/criterios",
+        json={
+            "nome": "Lombada",
+            "categoria": "PONTUACAO",
+            "tipo": "CONTADOR",
+            "pontos": 10,
+            "ordem": 1,
+        },
+        headers=coord_headers,
+    )
+    criterio_id = criterio_resp.json()["id"]
+
+    arb_headers = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-fichas-simular@tjr.app"
+    )
+    resposta = await client.post(
+        f"/api/v1/fichas/{ficha_id}/simular",
+        json={"valores": [{"criterio_id": criterio_id, "ocorrencias": 3}]},
+        headers=arb_headers,
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["total"] == 30
+
+
 async def test_editar_criterio_apos_publicar_cria_nova_versao(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-fichas-2@tjr.app")
     modalidade_id = await _criar_evento_e_modalidade(client, headers)

@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { useEventoStore } from "../../lib/evento-store";
 import { ModalidadeListPage } from "./ModalidadeListPage";
 
@@ -26,9 +27,18 @@ function renderPage(eventoId = "evt-1") {
   );
 }
 
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useEventoStore.setState({ eventoAtualId: null });
+  logarComo("COORDENADOR");
 });
 
 describe("ModalidadeListPage", () => {
@@ -287,6 +297,93 @@ describe("ModalidadeListPage", () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText(/nenhuma modalidade cadastrada/i)).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
+  });
+
+  it("arbitro nao ve 'Gerenciar equipes' nem 'Nova modalidade'", async () => {
+    logarComo("ARBITRO");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/nenhuma modalidade cadastrada/i)).toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: /gerenciar equipes/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /nova modalidade/i })).not.toBeInTheDocument();
+  });
+
+  it("secretaria tambem nao ve 'Gerenciar equipes' nem 'Nova modalidade'", async () => {
+    logarComo("SECRETARIA");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/nenhuma modalidade cadastrada/i)).toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: /gerenciar equipes/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /nova modalidade/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador continua vendo 'Gerenciar equipes' e 'Nova modalidade'", async () => {
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/nenhuma modalidade cadastrada/i)).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: /gerenciar equipes/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /nova modalidade/i })).toBeInTheDocument();
+  });
+
+  it("arbitro nao ve o botao 'Abrir evento' mesmo com modalidade cadastrada", async () => {
+    logarComo("ARBITRO");
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [{ id: "m1", nome: "Sumo", tipo_disputa: "CONFRONTO", status: "RASCUNHO" }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await screen.findByText("Sumo");
+    expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
+  });
+
+  it("secretaria tambem nao ve o botao 'Abrir evento'", async () => {
+    logarComo("SECRETARIA");
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [{ id: "m1", nome: "Sumo", tipo_disputa: "CONFRONTO", status: "RASCUNHO" }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await screen.findByText("Sumo");
     expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
   });
 });

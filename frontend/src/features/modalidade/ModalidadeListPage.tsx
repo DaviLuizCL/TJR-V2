@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { useEventoStore } from "../../lib/evento-store";
 import { AbrirEventoModal } from "./AbrirEventoModal";
 
@@ -110,6 +111,7 @@ export function ModalidadeListPage() {
   const definirEventoAtual = useEventoStore((state) => state.definirEventoAtual);
   const queryClient = useQueryClient();
   const [mostrarAbrirEvento, setMostrarAbrirEvento] = useState(false);
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   useEffect(() => {
     if (eventoId) definirEventoAtual(eventoId);
@@ -131,13 +133,15 @@ export function ModalidadeListPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-800">Modalidades</h1>
         <div className="flex items-center gap-3">
-          <Link
-            to="/equipes"
-            className="text-sm font-medium text-slate-700 underline"
-          >
-            Gerenciar equipes
-          </Link>
-          {!!modalidades?.length && (
+          {ehCoordenador && (
+            <Link
+              to="/equipes"
+              className="text-sm font-medium text-slate-700 underline"
+            >
+              Gerenciar equipes
+            </Link>
+          )}
+          {ehCoordenador && !!modalidades?.length && (
             <button
               type="button"
               onClick={() => setMostrarAbrirEvento(true)}
@@ -146,12 +150,14 @@ export function ModalidadeListPage() {
               Abrir evento
             </button>
           )}
-          <Link
-            to={`/eventos/${eventoId}/modalidades/novo`}
-            className="rounded bg-slate-800 px-4 py-2 font-medium text-white"
-          >
-            Nova modalidade
-          </Link>
+          {ehCoordenador && (
+            <Link
+              to={`/eventos/${eventoId}/modalidades/novo`}
+              className="rounded bg-slate-800 px-4 py-2 font-medium text-white"
+            >
+              Nova modalidade
+            </Link>
+          )}
         </div>
       </div>
 

@@ -14,7 +14,8 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.models.usuario import Usuario
-from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse, UsuarioOut
+from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse
+from app.schemas.usuario import UsuarioOut
 
 router = APIRouter()
 
@@ -72,6 +73,4 @@ async def refresh(dados: RefreshRequest, db: AsyncSession = Depends(get_db)) -> 
 
 @router.get("/auth/me", response_model=UsuarioOut)
 async def me(usuario: Usuario = Depends(get_usuario_atual)) -> UsuarioOut:
-    return UsuarioOut(
-        id=str(usuario.id), nome=usuario.nome, email=usuario.email, papel=usuario.papel
-    )
+    return UsuarioOut.model_validate(usuario)

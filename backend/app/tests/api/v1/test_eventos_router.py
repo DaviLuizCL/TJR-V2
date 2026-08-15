@@ -109,6 +109,91 @@ async def test_listar_eventos_retorna_envelope_paginado(client, db_session):
     assert isinstance(corpo["itens"], list)
 
 
+async def test_arbitro_pode_listar_eventos_mas_nao_criar(client, db_session):
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-eventos-arb-list@tjr.app"
+    )
+    await client.post(
+        "/api/v1/eventos",
+        json={
+            "nome": "TJR 2026",
+            "ano": 2026,
+            "data_inicio": "2026-01-01",
+            "data_fim": "2026-01-02",
+        },
+        headers=coord_headers,
+    )
+    arb_headers = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-eventos-list@tjr.app"
+    )
+
+    resposta = await client.get("/api/v1/eventos", headers=arb_headers)
+
+    assert resposta.status_code == 200
+    assert resposta.json()["total"] >= 1
+
+
+async def test_arbitro_pode_obter_evento_por_id(client, db_session):
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-eventos-arb-obter@tjr.app"
+    )
+    criado = await client.post(
+        "/api/v1/eventos",
+        json={
+            "nome": "TJR 2026",
+            "ano": 2026,
+            "data_inicio": "2026-01-01",
+            "data_fim": "2026-01-02",
+        },
+        headers=coord_headers,
+    )
+    evento_id = criado.json()["id"]
+    arb_headers = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-eventos-obter@tjr.app"
+    )
+
+    resposta = await client.get(f"/api/v1/eventos/{evento_id}", headers=arb_headers)
+
+    assert resposta.status_code == 200
+    assert resposta.json()["id"] == evento_id
+
+
+async def test_secretaria_pode_listar_eventos(client, db_session):
+    headers = await _auth_header(
+        client, db_session, Papel.SECRETARIA, "secretaria-eventos-list@tjr.app"
+    )
+
+    resposta = await client.get("/api/v1/eventos", headers=headers)
+
+    assert resposta.status_code == 200
+
+
+async def test_arbitro_nao_pode_atualizar_evento(client, db_session):
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-eventos-arb-patch@tjr.app"
+    )
+    criado = await client.post(
+        "/api/v1/eventos",
+        json={
+            "nome": "TJR 2026",
+            "ano": 2026,
+            "data_inicio": "2026-01-01",
+            "data_fim": "2026-01-02",
+        },
+        headers=coord_headers,
+    )
+    evento_id = criado.json()["id"]
+    arb_headers = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-eventos-patch@tjr.app"
+    )
+
+    resposta = await client.patch(
+        f"/api/v1/eventos/{evento_id}", json={"nome": "Outro nome"}, headers=arb_headers
+    )
+
+    assert resposta.status_code == 403
+
+
 async def test_obter_evento_inexistente_retorna_404(client, db_session):
     import uuid
 

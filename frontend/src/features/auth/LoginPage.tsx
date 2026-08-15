@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
+import { CampoSenha } from "../../components/CampoSenha";
 import { useAuthStore } from "../../lib/auth-store";
 
 const schema = z.object({
@@ -67,16 +68,14 @@ export function LoginPage() {
         />
         {errors.email && <p className="mb-3 text-sm text-red-600">{errors.email.message}</p>}
 
-        <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="senha">
-          Senha
-        </label>
-        <input
-          id="senha"
-          type="password"
-          className="mb-1 w-full rounded border border-slate-300 px-3 py-2"
-          {...register("senha")}
-        />
-        {errors.senha && <p className="mb-3 text-sm text-red-600">{errors.senha.message}</p>}
+        <div className="mb-3">
+          <CampoSenha
+            id="senha"
+            label="Senha"
+            registro={register("senha")}
+            erro={errors.senha?.message}
+          />
+        </div>
 
         {erroGeral && <p className="mb-3 text-sm text-red-600">{erroGeral}</p>}
 
