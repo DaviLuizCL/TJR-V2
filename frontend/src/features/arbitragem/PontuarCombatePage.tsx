@@ -1,6 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { calcularTotalRodadasPorNivel, nomeFase } from "../../lib/fase-chaveamento";
@@ -41,7 +40,8 @@ function corDaEquipe(partida: PartidaItem, equipeId: string): string {
 
 export function PontuarCombatePage() {
   const { eventoId, modalidadeId } = useParams<{ eventoId: string; modalidadeId: string }>();
-  const [nivelFiltro, setNivelFiltro] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const nivelFiltro = searchParams.get("nivel") ?? "";
 
   const { data: modalidade } = useQuery({
     queryKey: ["modalidade", modalidadeId],
@@ -183,7 +183,10 @@ export function PontuarCombatePage() {
           <select
             id="filtro-nivel"
             value={nivelFiltro}
-            onChange={(e) => setNivelFiltro(e.target.value)}
+            onChange={(e) => {
+              const valor = e.target.value;
+              setSearchParams(valor ? { nivel: valor } : {});
+            }}
             className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
           >
             <option value="">Todos os niveis</option>
@@ -263,7 +266,7 @@ export function PontuarCombatePage() {
                 return (
                   <li key={partida.id}>
                     <Link
-                      to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${partida.rodada_id}/partidas/${partida.id}/pontuar`}
+                      to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${partida.rodada_id}/partidas/${partida.id}/pontuar${nivelFiltro ? `?nivel=${nivelFiltro}` : ""}`}
                       className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
                     >
                       {corpo}

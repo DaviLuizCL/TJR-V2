@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { useEventoStore } from "../../lib/evento-store";
+import { AbrirEventoModal } from "./AbrirEventoModal";
 
 interface ModalidadeResumo {
   id: string;
@@ -11,6 +12,7 @@ interface ModalidadeResumo {
   tipo_disputa: string;
   status: string;
   ranking_liberado: boolean;
+  formato_chaveamento?: string | null;
 }
 
 interface FichaResumo {
@@ -106,6 +108,8 @@ function ModalidadeItem({
 export function ModalidadeListPage() {
   const { eventoId } = useParams<{ eventoId: string }>();
   const definirEventoAtual = useEventoStore((state) => state.definirEventoAtual);
+  const queryClient = useQueryClient();
+  const [mostrarAbrirEvento, setMostrarAbrirEvento] = useState(false);
 
   useEffect(() => {
     if (eventoId) definirEventoAtual(eventoId);
@@ -133,6 +137,15 @@ export function ModalidadeListPage() {
           >
             Gerenciar equipes
           </Link>
+          {!!modalidades?.length && (
+            <button
+              type="button"
+              onClick={() => setMostrarAbrirEvento(true)}
+              className="rounded border border-slate-300 px-4 py-2 font-medium text-slate-700"
+            >
+              Abrir evento
+            </button>
+          )}
           <Link
             to={`/eventos/${eventoId}/modalidades/novo`}
             className="rounded bg-slate-800 px-4 py-2 font-medium text-white"
@@ -152,6 +165,16 @@ export function ModalidadeListPage() {
           <ModalidadeItem key={modalidade.id} modalidade={modalidade} eventoId={eventoId!} />
         ))}
       </ul>
+
+      {mostrarAbrirEvento && modalidades && (
+        <AbrirEventoModal
+          modalidades={modalidades}
+          onFechar={() => setMostrarAbrirEvento(false)}
+          onConcluido={() => {
+            void queryClient.invalidateQueries({ queryKey: ["rodadas"] });
+          }}
+        />
+      )}
     </main>
   );
 }

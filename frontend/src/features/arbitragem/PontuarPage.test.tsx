@@ -12,11 +12,11 @@ vi.mock("../../api/client", () => ({
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
 
-function renderPage() {
+function renderPage(caminho = "/eventos/evt-1/modalidades/mod-1/pontuar") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/eventos/evt-1/modalidades/mod-1/pontuar"]}>
+      <MemoryRouter initialEntries={[caminho]}>
         <Routes>
           <Route
             path="/eventos/:eventoId/modalidades/:modalidadeId/pontuar"
@@ -354,5 +354,47 @@ describe("PontuarPage", () => {
     renderPage();
 
     expect(await screen.findByText(/nenhuma equipe pendente/i)).toBeInTheDocument();
+  });
+
+  it("abrir a pagina com ?nivel= na url ja vem com esse nivel selecionado no filtro", async () => {
+    mockGet({
+      equipes: [
+        { id: "eq-1", nome: "Equipe X", nivel: 1, ativo: true },
+        { id: "eq-2", nome: "Equipe Y", nivel: 2, ativo: true },
+      ],
+      inscricoes: [
+        { id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1" },
+        { id: "ins-2", equipe_id: "eq-2", modalidade_id: "mod-1" },
+      ],
+    });
+
+    renderPage("/eventos/evt-1/modalidades/mod-1/pontuar?nivel=2");
+
+    const select = (await screen.findByLabelText(/filtrar por nivel/i)) as HTMLSelectElement;
+    expect(select.value).toBe("2");
+    expect(await screen.findByText("Equipe Y")).toBeInTheDocument();
+    expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
+  });
+
+  it("escolher um nivel no filtro atualiza a url e o card da equipe carrega o nivel junto", async () => {
+    mockGet({
+      equipes: [
+        { id: "eq-1", nome: "Equipe X", nivel: 1, ativo: true },
+        { id: "eq-2", nome: "Equipe Y", nivel: 2, ativo: true },
+      ],
+      inscricoes: [
+        { id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1" },
+        { id: "ins-2", equipe_id: "eq-2", modalidade_id: "mod-1" },
+      ],
+    });
+
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por nivel/i), "1");
+
+    const card = (await screen.findByText("Equipe X")).closest("a")!;
+    expect(card).toHaveAttribute(
+      "href",
+      "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1&nivel=1",
+    );
   });
 });

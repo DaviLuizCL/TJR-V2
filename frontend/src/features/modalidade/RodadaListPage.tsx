@@ -185,6 +185,115 @@ function RodadaSlot({
   );
 }
 
+function PartidaLinha({
+  partida,
+  eventoId,
+  modalidadeId,
+  rodadaId,
+  equipePorId,
+  rotuloVencedor,
+}: {
+  partida: PartidaItem;
+  eventoId: string;
+  modalidadeId: string;
+  rodadaId: string;
+  equipePorId: Map<string, string>;
+  rotuloVencedor?: string | null;
+}) {
+  const decidida = partida.status === "ENCERRADA" || partida.status === "EMPATADA";
+  const pendente = !decidida && partida.equipe_b_id !== null;
+
+  return (
+    <li className="flex items-center justify-between text-sm">
+      <span className="text-slate-700">
+        {equipePorId.get(partida.equipe_a_id) ?? "?"}
+        {partida.equipe_b_id ? ` vs ${equipePorId.get(partida.equipe_b_id) ?? "?"}` : " (bye)"}
+      </span>
+      {decidida &&
+        (partida.status === "EMPATADA" ? (
+          <span className="text-xs font-medium text-slate-600">Empate</span>
+        ) : (
+          <span className="text-xs font-medium text-emerald-700">
+            {rotuloVencedor ?? `Vencedor: ${equipePorId.get(partida.vencedor_id ?? "") ?? "?"}`}
+          </span>
+        ))}
+      {pendente && (
+        <Link
+          to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodadaId}/partidas/${partida.id}/pontuar`}
+          className="text-xs font-medium text-slate-700 underline"
+        >
+          Pontuar
+        </Link>
+      )}
+    </li>
+  );
+}
+
+function PartidasRodada({
+  rodada,
+  eventoId,
+  modalidadeId,
+  equipePorId,
+}: {
+  rodada: RodadaItem;
+  eventoId: string;
+  modalidadeId: string;
+  equipePorId: Map<string, string>;
+}) {
+  const { data: partidas } = useQuery({
+    queryKey: ["partidas-da-rodada", rodada.id],
+    queryFn: async () => {
+      const { data } = await api.GET("/api/v1/rodadas/{rodada_id}/partidas", {
+        params: { path: { rodada_id: rodada.id } },
+      });
+      return (data ?? []) as PartidaItem[];
+    },
+  });
+
+  const partidasPorNivel = new Map<number | null, PartidaItem[]>();
+  for (const partida of partidas ?? []) {
+    const chave = partida.nivel ?? null;
+    if (!partidasPorNivel.has(chave)) partidasPorNivel.set(chave, []);
+    partidasPorNivel.get(chave)!.push(partida);
+  }
+  const niveis = [...partidasPorNivel.keys()].sort((a, b) => (a ?? 0) - (b ?? 0));
+
+  return (
+    <li className="rounded border border-slate-200 bg-white px-4 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-medium text-slate-800">Rodada {rodada.numero}</span>
+        <Link
+          to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodada.id}/submissoes`}
+          className="text-sm font-medium text-slate-700 underline"
+        >
+          Ver fichas enviadas
+        </Link>
+      </div>
+      <div className="space-y-3">
+        {niveis.map((nivel) => (
+          <div key={String(nivel)}>
+            {nivel != null && (
+              <span className="mb-1 block text-xs font-medium text-slate-500">Nível {nivel}</span>
+            )}
+            <ul className="space-y-1">
+              {partidasPorNivel.get(nivel)!.map((partida) => (
+                <PartidaLinha
+                  key={partida.id}
+                  partida={partida}
+                  eventoId={eventoId}
+                  modalidadeId={modalidadeId}
+                  rodadaId={rodada.id}
+                  equipePorId={equipePorId}
+                />
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </li>
+  );
+}
+
 function BracketRodada({
   rodada,
   eventoId,
@@ -320,6 +429,10 @@ export function RodadaListPage() {
   const isBracket =
     modalidade?.tipo_disputa === "CONFRONTO" &&
     FORMATOS_CHAVEAMENTO.includes(modalidade.formato_chaveamento ?? "");
+  const isTodosContraTodos =
+    modalidade?.tipo_disputa === "CONFRONTO" &&
+    modalidade.formato_chaveamento === "TODOS_CONTRA_TODOS";
+  const isCombate = isBracket || isTodosContraTodos;
 
   const { data: equipesTodas } = useQuery({
     queryKey: ["equipes", "para-bracket"],
@@ -327,7 +440,7 @@ export function RodadaListPage() {
       const { data } = await api.GET("/api/v1/equipes", { params: { query: { size: 200 } } });
       return (data?.itens ?? []) as { id: string; nome: string }[];
     },
-    enabled: isBracket,
+    enabled: isCombate,
   });
   const equipePorId = new Map((equipesTodas ?? []).map((e) => [e.id, e.nome]));
 
@@ -399,7 +512,7 @@ export function RodadaListPage() {
     onMudou();
   }
 
-  if (!modalidade || !rodadas || (isBracket && !equipesTodas)) {
+  if (!modalidade || !rodadas || (isCombate && !equipesTodas)) {
     return <main className="p-8 text-slate-500">Carregando...</main>;
   }
 
@@ -449,6 +562,18 @@ export function RodadaListPage() {
               equipePorId={equipePorId}
               ultimaRodadaPorNivel={ultimaRodadaPorNivel}
               totalRodadasPorNivel={totalRodadasPorNivel}
+            />
+          ))}
+        </ul>
+      ) : isTodosContraTodos ? (
+        <ul className="space-y-2">
+          {rodadasOrdenadas.map((rodada) => (
+            <PartidasRodada
+              key={rodada.id}
+              rodada={rodada}
+              eventoId={eventoId!}
+              modalidadeId={modalidadeId!}
+              equipePorId={equipePorId}
             />
           ))}
         </ul>

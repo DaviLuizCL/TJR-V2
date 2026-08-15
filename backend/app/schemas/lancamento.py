@@ -1,14 +1,14 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.lancamento import LancamentoStatus
 
 
 class ItemLancamentoInput(BaseModel):
     criterio_id: UUID
-    ocorrencias: int | None = None
+    ocorrencias: int | None = Field(default=None, ge=0)
     valor: float | None = None
     aplicado: bool | None = None
 
@@ -25,6 +25,7 @@ class LancamentoCreate(BaseModel):
 
 class LancamentoCorrigir(BaseModel):
     justificativa: str
+    revision: int
     itens: list[ItemLancamentoInput]
 
 

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
@@ -17,11 +17,16 @@ vi.mock("../../api/client", () => ({
 
 const ROTA = "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/partidas/par-1/pontuar";
 
-function renderPage() {
+function TelaDePontuar() {
+  const location = useLocation();
+  return <div>TELA DE PONTUAR{location.search}</div>;
+}
+
+function renderPage(caminho = ROTA) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[ROTA]}>
+      <MemoryRouter initialEntries={[caminho]}>
         <Routes>
           <Route
             path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas/:rodadaId/partidas/:partidaId/pontuar"
@@ -29,7 +34,7 @@ function renderPage() {
           />
           <Route
             path="/eventos/:eventoId/modalidades/:modalidadeId/pontuar"
-            element={<div>TELA DE PONTUAR</div>}
+            element={<TelaDePontuar />}
           />
         </Routes>
       </MemoryRouter>
@@ -471,6 +476,108 @@ describe("PartidaScorerPage - ficha com um criterio booleano", () => {
   });
 });
 
+describe("PartidaScorerPage - retry apos falha parcial", () => {
+  it("depois da confirmacao do 2o lado falhar, um novo clique nao recria o lancamento ja confirmado nem o que ja ficou pendente", async () => {
+    let lancamentosDinamico: Record<string, unknown>[] = [];
+    let falharConfirmarEq2 = true;
+
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
+        return { data: [PARTIDA_BASE], error: undefined } as never;
+      }
+      if (path === "/api/v1/modalidades/{modalidade_id}") {
+        return {
+          data: {
+            id: "mod-1",
+            nome: "Sumo de Robos",
+            ficha_unica_entre_niveis: true,
+            tentativas_por_rodada: 1,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/fichas") {
+        return {
+          data: {
+            itens: [{ id: FICHA_BOOLEANA.id, nivel: null, status: "PUBLICADA" }],
+            total: 1,
+            page: 1,
+            size: 100,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/fichas/{ficha_id}") {
+        return { data: FICHA_BOOLEANA, error: undefined } as never;
+      }
+      if (path === "/api/v1/equipes") {
+        return { data: { itens: EQUIPES, total: 2, page: 1, size: 200 }, error: undefined } as never;
+      }
+      if (path === "/api/v1/lancamentos") {
+        return {
+          data: { itens: lancamentosDinamico, total: lancamentosDinamico.length, page: 1, size: 200 },
+          error: undefined,
+        } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    vi.mocked(api.POST).mockImplementation(async (path: string, opts?: unknown) => {
+      if (path === "/api/v1/lancamentos") {
+        const body = (opts as { body: { equipe_id: string } }).body;
+        const novo = {
+          id: `lanc-${body.equipe_id}`,
+          equipe_id: body.equipe_id,
+          tentativa: 1,
+          partida_id: "par-1",
+          status: "PENDENTE",
+          total: 0,
+        };
+        lancamentosDinamico = [...lancamentosDinamico, novo];
+        return { data: novo, error: undefined } as never;
+      }
+      if (path === "/api/v1/lancamentos/{lancamento_id}/confirmar") {
+        const { lancamento_id } = (
+          opts as { params: { path: { lancamento_id: string } } }
+        ).params.path;
+        if (lancamento_id === "lanc-eq-2" && falharConfirmarEq2) {
+          return {
+            data: undefined,
+            error: { erro: { codigo: "ERRO_TESTE", mensagem: "Falha de rede" } },
+          } as never;
+        }
+        lancamentosDinamico = lancamentosDinamico.map((l) =>
+          l.id === lancamento_id ? { ...l, status: "CONFIRMADO" } : l,
+        );
+        return { data: { id: lancamento_id, status: "CONFIRMADO", total: 0 }, error: undefined } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    const combate1 = (await screen.findByText(/combate 1/i)).closest("li")!;
+    await userEvent.click(within(combate1).getByRole("button", { name: /^equipe x$/i }));
+
+    await waitFor(() => expect(screen.getByText(/falha de rede/i)).toBeInTheDocument());
+
+    vi.mocked(api.POST).mockClear();
+    falharConfirmarEq2 = false;
+
+    await userEvent.click(within(combate1).getByRole("button", { name: /^equipe x$/i }));
+
+    await waitFor(() => expect(screen.queryByText(/falha de rede/i)).not.toBeInTheDocument());
+
+    const todasAsChamadas = vi.mocked(api.POST).mock.calls as unknown as [string, unknown][];
+    const chamadasCriar = todasAsChamadas.filter(([caminho]) => caminho === "/api/v1/lancamentos");
+    expect(chamadasCriar).toHaveLength(0);
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/lancamentos/{lancamento_id}/confirmar",
+      expect.objectContaining({ params: { path: { lancamento_id: "lanc-eq-2" } } }),
+    );
+  });
+});
+
 describe("PartidaScorerPage - volta automatica pro Pontuar", () => {
   it("volta pra tela de pontuar assim que a partida fecha, pra agilizar lançar varias partidas seguidas", async () => {
     let decidida = false;
@@ -534,6 +641,70 @@ describe("PartidaScorerPage - volta automatica pro Pontuar", () => {
     await userEvent.click(within(combate1).getByRole("button", { name: /^equipe x$/i }));
 
     expect(await screen.findByText("TELA DE PONTUAR")).toBeInTheDocument();
+  });
+
+  it("preserva o filtro de nivel (?nivel=) da url ao voltar pra tela de pontuar", async () => {
+    let decidida = false;
+
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
+        const partida = decidida
+          ? { ...PARTIDA_BASE, status: "ENCERRADA", vencedor_id: "eq-1" }
+          : PARTIDA_BASE;
+        return { data: [partida], error: undefined } as never;
+      }
+      if (path === "/api/v1/modalidades/{modalidade_id}") {
+        return {
+          data: {
+            id: "mod-1",
+            nome: "Sumo de Robos",
+            ficha_unica_entre_niveis: true,
+            tentativas_por_rodada: 1,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/fichas") {
+        return {
+          data: {
+            itens: [{ id: FICHA_BOOLEANA.id, nivel: null, status: "PUBLICADA" }],
+            total: 1,
+            page: 1,
+            size: 100,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/fichas/{ficha_id}") {
+        return { data: FICHA_BOOLEANA, error: undefined } as never;
+      }
+      if (path === "/api/v1/equipes") {
+        return { data: { itens: EQUIPES, total: 2, page: 1, size: 200 }, error: undefined } as never;
+      }
+      if (path === "/api/v1/lancamentos") {
+        return { data: { itens: [], total: 0, page: 1, size: 200 }, error: undefined } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    vi.mocked(api.POST).mockImplementation(async (path: string, opts?: unknown) => {
+      if (path === "/api/v1/lancamentos") {
+        const body = (opts as { body: { equipe_id: string } }).body;
+        return { data: { id: `lanc-${body.equipe_id}`, status: "PENDENTE", total: 0 }, error: undefined } as never;
+      }
+      if (path === "/api/v1/lancamentos/{lancamento_id}/confirmar") {
+        decidida = true;
+        return { data: { id: "lanc-1", status: "CONFIRMADO", total: 0 }, error: undefined } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage(`${ROTA}?nivel=2`);
+
+    const combate1 = (await screen.findByText(/combate 1/i)).closest("li")!;
+    await userEvent.click(within(combate1).getByRole("button", { name: /^equipe x$/i }));
+
+    expect(await screen.findByText("TELA DE PONTUAR?nivel=2")).toBeInTheDocument();
   });
 
   it("nao volta automaticamente enquanto a partida ainda nao fechou (empate tecnico)", async () => {

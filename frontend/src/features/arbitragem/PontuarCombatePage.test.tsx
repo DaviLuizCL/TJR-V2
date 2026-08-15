@@ -12,11 +12,11 @@ vi.mock("../../api/client", () => ({
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
 
-function renderPage() {
+function renderPage(caminho = "/eventos/evt-1/modalidades/mod-1/pontuar") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/eventos/evt-1/modalidades/mod-1/pontuar"]}>
+      <MemoryRouter initialEntries={[caminho]}>
         <Routes>
           <Route
             path="/eventos/:eventoId/modalidades/:modalidadeId/pontuar"
@@ -493,5 +493,85 @@ describe("PontuarCombatePage", () => {
     renderPage();
 
     expect(await screen.findByText(/nenhuma partida/i)).toBeInTheDocument();
+  });
+
+  it("abrir a pagina com ?nivel= na url ja vem com esse nivel selecionado no filtro", async () => {
+    mockGet({
+      equipes: [
+        { id: "eq-1", nome: "Equipe X", nivel: 1, ativo: true },
+        { id: "eq-2", nome: "Equipe Y", nivel: 1, ativo: true },
+        { id: "eq-3", nome: "Equipe Z", nivel: 2, ativo: true },
+        { id: "eq-4", nome: "Equipe W", nivel: 2, ativo: true },
+      ],
+      partidasPorRodada: {
+        "rod-1": [
+          {
+            id: "par-1",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            nivel: 1,
+            status: "AGENDADA",
+            criado_em: "2026-08-05T10:00:00Z",
+          },
+          {
+            id: "par-2",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-3",
+            equipe_b_id: "eq-4",
+            vencedor_id: null,
+            nivel: 2,
+            status: "AGENDADA",
+            criado_em: "2026-08-05T10:00:01Z",
+          },
+        ],
+      },
+    });
+
+    renderPage("/eventos/evt-1/modalidades/mod-1/pontuar?nivel=2");
+
+    const select = (await screen.findByLabelText(/filtrar por nivel/i)) as HTMLSelectElement;
+    expect(select.value).toBe("2");
+    expect(await screen.findByText(/equipe z/i)).toBeInTheDocument();
+    expect(screen.queryByText(/equipe x/i)).not.toBeInTheDocument();
+  });
+
+  it("escolher um nivel no filtro atualiza a url e o link da partida carrega o nivel junto", async () => {
+    mockGet({
+      partidasPorRodada: {
+        "rod-1": [
+          {
+            id: "par-1",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            nivel: 1,
+            status: "AGENDADA",
+            criado_em: "2026-08-05T10:00:00Z",
+          },
+          {
+            id: "par-2",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            nivel: 2,
+            status: "AGENDADA",
+            criado_em: "2026-08-05T10:00:01Z",
+          },
+        ],
+      },
+    });
+
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por nivel/i), "1");
+
+    const card = (await screen.findByText(/equipe x/i)).closest("a")!;
+    expect(card).toHaveAttribute(
+      "href",
+      "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/partidas/par-1/pontuar?nivel=1",
+    );
   });
 });

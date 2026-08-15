@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.equipe import Equipe
 from app.models.ficha import Ficha, FichaStatus
 from app.models.inscricao import Inscricao
 from app.models.lancamento import Lancamento, LancamentoStatus
@@ -60,6 +61,74 @@ async def _equipes_inscritas(db: AsyncSession, modalidade_id: UUID) -> list[UUID
     )
 
 
+async def _equipes_por_nivel(db: AsyncSession, modalidade_id: UUID) -> dict[UUID, int]:
+    resultado = await db.execute(
+        select(Equipe.id, Equipe.nivel)
+        .join(Inscricao, Inscricao.equipe_id == Equipe.id)
+        .where(Inscricao.modalidade_id == modalidade_id)
+    )
+    return dict(resultado.all())
+
+
+def _atribuir_posicoes_por_nivel(
+    resultados: list[dict],
+    niveis_por_equipe: dict[UUID, int],
+    chave_ordenacao,
+) -> list[dict]:
+    """Numera `posicao` 1..N dentro de cada nivel, nunca cruzando niveis
+    diferentes na mesma contagem — equipes de niveis diferentes nunca se
+    enfrentam (regra inviolavel 9), e tambem nao devem competir por posicao
+    de classificacao entre si.
+    """
+    por_nivel: dict[int | None, list[dict]] = defaultdict(list)
+    for resultado in resultados:
+        nivel = niveis_por_equipe.get(resultado["equipe_id"])
+        por_nivel[nivel].append(resultado)
+
+    finais: list[dict] = []
+    for nivel in sorted(por_nivel, key=lambda n: (n is None, n)):
+        grupo = sorted(por_nivel[nivel], key=chave_ordenacao)
+        for posicao, resultado in enumerate(grupo, start=1):
+            resultado["posicao"] = posicao
+        finais.extend(grupo)
+    return finais
+
+
+def _ordenar_com_desempate_confronto_direto(
+    resultados: list[dict], partidas: list[Partida]
+) -> list[dict]:
+    """Agrupa equipes empatadas em nota_final e desempata por confronto
+    direto (quem venceu o jogo entre as empatadas fica na frente); se elas
+    tambem empataram entre si ou nunca jogaram entre si, cai pra mais
+    vitorias no total. Resto que ainda empatar fica em ordem estavel
+    (arbitraria).
+    """
+    por_nota: dict[Decimal, list[dict]] = defaultdict(list)
+    for resultado in resultados:
+        por_nota[resultado["nota_final"]].append(resultado)
+
+    ordenados: list[dict] = []
+    for nota in sorted(por_nota, reverse=True):
+        grupo = por_nota[nota]
+        if len(grupo) == 1:
+            ordenados.extend(grupo)
+            continue
+
+        ids_grupo = {r["equipe_id"] for r in grupo}
+        vitorias_diretas = {equipe_id: 0 for equipe_id in ids_grupo}
+        for partida in partidas:
+            if partida.status != PartidaStatus.ENCERRADA:
+                continue
+            if partida.equipe_a_id in ids_grupo and partida.equipe_b_id in ids_grupo:
+                if partida.vencedor_id in ids_grupo:
+                    vitorias_diretas[partida.vencedor_id] += 1
+
+        ordenados.extend(
+            sorted(grupo, key=lambda r: (-vitorias_diretas[r["equipe_id"]], -r["vitorias"]))
+        )
+    return ordenados
+
+
 async def _classificacao_todos_contra_todos(db: AsyncSession, modalidade: Modalidade) -> list[dict]:
     partidas = await _buscar_partidas_decididas(db, modalidade.id)
     equipe_ids = await _equipes_inscritas(db, modalidade.id)
@@ -95,10 +164,9 @@ async def _classificacao_todos_contra_todos(db: AsyncSession, modalidade: Modali
             }
         )
 
-    resultados.sort(key=lambda r: -r["nota_final"])
-    for posicao, resultado in enumerate(resultados, start=1):
-        resultado["posicao"] = posicao
-    return resultados
+    resultados = _ordenar_com_desempate_confronto_direto(resultados, partidas)
+    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
+    return _atribuir_posicoes_por_nivel(resultados, niveis_por_equipe, lambda r: -r["nota_final"])
 
 
 async def _classificacao_bracket(db: AsyncSession, modalidade: Modalidade) -> list[dict]:
@@ -133,10 +201,10 @@ async def _classificacao_bracket(db: AsyncSession, modalidade: Modalidade) -> li
             }
         )
 
-    resultados.sort(key=lambda r: (-r["vitorias"], r["derrotas"]))
-    for posicao, resultado in enumerate(resultados, start=1):
-        resultado["posicao"] = posicao
-    return resultados
+    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
+    return _atribuir_posicoes_por_nivel(
+        resultados, niveis_por_equipe, lambda r: (-r["vitorias"], r["derrotas"])
+    )
 
 
 async def _classificacao_individual(db: AsyncSession, modalidade: Modalidade) -> list[dict]:
@@ -220,12 +288,12 @@ async def _classificacao_individual(db: AsyncSession, modalidade: Modalidade) ->
             chave.append(-valor if regra["direcao"] == "MAIOR" else valor)
         return tuple(chave)
 
-    resultados.sort(key=lambda r: (-r["nota_final"], _chave_desempate(r["equipe_id"])))
-
-    for posicao, resultado in enumerate(resultados, start=1):
-        resultado["posicao"] = posicao
-
-    return resultados
+    niveis_por_equipe = await _equipes_por_nivel(db, modalidade_id)
+    return _atribuir_posicoes_por_nivel(
+        resultados,
+        niveis_por_equipe,
+        lambda r: (-r["nota_final"], _chave_desempate(r["equipe_id"])),
+    )
 
 
 async def _buscar_itens_para_desempate(

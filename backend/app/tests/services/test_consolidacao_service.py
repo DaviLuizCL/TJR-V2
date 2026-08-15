@@ -74,7 +74,7 @@ async def _criar_modalidade(
         evento_id=evento.id,
         nome="Resgate no Plano",
         tipo_disputa=TipoDisputa.INDIVIDUAL,
-        niveis_aplicaveis=[1],
+        niveis_aplicaveis=[1, 2],
         ficha_unica_entre_niveis=True,
         qtd_rodadas=qtd_rodadas,
         tentativas_por_rodada=tentativas_por_rodada,
@@ -126,8 +126,8 @@ async def _criar_rodada(db_session, modalidade, numero) -> Rodada:
     return rodada
 
 
-async def _criar_equipe_inscrita(db_session, modalidade, nome, coordenador) -> Equipe:
-    equipe = Equipe(nome=nome, nivel=1)
+async def _criar_equipe_inscrita(db_session, modalidade, nome, coordenador, nivel=1) -> Equipe:
+    equipe = Equipe(nome=nome, nivel=nivel)
     db_session.add(equipe)
     await db_session.flush()
     await criar_inscricao(
@@ -325,8 +325,12 @@ async def test_ignora_lancamento_pendente_e_conta_so_confirmado(db_session):
     r1 = await _criar_rodada(db_session, modalidade, 1)
     equipe_a = await _criar_equipe_inscrita(db_session, modalidade, "Equipe A", coordenador)
 
-    await _lancar(db_session, ficha, r1, equipe_a, arbitro, {criterios["c"]: 1}, confirmar=False)
-    await _lancar(db_session, ficha, r1, equipe_a, arbitro, {criterios["c"]: 5}, confirmar=True)
+    await _lancar(
+        db_session, ficha, r1, equipe_a, arbitro, {criterios["c"]: 1}, tentativa=1, confirmar=False
+    )
+    await _lancar(
+        db_session, ficha, r1, equipe_a, arbitro, {criterios["c"]: 5}, tentativa=2, confirmar=True
+    )
 
     resultados = await calcular_classificacao(db_session, modalidade.id)
     assert _nota(resultados, equipe_a.id) == Decimal("50")
@@ -528,7 +532,7 @@ async def _criar_modalidade_confronto(
         nome="Combate",
         tipo_disputa=TipoDisputa.CONFRONTO,
         formato_chaveamento=formato,
-        niveis_aplicaveis=[1],
+        niveis_aplicaveis=[1, 2],
         ficha_unica_entre_niveis=True,
         qtd_rodadas=5,
         consolidacao=Consolidacao.SOMA_RODADAS,
@@ -541,8 +545,8 @@ async def _criar_modalidade_confronto(
     return modalidade
 
 
-async def _inscrever_equipe_generica(db_session, modalidade, nome, coordenador) -> Equipe:
-    equipe = Equipe(nome=nome, nivel=1)
+async def _inscrever_equipe_generica(db_session, modalidade, nome, coordenador, nivel=1) -> Equipe:
+    equipe = Equipe(nome=nome, nivel=nivel)
     db_session.add(equipe)
     await db_session.flush()
     await criar_inscricao(
@@ -696,3 +700,221 @@ async def test_mata_mata_ranking_mostra_vitorias_derrotas_e_eliminado_por(db_ses
 
     assert _derrotas(resultados, equipe_d.id) == 1
     assert _eliminado_por(resultados, equipe_d.id) == equipe_c.id
+
+
+# ---------- classificacao nao pode misturar niveis diferentes ----------
+
+
+async def test_classificacao_individual_nao_mistura_niveis_diferentes(db_session):
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-nivel-ind@tjr.app")
+    modalidade = await _criar_modalidade(db_session)
+    ficha, criterios = await _criar_ficha(db_session, modalidade, {"c": {"pontos": Decimal("10")}})
+    await publicar_ficha(db_session, ficha.id, usuario_id=coordenador.id)
+    arbitro = await _criar_arbitro(db_session)
+    r1 = await _criar_rodada(db_session, modalidade, 1)
+
+    # Nivel 1: B tira nota maior que A. Nivel 2: C tira uma nota muito maior que ambos.
+    equipe_a = await _criar_equipe_inscrita(db_session, modalidade, "N1 A", coordenador, nivel=1)
+    equipe_b = await _criar_equipe_inscrita(db_session, modalidade, "N1 B", coordenador, nivel=1)
+    equipe_c = await _criar_equipe_inscrita(db_session, modalidade, "N2 C", coordenador, nivel=2)
+
+    await _lancar(db_session, ficha, r1, equipe_a, arbitro, {criterios["c"]: 3})  # 30
+    await _lancar(db_session, ficha, r1, equipe_b, arbitro, {criterios["c"]: 5})  # 50
+    await _lancar(db_session, ficha, r1, equipe_c, arbitro, {criterios["c"]: 100})  # 1000
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    # Cada nivel tem sua propria contagem de posicao 1..N — nao pode existir um
+    # "1o lugar geral" que so ganhou por pertencer ao nivel de teto mais alto.
+    assert _posicao(resultados, equipe_b.id) == 1
+    assert _posicao(resultados, equipe_a.id) == 2
+    assert _posicao(resultados, equipe_c.id) == 1
+
+
+async def test_classificacao_bracket_nao_mistura_niveis_diferentes(db_session):
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-nivel-mm@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=FormatoChaveamento.MATA_MATA)
+    equipe_a = await _inscrever_equipe_generica(
+        db_session, modalidade, "N1 A", coordenador, nivel=1
+    )
+    equipe_b = await _inscrever_equipe_generica(
+        db_session, modalidade, "N1 B", coordenador, nivel=1
+    )
+    equipe_c = await _inscrever_equipe_generica(
+        db_session, modalidade, "N2 C", coordenador, nivel=2
+    )
+    equipe_d = await _inscrever_equipe_generica(
+        db_session, modalidade, "N2 D", coordenador, nivel=2
+    )
+    rodada1 = await _criar_rodada_confronto(db_session, modalidade, numero=1)
+
+    # Nivel 1: A bate B (final do nivel 1, so 2 equipes). Nivel 2: C bate D (final do nivel 2).
+    db_session.add(
+        Partida(
+            rodada_id=rodada1.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_b.id,
+            vencedor_id=equipe_a.id,
+            nivel=1,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    db_session.add(
+        Partida(
+            rodada_id=rodada1.id,
+            equipe_a_id=equipe_c.id,
+            equipe_b_id=equipe_d.id,
+            vencedor_id=equipe_c.id,
+            nivel=2,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    await db_session.flush()
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    # Os campeoes dos dois niveis nao podem ficar em posicoes diferentes (1o e 2o
+    # "geral") so por terem entrado no bracket em momentos diferentes — cada nivel
+    # tem seu proprio campeao na posicao 1.
+    assert _posicao(resultados, equipe_a.id) == 1
+    assert _posicao(resultados, equipe_c.id) == 1
+    assert _posicao(resultados, equipe_b.id) == 2
+    assert _posicao(resultados, equipe_d.id) == 2
+
+
+async def test_todos_contra_todos_desempate_por_confronto_direto(db_session):
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-desempate-1@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session, formato=FormatoChaveamento.TODOS_CONTRA_TODOS
+    )
+    equipe_a = await _inscrever_equipe_generica(db_session, modalidade, "Equipe A", coordenador)
+    equipe_b = await _inscrever_equipe_generica(db_session, modalidade, "Equipe B", coordenador)
+    equipe_c = await _inscrever_equipe_generica(db_session, modalidade, "Equipe C", coordenador)
+    rodada = await _criar_rodada_confronto(db_session, modalidade)
+
+    # A e C terminam empatados em pontos (1 vitoria, 1 derrota cada), mas
+    # jogaram entre si e C venceu -- confronto direto deve colocar C na
+    # frente de A, mesmo com a mesma pontuacao.
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_b.id,
+            vencedor_id=equipe_a.id,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_c.id,
+            vencedor_id=equipe_c.id,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    await db_session.flush()
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    assert _nota(resultados, equipe_a.id) == _nota(resultados, equipe_c.id) == Decimal("3")
+    assert _posicao(resultados, equipe_c.id) == 1
+    assert _posicao(resultados, equipe_a.id) == 2
+    assert _posicao(resultados, equipe_b.id) == 3
+
+
+async def test_todos_contra_todos_desempate_cai_para_mais_vitorias_sem_confronto_direto(
+    db_session,
+):
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-desempate-2@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session,
+        formato=FormatoChaveamento.TODOS_CONTRA_TODOS,
+        pontos_vitoria=1,
+        pontos_empate=1,
+    )
+    equipe_a = await _inscrever_equipe_generica(db_session, modalidade, "Equipe A", coordenador)
+    equipe_b = await _inscrever_equipe_generica(db_session, modalidade, "Equipe B", coordenador)
+    equipe_c = await _inscrever_equipe_generica(db_session, modalidade, "Equipe C", coordenador)
+    equipe_d = await _inscrever_equipe_generica(db_session, modalidade, "Equipe D", coordenador)
+    rodada = await _criar_rodada_confronto(db_session, modalidade)
+
+    # A vence C (1 ponto). B e D empatam entre si (1 ponto cada). A nunca
+    # jogou contra B nem D -- sem confronto direto pra desempatar -- entao
+    # cai pra "mais vitorias no total": A tem 1 vitoria, B e D tem 0.
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_c.id,
+            vencedor_id=equipe_a.id,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_b.id,
+            equipe_b_id=equipe_d.id,
+            vencedor_id=None,
+            status=PartidaStatus.EMPATADA,
+        )
+    )
+    await db_session.flush()
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    assert _nota(resultados, equipe_a.id) == Decimal("1")
+    assert _nota(resultados, equipe_b.id) == Decimal("1")
+    assert _nota(resultados, equipe_d.id) == Decimal("1")
+    assert _posicao(resultados, equipe_a.id) == 1
+
+
+async def test_classificacao_todos_contra_todos_nao_mistura_niveis_diferentes(db_session):
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-nivel-tct@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session, formato=FormatoChaveamento.TODOS_CONTRA_TODOS
+    )
+    equipe_a = await _inscrever_equipe_generica(
+        db_session, modalidade, "N1 A", coordenador, nivel=1
+    )
+    equipe_b = await _inscrever_equipe_generica(
+        db_session, modalidade, "N1 B", coordenador, nivel=1
+    )
+    equipe_c = await _inscrever_equipe_generica(
+        db_session, modalidade, "N2 C", coordenador, nivel=2
+    )
+    equipe_d = await _inscrever_equipe_generica(
+        db_session, modalidade, "N2 D", coordenador, nivel=2
+    )
+    rodada = await _criar_rodada_confronto(db_session, modalidade)
+
+    # Nivel 1: A bate B. Nivel 2: C bate D.
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_b.id,
+            vencedor_id=equipe_a.id,
+            nivel=1,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_c.id,
+            equipe_b_id=equipe_d.id,
+            vencedor_id=equipe_c.id,
+            nivel=2,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    await db_session.flush()
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    assert _posicao(resultados, equipe_a.id) == 1
+    assert _posicao(resultados, equipe_c.id) == 1
+    assert _posicao(resultados, equipe_b.id) == 2
+    assert _posicao(resultados, equipe_d.id) == 2

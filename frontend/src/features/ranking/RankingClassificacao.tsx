@@ -83,59 +83,82 @@ export function RankingClassificacao({
           const ehMataMata = formato === "MATA_MATA";
           const ehTodosContraTodos = formato === "TODOS_CONTRA_TODOS";
 
+          const gruposPorNivel: Array<[number | null, ClassificacaoItem[]]> = [];
+          for (const item of ranking.itens) {
+            const nivel = item.equipe_nivel ?? null;
+            const grupo = gruposPorNivel.find(([n]) => n === nivel);
+            if (grupo) {
+              grupo[1].push(item);
+            } else {
+              gruposPorNivel.push([nivel, [item]]);
+            }
+          }
+          const temMaisDeUmNivel = gruposPorNivel.length > 1;
+
           return (
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-sm uppercase tracking-wide text-slate-500">
-                  <th className="py-2">Posicao</th>
-                  <th className="py-2">Equipe</th>
-                  {ehMataMata ? (
-                    <>
-                      <th className="py-2">Vitorias</th>
-                      <th className="py-2">Derrotas</th>
-                      <th className="py-2">Eliminado por</th>
-                    </>
-                  ) : ehTodosContraTodos ? (
-                    <>
-                      <th className="py-2">Vitorias</th>
-                      <th className="py-2">Empates</th>
-                      <th className="py-2">Derrotas</th>
-                      <th className="py-2">Pontos</th>
-                    </>
-                  ) : (
-                    <th className="py-2">Nota</th>
+            <div className="flex flex-col gap-8">
+              {gruposPorNivel.map(([nivel, itens]) => (
+                <div key={String(nivel)}>
+                  {temMaisDeUmNivel && (
+                    <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-600">
+                      Nível {nivel}
+                    </h3>
                   )}
-                </tr>
-              </thead>
-              <tbody>
-                {ranking.itens.map((item) => {
-                  return (
-                    <tr key={item.equipe_id} className="border-t border-slate-100">
-                      <td className="py-2 font-semibold text-slate-800">{item.posicao}º</td>
-                      <td className="py-2 text-slate-800">{item.equipe_nome}</td>
-                      {ehMataMata ? (
-                        <>
-                          <td className="py-2 text-slate-800">{item.vitorias ?? 0}</td>
-                          <td className="py-2 text-slate-800">{item.derrotas ?? 0}</td>
-                          <td className="py-2 text-slate-800">
-                            {item.eliminado_por_nome ?? "-"}
-                          </td>
-                        </>
-                      ) : ehTodosContraTodos ? (
-                        <>
-                          <td className="py-2 text-slate-800">{item.vitorias ?? 0}</td>
-                          <td className="py-2 text-slate-800">{item.empates ?? 0}</td>
-                          <td className="py-2 text-slate-800">{item.derrotas ?? 0}</td>
-                          <td className="py-2 text-slate-800">{item.nota_final}</td>
-                        </>
-                      ) : (
-                        <td className="py-2 text-slate-800">{item.nota_final}</td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-sm uppercase tracking-wide text-slate-500">
+                        <th className="py-2">Posicao</th>
+                        <th className="py-2">Equipe</th>
+                        {ehMataMata ? (
+                          <>
+                            <th className="py-2">Vitorias</th>
+                            <th className="py-2">Derrotas</th>
+                            <th className="py-2">Eliminado por</th>
+                          </>
+                        ) : ehTodosContraTodos ? (
+                          <>
+                            <th className="py-2">Vitorias</th>
+                            <th className="py-2">Empates</th>
+                            <th className="py-2">Derrotas</th>
+                            <th className="py-2">Pontos</th>
+                          </>
+                        ) : (
+                          <th className="py-2">Nota</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itens.map((item) => {
+                        return (
+                          <tr key={item.equipe_id} className="border-t border-slate-100">
+                            <td className="py-2 font-semibold text-slate-800">{item.posicao}º</td>
+                            <td className="py-2 text-slate-800">{item.equipe_nome}</td>
+                            {ehMataMata ? (
+                              <>
+                                <td className="py-2 text-slate-800">{item.vitorias ?? 0}</td>
+                                <td className="py-2 text-slate-800">{item.derrotas ?? 0}</td>
+                                <td className="py-2 text-slate-800">
+                                  {item.eliminado_por_nome ?? "-"}
+                                </td>
+                              </>
+                            ) : ehTodosContraTodos ? (
+                              <>
+                                <td className="py-2 text-slate-800">{item.vitorias ?? 0}</td>
+                                <td className="py-2 text-slate-800">{item.empates ?? 0}</td>
+                                <td className="py-2 text-slate-800">{item.derrotas ?? 0}</td>
+                                <td className="py-2 text-slate-800">{item.nota_final}</td>
+                              </>
+                            ) : (
+                              <td className="py-2 text-slate-800">{item.nota_final}</td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
           );
         })()}
     </>

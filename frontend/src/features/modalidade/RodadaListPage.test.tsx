@@ -527,4 +527,145 @@ describe("RodadaListPage", () => {
     await screen.findByText(/Vencedor: Equipe B/);
     expect(screen.queryByRole("link", { name: /pontuar/i })).not.toBeInTheDocument();
   });
+
+  function mockGetTodosContraTodos(rodadas: unknown[], partidasPorRodada: Record<string, unknown[]>) {
+    vi.mocked(api.GET).mockImplementation(async (path: string, opts?: unknown) => {
+      if (path === "/api/v1/modalidades/{modalidade_id}") {
+        return {
+          data: {
+            id: "mod-1",
+            nome: "Cabo de Guerra",
+            qtd_rodadas: 3,
+            tipo_disputa: "CONFRONTO",
+            formato_chaveamento: "TODOS_CONTRA_TODOS",
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas") {
+        return {
+          data: { itens: rodadas, total: rodadas.length, page: 1, size: 200 },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
+        const params = opts as { params: { path: { rodada_id: string } } };
+        const rodadaId = params.params.path.rodada_id;
+        return { data: partidasPorRodada[rodadaId] ?? [], error: undefined } as never;
+      }
+      if (path === "/api/v1/equipes") {
+        return {
+          data: {
+            itens: [
+              { id: "eq-1", nome: "Equipe A", nivel: 1, ativo: true },
+              { id: "eq-2", nome: "Equipe B", nivel: 1, ativo: true },
+            ],
+            total: 2,
+            page: 1,
+            size: 200,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+  }
+
+  it("modalidade de confronto todos-contra-todos continua mostrando 'Gerar rodadas' (nao 'Gerar chaveamento')", async () => {
+    mockGetTodosContraTodos([], {});
+
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /^gerar rodadas$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /gerar chaveamento/i })).not.toBeInTheDocument();
+  });
+
+  it("todos-contra-todos com rodada gerada mostra as partidas com link Pontuar, nao 'Lancar notas'", async () => {
+    mockGetTodosContraTodos(
+      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
+      {
+        r1: [
+          {
+            id: "p1",
+            rodada_id: "r1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            status: "AGENDADA",
+          },
+        ],
+      },
+    );
+
+    renderPage();
+
+    expect(await screen.findByText(/Equipe A.*Equipe B/)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /pontuar/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "/eventos/evt-1/modalidades/mod-1/rodadas/r1/partidas/p1/pontuar",
+    );
+    expect(screen.queryByRole("link", { name: /^lancar notas$/i })).not.toBeInTheDocument();
+  });
+
+  it("todos-contra-todos com partida decidida mostra o vencedor sem badge de campeao/fase", async () => {
+    mockGetTodosContraTodos(
+      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
+      {
+        r1: [
+          {
+            id: "p1",
+            rodada_id: "r1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: "eq-2",
+            status: "ENCERRADA",
+          },
+        ],
+      },
+    );
+
+    renderPage();
+
+    expect(await screen.findByText(/Vencedor: Equipe B/)).toBeInTheDocument();
+    expect(screen.queryByText(/campe[aã]o/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/final|semifinal|quartas|oitavas/i)).not.toBeInTheDocument();
+  });
+
+  it("todos-contra-todos com partida empatada mostra 'Empate'", async () => {
+    mockGetTodosContraTodos(
+      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
+      {
+        r1: [
+          {
+            id: "p1",
+            rodada_id: "r1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            status: "EMPATADA",
+          },
+        ],
+      },
+    );
+
+    renderPage();
+
+    expect(await screen.findByText(/^empate$/i)).toBeInTheDocument();
+  });
+
+  it("linka para as fichas enviadas numa rodada de todos-contra-todos", async () => {
+    mockGetTodosContraTodos(
+      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
+      { r1: [] },
+    );
+
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /ver fichas enviadas/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "/eventos/evt-1/modalidades/mod-1/rodadas/r1/submissoes",
+    );
+  });
 });

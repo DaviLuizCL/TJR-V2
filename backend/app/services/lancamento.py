@@ -141,6 +141,35 @@ def _validar_itens_pertencem_a_ficha(
             )
 
 
+def _validar_campo_aplicado(
+    itens: list[ItemLancamentoInput], criterios_por_id: dict[UUID, Criterio]
+) -> None:
+    """O campo `aplicado` so faz sentido para MODIFICADOR (o unico tipo que o
+    servico de calculo le). Mandar `aplicado` num criterio de outro tipo nao
+    da erro nenhum hoje -- so e silenciosamente ignorado, e como o campo
+    `ocorrencias` fica ausente, o item vira 0 sem avisar ninguem.
+    """
+    for item_in in itens:
+        criterio = criterios_por_id[item_in.criterio_id]
+        if criterio.tipo != CriterioTipo.MODIFICADOR and item_in.aplicado is not None:
+            raise AppError(
+                codigo="CAMPO_APLICADO_INVALIDO_PARA_CRITERIO",
+                mensagem=(
+                    f"O campo 'aplicado' so e valido para criterios do tipo MODIFICADOR; "
+                    f"'{criterio.nome}' e do tipo {criterio.tipo.value}."
+                ),
+                status_code=422,
+                detalhes={"criterio_id": str(criterio.id)},
+            )
+
+
+async def lancamento_existe_por_operacao(db: AsyncSession, client_operation_id: UUID) -> bool:
+    existente = await db.scalar(
+        select(Lancamento.id).where(Lancamento.client_operation_id == client_operation_id)
+    )
+    return existente is not None
+
+
 async def criar_lancamento(
     db: AsyncSession, dto: LancamentoCreate, *, arbitro_id: UUID
 ) -> Lancamento:
@@ -161,6 +190,25 @@ async def criar_lancamento(
         )
     await obter_equipe(db, dto.equipe_id)
 
+    duplicado = await db.scalar(
+        select(Lancamento).where(
+            Lancamento.rodada_id == dto.rodada_id,
+            Lancamento.equipe_id == dto.equipe_id,
+            Lancamento.tentativa == dto.tentativa,
+            Lancamento.status != LancamentoStatus.ANULADO,
+        )
+    )
+    if duplicado is not None:
+        raise AppError(
+            codigo="LANCAMENTO_JA_EXISTE",
+            mensagem=(
+                "Ja existe um lancamento para esta equipe, rodada e tentativa. "
+                "Corrija o lancamento existente em vez de criar um novo."
+            ),
+            status_code=409,
+            detalhes={"lancamento_id": str(duplicado.id)},
+        )
+
     if modalidade.tipo_disputa == TipoDisputa.INDIVIDUAL:
         agendamento = await db.scalar(
             select(Agendamento).where(
@@ -179,6 +227,7 @@ async def criar_lancamento(
 
     criterios_por_id = _criterios_por_id(ficha)
     _validar_itens_pertencem_a_ficha(dto.itens, criterios_por_id)
+    _validar_campo_aplicado(dto.itens, criterios_por_id)
 
     valores = [
         ValorCriterioSimulado(
@@ -310,6 +359,32 @@ async def corrigir_lancamento(
             mensagem="Somente um lancamento CONFIRMADO pode ser corrigido.",
             status_code=422,
         )
+    if dto.revision != lancamento.revision:
+        raise AppError(
+            codigo="LANCAMENTO_REVISION_DESATUALIZADA",
+            mensagem=(
+                "Este lancamento foi alterado por outra correcao desde que voce o abriu. "
+                "Recarregue o estado atual antes de corrigir de novo."
+            ),
+            status_code=409,
+            detalhes={"revision_atual": lancamento.revision, "lancamento": _serializar(lancamento)},
+        )
+    itens_atuais = await _listar_itens_da_revisao(db, lancamento.id, lancamento.revision)
+    criterios_atuais = {item.criterio_id for item in itens_atuais}
+    criterios_corrigidos = {item.criterio_id for item in dto.itens}
+    criterios_faltando = criterios_atuais - criterios_corrigidos
+    if criterios_faltando:
+        raise AppError(
+            codigo="CORRECAO_OMITE_CRITERIO",
+            mensagem=(
+                "A correcao precisa incluir todos os criterios que o lancamento original "
+                "tinha, mesmo que o valor nao mude. Para zerar um criterio, envie-o "
+                "explicitamente com ocorrencias/valor zero."
+            ),
+            status_code=422,
+            detalhes={"criterios_faltando": [str(c) for c in criterios_faltando]},
+        )
+
     antes = _serializar(lancamento)
 
     ficha = await obter_ficha_completa(db, lancamento.ficha_id)
@@ -317,6 +392,7 @@ async def corrigir_lancamento(
 
     criterios_por_id = _criterios_por_id(ficha)
     _validar_itens_pertencem_a_ficha(dto.itens, criterios_por_id)
+    _validar_campo_aplicado(dto.itens, criterios_por_id)
 
     valores = [
         ValorCriterioSimulado(

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
 
@@ -44,6 +44,7 @@ interface EquipeItem {
 }
 
 interface LancamentoItem {
+  id: string;
   equipe_id: string;
   tentativa: number;
   partida_id: string | null;
@@ -80,6 +81,8 @@ export function PartidaScorerPage() {
   }>();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const nivelFiltro = searchParams.get("nivel") ?? "";
 
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState<number | null>(null);
@@ -156,10 +159,15 @@ export function PartidaScorerPage() {
   });
   const lancamentosDaPartida = (lancamentos ?? []).filter((l) => l.partida_id === partidaId);
 
-  function lancamentoConfirmado(equipeId: string, tentativa: number) {
+  function lancamentoExistente(equipeId: string, tentativa: number) {
     return lancamentosDaPartida.find(
-      (l) => l.equipe_id === equipeId && l.tentativa === tentativa && l.status === "CONFIRMADO",
+      (l) => l.equipe_id === equipeId && l.tentativa === tentativa,
     );
+  }
+
+  function lancamentoConfirmado(equipeId: string, tentativa: number) {
+    const existente = lancamentoExistente(equipeId, tentativa);
+    return existente?.status === "CONFIRMADO" ? existente : undefined;
   }
 
   const criterios = ficha?.grupos.flatMap((g) => g.criterios) ?? [];
@@ -206,29 +214,41 @@ export function PartidaScorerPage() {
     setEnviando(tentativa);
 
     for (const lado of lados) {
-      if (lancamentoConfirmado(lado.equipeId, tentativa)) continue;
+      // Reaproveita o que ja existe pra essa equipe+tentativa em vez de tentar
+      // criar de novo: um retry apos falha parcial (ex.: confirmar caiu por
+      // causa de rede ruim no ginasio) nao pode tentar recriar um lancamento
+      // que ja foi criado ou ja foi confirmado - o backend recusa duplicata
+      // (LANCAMENTO_JA_EXISTE) e sem isso o retry ficava travado pra sempre.
+      const existente = lancamentoExistente(lado.equipeId, tentativa);
+      if (existente?.status === "CONFIRMADO") continue;
 
-      const { data, error } = await api.POST("/api/v1/lancamentos", {
-        body: {
-          ficha_id: ficha.id,
-          rodada_id: rodadaId,
-          tentativa,
-          equipe_id: lado.equipeId,
-          partida_id: partida.id,
-          client_operation_id: crypto.randomUUID(),
-          itens: lado.itens,
-        } as never,
-      });
-      if (error || !data) {
-        setErro(extrairErro(error).mensagem);
-        setEnviando(null);
-        return;
+      let lancamentoId = existente?.id;
+      if (!lancamentoId) {
+        const { data, error } = await api.POST("/api/v1/lancamentos", {
+          body: {
+            ficha_id: ficha.id,
+            rodada_id: rodadaId,
+            tentativa,
+            equipe_id: lado.equipeId,
+            partida_id: partida.id,
+            client_operation_id: crypto.randomUUID(),
+            itens: lado.itens,
+          } as never,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["lancamentos-da-rodada", rodadaId] });
+        if (error || !data) {
+          setErro(extrairErro(error).mensagem);
+          setEnviando(null);
+          return;
+        }
+        lancamentoId = (data as { id: string }).id;
       }
 
       const { error: erroConfirmar } = await api.POST(
         "/api/v1/lancamentos/{lancamento_id}/confirmar",
-        { params: { path: { lancamento_id: (data as { id: string }).id } } },
+        { params: { path: { lancamento_id: lancamentoId } } },
       );
+      await queryClient.invalidateQueries({ queryKey: ["lancamentos-da-rodada", rodadaId] });
       if (erroConfirmar) {
         setErro(extrairErro(erroConfirmar).mensagem);
         setEnviando(null);
@@ -237,7 +257,6 @@ export function PartidaScorerPage() {
     }
 
     setEnviando(null);
-    await queryClient.invalidateQueries({ queryKey: ["lancamentos-da-rodada", rodadaId] });
     await queryClient.invalidateQueries({ queryKey: ["partidas-da-rodada", rodadaId] });
 
     const partidasAtualizadas = queryClient.getQueryData<PartidaItem[]>([
@@ -248,8 +267,12 @@ export function PartidaScorerPage() {
     if (partidaAtual && (partidaAtual.status === "ENCERRADA" || partidaAtual.status === "EMPATADA")) {
       // Partida decidida: volta direto pra lista de Pontuar, sem precisar de
       // clique - agiliza lancar varias partidas seguidas (ex.: bracket
-      // grande, dezenas de partidas na mesma rodada).
-      navigate(`/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar`);
+      // grande, dezenas de partidas na mesma rodada). Preserva o filtro de
+      // nivel que estava ativo, senao a lista volta sempre pra "todos os
+      // niveis" e atrapalha quem esta pontuando so um nivel de cada vez.
+      navigate(
+        `/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar${nivelFiltro ? `?nivel=${nivelFiltro}` : ""}`,
+      );
     }
   }
 
@@ -301,7 +324,7 @@ export function PartidaScorerPage() {
   return (
     <main className="mx-auto max-w-2xl p-8">
       <Link
-        to={`/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar`}
+        to={`/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar${nivelFiltro ? `?nivel=${nivelFiltro}` : ""}`}
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
       >
         ← Voltar para pontuar

@@ -1,6 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
 
@@ -102,7 +101,8 @@ export function PontuarPage() {
     },
   });
 
-  const [nivelFiltro, setNivelFiltro] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const nivelFiltro = searchParams.get("nivel") ?? "";
 
   const idsInscritos = new Set((inscricoes ?? []).map((i) => i.equipe_id));
   const equipesInscritas = (equipesTodas ?? []).filter((e) => idsInscritos.has(e.id));
@@ -223,7 +223,10 @@ export function PontuarPage() {
           <select
             id="filtro-nivel"
             value={nivelFiltro}
-            onChange={(e) => setNivelFiltro(e.target.value)}
+            onChange={(e) => {
+              const valor = e.target.value;
+              setSearchParams(valor ? { nivel: valor } : {});
+            }}
             className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
           >
             <option value="">Todos os niveis</option>
@@ -293,7 +296,7 @@ export function PontuarPage() {
           return (
             <li key={equipe.id}>
               <Link
-                to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodada.id}/lancamentos/novo?equipeId=${equipe.id}&tentativa=${tentativa}`}
+                to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodada.id}/lancamentos/novo?equipeId=${equipe.id}&tentativa=${tentativa}${nivelFiltro ? `&nivel=${nivelFiltro}` : ""}`}
                 className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
               >
                 {cabecalho}

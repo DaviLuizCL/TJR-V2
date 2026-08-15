@@ -206,6 +206,45 @@ describe("RankingPage", () => {
     expect(screen.getByText(/pontos/i)).toBeInTheDocument();
   });
 
+  it("agrupa a classificacao por nivel quando a modalidade tem mais de um nivel", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/ranking/modalidades") {
+        return { data: [{ id: "mod-1", nome: "Resgate" }], error: undefined } as never;
+      }
+      if (path === "/api/v1/ranking/modalidades/{modalidade_id}") {
+        return {
+          data: {
+            modalidade_id: "mod-1",
+            modalidade_nome: "Resgate",
+            ranking_liberado: true,
+            itens: [
+              { equipe_id: "eq-1", equipe_nome: "N1 Primeiro", equipe_nivel: 1, nota_final: 50, posicao: 1 },
+              { equipe_id: "eq-2", equipe_nome: "N1 Segundo", equipe_nivel: 1, nota_final: 30, posicao: 2 },
+              { equipe_id: "eq-3", equipe_nome: "N2 Primeiro", equipe_nivel: 2, nota_final: 1000, posicao: 1 },
+            ],
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    const secaoNivel1 = (await screen.findByRole("heading", { name: "Nível 1" })).closest("div")!;
+    const secaoNivel2 = screen.getByRole("heading", { name: "Nível 2" }).closest("div")!;
+
+    const linhaN1 = within(secaoNivel1).getByText("N1 Primeiro").closest("tr")!;
+    expect(within(linhaN1).getByText("1º")).toBeInTheDocument();
+
+    const linhaN2 = within(secaoNivel2).getByText("N2 Primeiro").closest("tr")!;
+    expect(within(linhaN2).getByText("1º")).toBeInTheDocument();
+
+    // As duas secoes tem cada uma o seu proprio "1o lugar" — nao existe um
+    // "1o geral" que teria escondido o campeao do outro nivel.
+    expect(within(secaoNivel1).getByText("N1 Segundo")).toBeInTheDocument();
+  });
+
   it("mostra mensagem quando nenhuma modalidade tem ranking liberado", async () => {
     vi.mocked(api.GET).mockImplementation(async (path: string) => {
       if (path === "/api/v1/ranking/modalidades") {

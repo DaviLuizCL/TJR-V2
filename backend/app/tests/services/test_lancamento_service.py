@@ -236,6 +236,122 @@ async def test_criar_lancamento_e_idempotente_por_client_operation_id(db_session
     assert len(resultado.scalars().all()) == 1
 
 
+async def test_criar_lancamento_recusa_segunda_equipe_rodada_tentativa_pendente(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_lancamento(
+            db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+        )
+
+    assert exc_info.value.codigo == "LANCAMENTO_JA_EXISTE"
+    assert exc_info.value.status_code == 409
+    resultado = await db_session.execute(
+        select(Lancamento).where(
+            Lancamento.rodada_id == rodada.id,
+            Lancamento.equipe_id == equipe.id,
+            Lancamento.tentativa == 1,
+        )
+    )
+    assert len(resultado.scalars().all()) == 1
+
+
+async def test_criar_lancamento_recusa_segunda_equipe_rodada_tentativa_confirmada(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    primeiro = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+    await confirmar_lancamento(db_session, primeiro.id, usuario_id=arbitro.id)
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_lancamento(
+            db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+        )
+
+    assert exc_info.value.codigo == "LANCAMENTO_JA_EXISTE"
+
+
+async def test_criar_lancamento_permite_novo_apos_o_anterior_ser_anulado(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    anterior = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+    anterior.status = LancamentoStatus.ANULADO
+    await db_session.flush()
+
+    novo = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+
+    assert novo.id != anterior.id
+
+
+async def test_criar_lancamento_mesma_equipe_tentativas_diferentes_e_permitido(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+
+    payload_tentativa_2 = LancamentoCreate(
+        ficha_id=ficha.id,
+        rodada_id=rodada.id,
+        tentativa=2,
+        equipe_id=equipe.id,
+        client_operation_id=uuid.uuid4(),
+        itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=3)],
+    )
+    segundo = await criar_lancamento(db_session, payload_tentativa_2, arbitro_id=arbitro.id)
+
+    assert segundo.tentativa == 2
+
+
+async def test_criar_lancamento_com_aplicado_em_criterio_nao_modificador_lanca_erro(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+
+    payload = LancamentoCreate(
+        ficha_id=ficha.id,
+        rodada_id=rodada.id,
+        tentativa=1,
+        equipe_id=equipe.id,
+        client_operation_id=uuid.uuid4(),
+        itens=[ItemLancamentoInput(criterio_id=criterio.id, aplicado=True)],
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_lancamento(db_session, payload, arbitro_id=arbitro.id)
+
+    assert exc_info.value.codigo == "CAMPO_APLICADO_INVALIDO_PARA_CRITERIO"
+    assert exc_info.value.status_code == 422
+    resultado = await db_session.execute(select(Lancamento))
+    assert resultado.scalars().all() == []
+
+
+async def test_corrigir_lancamento_com_aplicado_em_criterio_nao_modificador_lanca_erro(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+
+    with pytest.raises(AppError) as exc_info:
+        await corrigir_lancamento(
+            db_session,
+            lancamento.id,
+            LancamentoCorrigir(
+                justificativa="Corrigindo com campo errado",
+                revision=1,
+                itens=[ItemLancamentoInput(criterio_id=criterio.id, aplicado=True)],
+            ),
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "CAMPO_APLICADO_INVALIDO_PARA_CRITERIO"
+
+
 async def test_criar_lancamento_com_criterio_fora_da_ficha_lanca_erro(db_session):
     _, ficha, _criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
 
@@ -390,6 +506,7 @@ async def test_corrigir_lancamento_exige_justificativa(db_session):
             lancamento.id,
             LancamentoCorrigir(
                 justificativa="",
+                revision=1,
                 itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=5)],
             ),
             usuario_id=coordenador.id,
@@ -411,6 +528,7 @@ async def test_corrigir_lancamento_incrementa_revision_e_recalcula_total(db_sess
         lancamento.id,
         LancamentoCorrigir(
             justificativa="Arbitro contou errado",
+            revision=1,
             itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=5)],
         ),
         usuario_id=coordenador.id,
@@ -438,6 +556,7 @@ async def test_corrigir_lancamento_grava_audit_log_com_justificativa(db_session)
         lancamento.id,
         LancamentoCorrigir(
             justificativa="Correcao de contagem",
+            revision=1,
             itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=1)],
         ),
         usuario_id=coordenador.id,
@@ -448,6 +567,179 @@ async def test_corrigir_lancamento_grava_audit_log_com_justificativa(db_session)
     )
     log = resultado.scalar_one()
     assert log.justificativa == "Correcao de contagem"
+
+
+async def test_corrigir_lancamento_com_revision_desatualizada_lanca_conflito(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio, ocorrencias=3), arbitro_id=arbitro.id
+    )
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+
+    # Coordenador A corrige primeiro, revision vai de 1 pra 2.
+    await corrigir_lancamento(
+        db_session,
+        lancamento.id,
+        LancamentoCorrigir(
+            justificativa="Primeira correcao",
+            revision=1,
+            itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=4)],
+        ),
+        usuario_id=coordenador.id,
+    )
+
+    # Coordenador B, que ainda estava vendo a tela com revision=1, tenta corrigir
+    # em cima da mesma base desatualizada.
+    with pytest.raises(AppError) as exc_info:
+        await corrigir_lancamento(
+            db_session,
+            lancamento.id,
+            LancamentoCorrigir(
+                justificativa="Segunda correcao, concorrente",
+                revision=1,
+                itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=9)],
+            ),
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "LANCAMENTO_REVISION_DESATUALIZADA"
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detalhes["revision_atual"] == 2
+
+    # O estado da primeira correcao nao pode ter sido sobrescrito silenciosamente.
+    atual = await obter_lancamento_completo(db_session, lancamento.id)
+    assert atual.revision == 2
+    assert atual.total == Decimal("40")
+
+
+async def test_corrigir_lancamento_com_revision_atual_funciona_normalmente(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio, ocorrencias=3), arbitro_id=arbitro.id
+    )
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+
+    corrigido = await corrigir_lancamento(
+        db_session,
+        lancamento.id,
+        LancamentoCorrigir(
+            justificativa="Correcao com revision certa",
+            revision=1,
+            itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=4)],
+        ),
+        usuario_id=coordenador.id,
+    )
+
+    assert corrigido.revision == 2
+    assert corrigido.total == Decimal("40")
+
+
+async def test_corrigir_lancamento_omitindo_criterio_existente_lanca_erro(db_session):
+    _, ficha, criterio_pontuacao, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    grupo_penalidade = Grupo(ficha_id=ficha.id, nome="Penalidades", ordem=2)
+    db_session.add(grupo_penalidade)
+    await db_session.flush()
+    criterio_penalidade = Criterio(
+        grupo_id=grupo_penalidade.id,
+        nome="Saiu da area",
+        categoria=CategoriaCriterio.PENALIDADE,
+        tipo=CriterioTipo.CONTADOR,
+        pontos=Decimal("5"),
+        ordem=1,
+        ativo=True,
+    )
+    db_session.add(criterio_penalidade)
+    await db_session.flush()
+
+    payload = LancamentoCreate(
+        ficha_id=ficha.id,
+        rodada_id=rodada.id,
+        tentativa=1,
+        equipe_id=equipe.id,
+        client_operation_id=uuid.uuid4(),
+        itens=[
+            ItemLancamentoInput(criterio_id=criterio_pontuacao.id, ocorrencias=3),
+            ItemLancamentoInput(criterio_id=criterio_penalidade.id, ocorrencias=1),
+        ],
+    )
+    lancamento = await criar_lancamento(db_session, payload, arbitro_id=arbitro.id)
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+
+    # Correcao manda so o criterio de pontuacao, "esquecendo" a penalidade que
+    # o lancamento original tinha.
+    with pytest.raises(AppError) as exc_info:
+        await corrigir_lancamento(
+            db_session,
+            lancamento.id,
+            LancamentoCorrigir(
+                justificativa="Corrigindo so a pontuacao",
+                revision=1,
+                itens=[ItemLancamentoInput(criterio_id=criterio_pontuacao.id, ocorrencias=5)],
+            ),
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "CORRECAO_OMITE_CRITERIO"
+    assert exc_info.value.status_code == 422
+    assert str(criterio_penalidade.id) in exc_info.value.detalhes["criterios_faltando"]
+
+    # Nada foi alterado: lancamento continua na revision 1, com os itens originais.
+    atual = await obter_lancamento_completo(db_session, lancamento.id)
+    assert atual.revision == 1
+    assert atual.total == Decimal("25")  # 30 de pontuacao - 5 de penalidade
+
+
+async def test_corrigir_lancamento_cobrindo_todos_os_criterios_originais_funciona(db_session):
+    _, ficha, criterio_pontuacao, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    grupo_penalidade = Grupo(ficha_id=ficha.id, nome="Penalidades", ordem=2)
+    db_session.add(grupo_penalidade)
+    await db_session.flush()
+    criterio_penalidade = Criterio(
+        grupo_id=grupo_penalidade.id,
+        nome="Saiu da area",
+        categoria=CategoriaCriterio.PENALIDADE,
+        tipo=CriterioTipo.CONTADOR,
+        pontos=Decimal("5"),
+        ordem=1,
+        ativo=True,
+    )
+    db_session.add(criterio_penalidade)
+    await db_session.flush()
+
+    payload = LancamentoCreate(
+        ficha_id=ficha.id,
+        rodada_id=rodada.id,
+        tentativa=1,
+        equipe_id=equipe.id,
+        client_operation_id=uuid.uuid4(),
+        itens=[
+            ItemLancamentoInput(criterio_id=criterio_pontuacao.id, ocorrencias=3),
+            ItemLancamentoInput(criterio_id=criterio_penalidade.id, ocorrencias=1),
+        ],
+    )
+    lancamento = await criar_lancamento(db_session, payload, arbitro_id=arbitro.id)
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+
+    corrigido = await corrigir_lancamento(
+        db_session,
+        lancamento.id,
+        LancamentoCorrigir(
+            justificativa="Zerando a penalidade de proposito, de forma explicita",
+            revision=1,
+            itens=[
+                ItemLancamentoInput(criterio_id=criterio_pontuacao.id, ocorrencias=5),
+                ItemLancamentoInput(criterio_id=criterio_penalidade.id, ocorrencias=0),
+            ],
+        ),
+        usuario_id=coordenador.id,
+    )
+
+    assert corrigido.revision == 2
+    assert corrigido.total == Decimal("50")
 
 
 async def test_listar_lancamentos_filtra_por_rodada_e_equipe(db_session):

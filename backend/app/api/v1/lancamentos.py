@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import exigir_papel
@@ -24,11 +24,17 @@ _PAPEIS_LEITURA = (Papel.ARBITRO, Papel.COORDENADOR, Papel.SECRETARIA)
 @router.post("/lancamentos", response_model=LancamentoOut, status_code=201)
 async def criar_lancamento(
     dto: LancamentoCreate,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     usuario: Usuario = Depends(exigir_papel(*_PAPEIS_LANCAMENTO)),
 ) -> LancamentoOut:
+    ja_existia = await lancamento_service.lancamento_existe_por_operacao(
+        db, dto.client_operation_id
+    )
     lancamento = await lancamento_service.criar_lancamento(db, dto, arbitro_id=usuario.id)
     completo = await lancamento_service.obter_lancamento_completo(db, lancamento.id)
+    if ja_existia:
+        response.status_code = 200
     return LancamentoOut.model_validate(completo)
 
 

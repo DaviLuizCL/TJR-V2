@@ -64,9 +64,11 @@ interface LancamentoResultado {
 }
 
 interface LancamentoResumo {
+  id: string;
   equipe_id: string;
   tentativa: number;
   status: string;
+  total?: number;
 }
 
 export function LancamentoFormPage() {
@@ -84,6 +86,8 @@ export function LancamentoFormPage() {
   const partidaIdPreselecionada = searchParams.get("partidaId");
   const partidaVeioPreselecionada = !!partidaIdPreselecionada;
   const voltarParaPontuar = veioPreselecionado || partidaVeioPreselecionada;
+  const nivelDaOrigem = searchParams.get("nivel") ?? "";
+  const destinoPontuar = `/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar${nivelDaOrigem ? `?nivel=${nivelDaOrigem}` : ""}`;
 
   const [equipeId, setEquipeId] = useState(equipeIdPreselecionado ?? "");
   const [partidaId, setPartidaId] = useState(partidaIdPreselecionada ?? "");
@@ -197,7 +201,12 @@ export function LancamentoFormPage() {
         .filter((e) => idsInscritos.has(e.id))
         .filter((e) => !idsJaLancadosNaTentativa.has(e.id))
         .filter((e) => nivelFiltro === "" || e.nivel === Number(nivelFiltro));
-  const equipeSelecionada = equipesElegiveis.find((e) => e.id === equipeId);
+  // Nao usa equipesElegiveis aqui: a equipe atualmente selecionada (por
+  // preselecao via url ou por ja ter sido escolhida no seletor) precisa
+  // continuar carregando a ficha mesmo se ja tiver lancamento pra essa
+  // tentativa - e exatamente o caso de retomar um PENDENTE que ficou pra
+  // tras (ver lancamentoPendenteExistente).
+  const equipeSelecionada = equipePorId.get(equipeId);
   const niveisDisponiveis = Array.from(
     new Set(
       (equipes ?? [])
@@ -226,6 +235,24 @@ export function LancamentoFormPage() {
     },
     enabled: !!fichaId,
   });
+
+  // Se a equipe+tentativa atual ja tem um lancamento PENDENTE (ex.: o
+  // arbitro registrou, saiu da tela antes de confirmar - "← Voltar" perde o
+  // estado local - e reabriu o mesmo card depois), retoma direto pra
+  // confirmacao em vez de deixar tentar "Registrar lancamento" de novo, que
+  // o backend recusaria (LANCAMENTO_JA_EXISTE).
+  const lancamentoPendenteExistente = (lancamentosDaRodada ?? []).find(
+    (l) => l.equipe_id === equipeId && l.tentativa === tentativa && l.status === "PENDENTE",
+  );
+  const lancamentoAtivo: LancamentoResultado | null =
+    lancamento ??
+    (lancamentoPendenteExistente
+      ? {
+          id: lancamentoPendenteExistente.id,
+          status: lancamentoPendenteExistente.status,
+          total: lancamentoPendenteExistente.total ?? 0,
+        }
+      : null);
 
   async function simular(novosValores: Record<string, ValorEstado>) {
     if (!fichaId) return;
@@ -291,6 +318,7 @@ export function LancamentoFormPage() {
       } as never,
     });
 
+    await queryClient.invalidateQueries({ queryKey: ["lancamentos-da-rodada", rodadaId] });
     setEnviando(false);
     if (error || !data) {
       setErro(extrairErro(error).mensagem);
@@ -301,11 +329,11 @@ export function LancamentoFormPage() {
   }
 
   async function confirmarLancamento() {
-    if (!lancamento) return;
+    if (!lancamentoAtivo) return;
     setErro(null);
     setConfirmando(true);
     const { data, error } = await api.POST("/api/v1/lancamentos/{lancamento_id}/confirmar", {
-      params: { path: { lancamento_id: lancamento.id } },
+      params: { path: { lancamento_id: lancamentoAtivo.id } },
     });
     setConfirmando(false);
 
@@ -318,7 +346,7 @@ export function LancamentoFormPage() {
     await queryClient.invalidateQueries({ queryKey: ["partidas-da-rodada", rodadaId] });
 
     if (voltarParaPontuar) {
-      navigate(`/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar`);
+      navigate(destinoPontuar);
       return;
     }
 
@@ -346,7 +374,7 @@ export function LancamentoFormPage() {
       <Link
         to={
           voltarParaPontuar
-            ? `/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar`
+            ? destinoPontuar
             : `/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas`
         }
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
@@ -521,7 +549,7 @@ export function LancamentoFormPage() {
             </div>
           )}
 
-          {!lancamento && (
+          {!lancamentoAtivo && (
             <button
               type="button"
               onClick={registrarLancamento}
@@ -532,28 +560,28 @@ export function LancamentoFormPage() {
             </button>
           )}
 
-          {lancamento && (
+          {lancamentoAtivo && (
             <div
               className={`rounded border p-4 ${
-                lancamento.status === "CONFIRMADO"
+                lancamentoAtivo.status === "CONFIRMADO"
                   ? "border-emerald-200 bg-emerald-50"
                   : "border-slate-200 bg-white"
               }`}
             >
               <p className="text-sm text-slate-500">
-                {lancamento.status === "CONFIRMADO" && (
+                {lancamentoAtivo.status === "CONFIRMADO" && (
                   <span className="mr-1 text-emerald-700" aria-hidden="true">
                     ✓
                   </span>
                 )}
                 Total persistido —{" "}
-                {lancamento.status === "CONFIRMADO"
+                {lancamentoAtivo.status === "CONFIRMADO"
                   ? "pontuação enviada e confirmada"
                   : "pontuação enviada, aguardando confirmação"}
               </p>
-              <p className="text-3xl font-bold text-slate-900">{lancamento.total}</p>
-              <p className="mt-1 text-sm text-slate-600">Status: {lancamento.status}</p>
-              {lancamento.status === "PENDENTE" && (
+              <p className="text-3xl font-bold text-slate-900">{lancamentoAtivo.total}</p>
+              <p className="mt-1 text-sm text-slate-600">Status: {lancamentoAtivo.status}</p>
+              {lancamentoAtivo.status === "PENDENTE" && (
                 <button
                   type="button"
                   onClick={confirmarLancamento}

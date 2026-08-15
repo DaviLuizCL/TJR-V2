@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
@@ -11,6 +11,11 @@ vi.mock("../../api/client", () => ({
   api: { GET: vi.fn(), POST: vi.fn() },
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
+
+function TelaDePontuar() {
+  const location = useLocation();
+  return <div>TELA DE PONTUAR{location.search}</div>;
+}
 
 function renderPage(caminho = "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -24,7 +29,7 @@ function renderPage(caminho = "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/la
           />
           <Route
             path="/eventos/:eventoId/modalidades/:modalidadeId/pontuar"
-            element={<div>TELA DE PONTUAR</div>}
+            element={<TelaDePontuar />}
           />
         </Routes>
       </MemoryRouter>
@@ -971,6 +976,102 @@ describe("LancamentoFormPage", () => {
       );
     });
 
+    it("se ja existe um lancamento PENDENTE pra essa equipe+tentativa (voltou sem confirmar e reabriu o card), retoma direto pra confirmacao sem tentar recriar", async () => {
+      vi.mocked(api.GET).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/lancamentos") {
+          return {
+            data: {
+              itens: [
+                { id: "lanc-pendente-1", equipe_id: "eq-1", tentativa: 1, status: "PENDENTE", total: 10 },
+              ],
+              total: 1,
+              page: 1,
+              size: 200,
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/rodadas/{rodada_id}") {
+          return { data: { id: "rod-1", modalidade_id: "mod-1", numero: 1 }, error: undefined } as never;
+        }
+        if (path === "/api/v1/modalidades/{modalidade_id}") {
+          return {
+            data: { id: "mod-1", nome: "Sumo", ficha_unica_entre_niveis: true, tentativas_por_rodada: 1 },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/inscricoes") {
+          return {
+            data: {
+              itens: [{ id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1" }],
+              total: 1,
+              page: 1,
+              size: 100,
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/equipes") {
+          return {
+            data: {
+              itens: [{ id: "eq-1", nome: "Equipe X", nivel: 1, ativo: true }],
+              total: 1,
+              page: 1,
+              size: 200,
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/fichas") {
+          return {
+            data: {
+              itens: [{ id: "ficha-1", nivel: null, versao: 1, status: "PUBLICADA" }],
+              total: 1,
+              page: 1,
+              size: 100,
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/fichas/{ficha_id}") {
+          return { data: FICHA_COMPLETA, error: undefined } as never;
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+      vi.mocked(api.POST).mockImplementation(async (path: string, opts?: unknown) => {
+        if (path === "/api/v1/lancamentos/{lancamento_id}/confirmar") {
+          return {
+            data: {
+              id: (opts as { params: { path: { lancamento_id: string } } }).params.path.lancamento_id,
+              status: "CONFIRMADO",
+              total: 10,
+            },
+            error: undefined,
+          } as never;
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+
+      renderPage(
+        "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1",
+      );
+
+      const blocoTotal = (await screen.findByText(/total persistido/i)).closest("div")!;
+      expect(within(blocoTotal).getByText("10")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /registrar lancamento/i })).not.toBeInTheDocument();
+      expect(api.POST).not.toHaveBeenCalledWith("/api/v1/lancamentos", expect.anything());
+
+      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith(
+          "/api/v1/lancamentos/{lancamento_id}/confirmar",
+          expect.objectContaining({ params: { path: { lancamento_id: "lanc-pendente-1" } } }),
+        ),
+      );
+      expect(api.POST).not.toHaveBeenCalledWith("/api/v1/lancamentos", expect.anything());
+    });
+
     it("depois de confirmar, volta pra tela de Pontuar da modalidade", async () => {
       mockGet();
       vi.mocked(api.POST).mockImplementation(async (path: string) => {
@@ -1023,6 +1124,60 @@ describe("LancamentoFormPage", () => {
       await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
 
       expect(await screen.findByText("TELA DE PONTUAR")).toBeInTheDocument();
+    });
+
+    it("preserva o filtro de nivel (?nivel=) da url ao voltar pra tela de Pontuar", async () => {
+      mockGet();
+      vi.mocked(api.POST).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/fichas/{ficha_id}/simular") {
+          return { data: { total: 10 }, error: undefined } as never;
+        }
+        if (path === "/api/v1/lancamentos") {
+          return {
+            data: {
+              id: "lanc-1",
+              ficha_id: "ficha-1",
+              rodada_id: "rod-1",
+              equipe_id: "eq-1",
+              tentativa: 1,
+              revision: 1,
+              status: "PENDENTE",
+              total: 10,
+              itens: [],
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/lancamentos/{lancamento_id}/confirmar") {
+          return {
+            data: {
+              id: "lanc-1",
+              ficha_id: "ficha-1",
+              rodada_id: "rod-1",
+              equipe_id: "eq-1",
+              tentativa: 1,
+              revision: 1,
+              status: "CONFIRMADO",
+              total: 10,
+              itens: [],
+            },
+            error: undefined,
+          } as never;
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+
+      renderPage(
+        "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1&nivel=2",
+      );
+
+      await screen.findByText("Lombada");
+      await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+      await screen.findByText(/total persistido/i);
+      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+
+      expect(await screen.findByText("TELA DE PONTUAR?nivel=2")).toBeInTheDocument();
     });
   });
 

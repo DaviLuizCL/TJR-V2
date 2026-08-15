@@ -144,6 +144,21 @@ async def test_criar_lancamento_com_arbitro_retorna_201_e_total_correto(client, 
     assert corpo["status"] == "PENDENTE"
 
 
+async def test_criar_lancamento_com_ocorrencias_negativas_retorna_422(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.ARBITRO, "arbitro-lanc-neg@tjr.app")
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-lanc-neg@tjr.app"
+    )
+    cenario = await _montar_cenario(client, coord_headers)
+
+    resposta = await client.post(
+        "/api/v1/lancamentos", json=_payload(cenario, ocorrencias=-2), headers=headers
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
 async def test_criar_lancamento_idempotente_retorna_mesmo_recurso(client, db_session):
     headers = await _auth_header(client, db_session, Papel.ARBITRO, "arbitro-lanc-2@tjr.app")
     coord_headers = await _auth_header(
@@ -164,6 +179,8 @@ async def test_criar_lancamento_idempotente_retorna_mesmo_recurso(client, db_ses
     )
 
     assert primeira.json()["id"] == segunda.json()["id"]
+    assert primeira.status_code == 201
+    assert segunda.status_code == 200
 
 
 async def test_obter_lancamento_traz_itens(client, db_session):
@@ -212,6 +229,7 @@ async def test_corrigir_lancamento_com_arbitro_retorna_403(client, db_session):
         f"/api/v1/lancamentos/{lancamento_id}/corrigir",
         json={
             "justificativa": "Errei a contagem",
+            "revision": 1,
             "itens": [{"criterio_id": cenario["criterio_id"], "ocorrencias": 5}],
         },
         headers=headers,
@@ -239,6 +257,7 @@ async def test_corrigir_lancamento_com_coordenador_atualiza_total(client, db_ses
         f"/api/v1/lancamentos/{lancamento_id}/corrigir",
         json={
             "justificativa": "Errei a contagem",
+            "revision": 1,
             "itens": [{"criterio_id": cenario["criterio_id"], "ocorrencias": 5}],
         },
         headers=coord_headers,
@@ -268,6 +287,7 @@ async def test_corrigir_lancamento_sem_justificativa_retorna_422(client, db_sess
         f"/api/v1/lancamentos/{lancamento_id}/corrigir",
         json={
             "justificativa": "",
+            "revision": 1,
             "itens": [{"criterio_id": cenario["criterio_id"], "ocorrencias": 5}],
         },
         headers=coord_headers,
@@ -275,6 +295,44 @@ async def test_corrigir_lancamento_sem_justificativa_retorna_422(client, db_sess
 
     assert resposta.status_code == 422
     assert resposta.json()["erro"]["codigo"] == "JUSTIFICATIVA_OBRIGATORIA"
+
+
+async def test_corrigir_lancamento_com_revision_desatualizada_retorna_409(client, db_session):
+    arbitro_headers = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-lanc-8@tjr.app"
+    )
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-lanc-8@tjr.app"
+    )
+    cenario = await _montar_cenario(client, coord_headers)
+    criado = await client.post(
+        "/api/v1/lancamentos", json=_payload(cenario, ocorrencias=3), headers=arbitro_headers
+    )
+    lancamento_id = criado.json()["id"]
+    await client.post(f"/api/v1/lancamentos/{lancamento_id}/confirmar", headers=arbitro_headers)
+
+    await client.post(
+        f"/api/v1/lancamentos/{lancamento_id}/corrigir",
+        json={
+            "justificativa": "Primeira correcao",
+            "revision": 1,
+            "itens": [{"criterio_id": cenario["criterio_id"], "ocorrencias": 4}],
+        },
+        headers=coord_headers,
+    )
+
+    resposta = await client.post(
+        f"/api/v1/lancamentos/{lancamento_id}/corrigir",
+        json={
+            "justificativa": "Segunda correcao, concorrente e desatualizada",
+            "revision": 1,
+            "itens": [{"criterio_id": cenario["criterio_id"], "ocorrencias": 9}],
+        },
+        headers=coord_headers,
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "LANCAMENTO_REVISION_DESATUALIZADA"
 
 
 async def test_listar_lancamentos_filtra_por_rodada(client, db_session):

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -248,5 +248,45 @@ describe("ModalidadeListPage", () => {
         body: { ranking_liberado: false },
       }),
     );
+  });
+
+  it("clicar em 'Abrir evento' abre o modal com uma linha por modalidade", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [
+              { id: "m1", nome: "Sumo", tipo_disputa: "CONFRONTO", status: "RASCUNHO" },
+              { id: "m2", nome: "Danca", tipo_disputa: "INDIVIDUAL", status: "RASCUNHO" },
+            ],
+            total: 2,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+
+    renderPage();
+    await screen.findByText("Sumo");
+    await userEvent.click(screen.getByRole("button", { name: /abrir evento/i }));
+
+    const modal = await screen.findByRole("dialog", { name: /abrir evento/i });
+    expect(within(modal).getByLabelText("Sumo")).toBeInTheDocument();
+    expect(within(modal).getByLabelText("Danca")).toBeInTheDocument();
+  });
+
+  it("botao 'Abrir evento' nao aparece sem modalidade cadastrada", async () => {
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/nenhuma modalidade cadastrada/i)).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
   });
 });

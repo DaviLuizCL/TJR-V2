@@ -119,11 +119,13 @@ async def _criar_agendamento(db_session, modalidade, rodada, equipe) -> Agendame
     return agendamento
 
 
-async def _lancar_confirmado(db_session, ficha, rodada, equipe, arbitro, itens_ocorrencias):
+async def _lancar_confirmado(
+    db_session, ficha, rodada, equipe, arbitro, itens_ocorrencias, tentativa=1
+):
     payload = LancamentoCreate(
         ficha_id=ficha.id,
         rodada_id=rodada.id,
-        tentativa=1,
+        tentativa=tentativa,
         equipe_id=equipe.id,
         client_operation_id=uuid.uuid4(),
         itens=[
@@ -210,8 +212,12 @@ async def test_listar_auditoria_ordena_por_mais_recente_primeiro(db_session):
     modalidade, ficha, rodada, equipe, criterio_p, criterio_pen = await _cenario(db_session, evento)
     arbitro = await _criar_arbitro(db_session, email="arbitro-ordem@tjr.app")
 
-    primeiro = await _lancar_confirmado(db_session, ficha, rodada, equipe, arbitro, {criterio_p: 1})
-    segundo = await _lancar_confirmado(db_session, ficha, rodada, equipe, arbitro, {criterio_p: 2})
+    primeiro = await _lancar_confirmado(
+        db_session, ficha, rodada, equipe, arbitro, {criterio_p: 1}, tentativa=1
+    )
+    segundo = await _lancar_confirmado(
+        db_session, ficha, rodada, equipe, arbitro, {criterio_p: 2}, tentativa=2
+    )
 
     resultados, _total = await listar_lancamentos_auditoria(
         db_session, evento_id=evento.id, page=1, size=50
@@ -285,8 +291,10 @@ async def test_listar_auditoria_pagina_resultados(db_session):
     modalidade, ficha, rodada, equipe, criterio_p, criterio_pen = await _cenario(db_session, evento)
     arbitro = await _criar_arbitro(db_session, email="arbitro-pagina@tjr.app")
 
-    for _ in range(3):
-        await _lancar_confirmado(db_session, ficha, rodada, equipe, arbitro, {criterio_p: 1})
+    for numero_tentativa in range(1, 4):
+        await _lancar_confirmado(
+            db_session, ficha, rodada, equipe, arbitro, {criterio_p: 1}, tentativa=numero_tentativa
+        )
 
     pagina1, total = await listar_lancamentos_auditoria(
         db_session, evento_id=evento.id, page=1, size=2
