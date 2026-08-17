@@ -1,8 +1,16 @@
 from sqlalchemy import select
 
 from app.core.security import verificar_senha
-from app.db.seed import seed_coordenador, seed_equipes
+from app.db.seed import (
+    MODALIDADES_TJR,
+    seed_coordenador,
+    seed_equipes,
+    seed_evento,
+    seed_modalidades,
+)
 from app.models.equipe import Equipe
+from app.models.evento import Evento
+from app.models.modalidade import Modalidade, ModalidadeStatus, TipoDisputa
 from app.models.usuario import Papel, Usuario
 
 
@@ -59,3 +67,67 @@ async def test_seed_equipes_e_idempotente(db_session):
     equipes = resultado.scalars().all()
 
     assert len(equipes) == 40
+
+
+async def test_seed_evento_cria_evento_tjr_2026(db_session):
+    evento = await seed_evento(db_session)
+    await db_session.flush()
+
+    resultado = await db_session.execute(select(Evento).where(Evento.nome == "TJR 2026"))
+    persistido = resultado.scalar_one()
+
+    assert evento.id == persistido.id
+    assert persistido.ano == 2026
+
+
+async def test_seed_evento_e_idempotente(db_session):
+    primeiro = await seed_evento(db_session)
+    await db_session.flush()
+    segundo = await seed_evento(db_session)
+    await db_session.flush()
+
+    resultado = await db_session.execute(select(Evento).where(Evento.nome == "TJR 2026"))
+    eventos = resultado.scalars().all()
+
+    assert len(eventos) == 1
+    assert primeiro.id == segundo.id
+
+
+async def test_seed_modalidades_cria_todas_as_modalidades_do_tjr(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await db_session.flush()
+
+    assert len(modalidades) == len(MODALIDADES_TJR)
+    nomes = {m.nome for m in modalidades}
+    assert nomes == {spec["nome"] for spec in MODALIDADES_TJR}
+    for modalidade in modalidades:
+        assert modalidade.evento_id == evento.id
+        assert modalidade.status == ModalidadeStatus.PUBLICADA
+        assert modalidade.niveis_aplicaveis == [1, 2, 3, 4]
+
+
+async def test_seed_modalidades_confronto_tem_formato_de_chaveamento(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    por_nome = {m.nome: m for m in modalidades}
+    assert por_nome["Sumô"].tipo_disputa == TipoDisputa.CONFRONTO
+    assert por_nome["Sumô"].formato_chaveamento is not None
+    assert por_nome["Dança"].tipo_disputa == TipoDisputa.INDIVIDUAL
+    assert por_nome["Dança"].formato_chaveamento is None
+
+
+async def test_seed_modalidades_e_idempotente(db_session):
+    evento = await seed_evento(db_session)
+    await seed_modalidades(db_session, evento)
+    await db_session.flush()
+    await seed_modalidades(db_session, evento)
+    await db_session.flush()
+
+    resultado = await db_session.execute(
+        select(Modalidade).where(Modalidade.evento_id == evento.id)
+    )
+    modalidades = resultado.scalars().all()
+
+    assert len(modalidades) == len(MODALIDADES_TJR)
