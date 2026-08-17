@@ -2,14 +2,24 @@ from sqlalchemy import select
 
 from app.core.security import verificar_senha
 from app.db.seed import (
+    EQUIPES_TJR,
+    FICHA_VIAGEM_POR_NIVEL,
+    FICHAS_TJR,
     MODALIDADES_TJR,
     seed_coordenador,
     seed_equipes,
+    seed_equipes_credenciadas,
     seed_evento,
+    seed_fichas,
+    seed_inscricoes,
     seed_modalidades,
 )
+from app.models.criterio import Criterio
 from app.models.equipe import Equipe
 from app.models.evento import Evento
+from app.models.ficha import Ficha, FichaStatus
+from app.models.grupo import Grupo
+from app.models.inscricao import Inscricao
 from app.models.modalidade import Modalidade, ModalidadeStatus, TipoDisputa
 from app.models.usuario import Papel, Usuario
 
@@ -131,3 +141,110 @@ async def test_seed_modalidades_e_idempotente(db_session):
     modalidades = resultado.scalars().all()
 
     assert len(modalidades) == len(MODALIDADES_TJR)
+
+
+async def test_seed_fichas_cria_ficha_publicada_para_cada_modalidade_de_ficha_unica(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    por_nome = {m.nome: m for m in modalidades}
+    for nome in FICHAS_TJR:
+        resultado = await db_session.execute(
+            select(Ficha).where(Ficha.modalidade_id == por_nome[nome].id)
+        )
+        fichas_da_modalidade = resultado.scalars().all()
+        assert len(fichas_da_modalidade) == 1
+        assert fichas_da_modalidade[0].nivel is None
+        assert fichas_da_modalidade[0].status == FichaStatus.PUBLICADA
+
+
+async def test_seed_fichas_cria_uma_ficha_por_nivel_para_viagem_ao_centro_da_terra(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    viagem = next(m for m in modalidades if m.nome == "Viagem ao Centro da Terra")
+    resultado = await db_session.execute(select(Ficha).where(Ficha.modalidade_id == viagem.id))
+    fichas_por_nivel = {f.nivel: f for f in resultado.scalars().all()}
+
+    assert set(fichas_por_nivel) == set(FICHA_VIAGEM_POR_NIVEL)
+    for ficha in fichas_por_nivel.values():
+        assert ficha.status == FichaStatus.PUBLICADA
+
+
+async def test_seed_fichas_cria_grupos_e_criterios_da_especificacao(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    danca = next(m for m in modalidades if m.nome == "Dança")
+    resultado = await db_session.execute(select(Ficha).where(Ficha.modalidade_id == danca.id))
+    ficha = resultado.scalar_one()
+
+    resultado_grupos = await db_session.execute(select(Grupo).where(Grupo.ficha_id == ficha.id))
+    grupos = resultado_grupos.scalars().all()
+    assert len(grupos) == len(FICHAS_TJR["Dança"])
+
+    resultado_criterios = await db_session.execute(
+        select(Criterio).where(Criterio.grupo_id.in_([g.id for g in grupos]))
+    )
+    criterios = resultado_criterios.scalars().all()
+    total_esperado = sum(len(criterios_spec) for _, criterios_spec in FICHAS_TJR["Dança"])
+    assert len(criterios) == total_esperado
+
+
+async def test_seed_fichas_e_idempotente(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+    await db_session.flush()
+    await seed_fichas(db_session, modalidades)
+    await db_session.flush()
+
+    sumo = next(m for m in modalidades if m.nome == "Sumô")
+    resultado = await db_session.execute(select(Ficha).where(Ficha.modalidade_id == sumo.id))
+    assert len(resultado.scalars().all()) == 1
+
+
+async def test_seed_equipes_credenciadas_cria_quatro_por_nivel(db_session):
+    equipes = await seed_equipes_credenciadas(db_session)
+
+    assert len(equipes) == len(EQUIPES_TJR)
+    for nivel in (1, 2, 3, 4):
+        do_nivel = [e for e in equipes if e.nivel == nivel]
+        assert len(do_nivel) == 4
+
+
+async def test_seed_equipes_credenciadas_e_idempotente(db_session):
+    await seed_equipes_credenciadas(db_session)
+    await db_session.flush()
+    await seed_equipes_credenciadas(db_session)
+    await db_session.flush()
+
+    resultado = await db_session.execute(select(Equipe).where(Equipe.nome.like("Nível%")))
+    assert len(resultado.scalars().all()) == len(EQUIPES_TJR)
+
+
+async def test_seed_inscricoes_credencia_toda_equipe_em_toda_modalidade_do_seu_nivel(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+
+    inscricoes = await seed_inscricoes(db_session, modalidades, equipes)
+
+    assert len(inscricoes) == len(modalidades) * len(equipes)
+
+
+async def test_seed_inscricoes_e_idempotente(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+
+    await seed_inscricoes(db_session, modalidades, equipes)
+    await db_session.flush()
+    await seed_inscricoes(db_session, modalidades, equipes)
+    await db_session.flush()
+
+    resultado = await db_session.execute(select(Inscricao))
+    assert len(resultado.scalars().all()) == len(modalidades) * len(equipes)

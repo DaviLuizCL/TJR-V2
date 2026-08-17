@@ -53,11 +53,14 @@ O que `make environment` cria:
   todos-contra-todos), Corrida de Carros Autônomos (confronto, todos-contra-todos), Dança
   (individual), Resgate no Plano (individual), Resgate de Alto Risco (individual) e Viagem ao
   Centro da Terra (individual, com ficha por nível).
-- **40 equipes** — 10 por nível (níveis 1 a 4), nomeadas `Equipe 01 - Nivel 1` etc.
+- **Fichas publicadas** para as 7 modalidades (com grupos e critérios reais — pontuação,
+  penalidade, escala e modificador), prontas pra lançar pontuação sem precisar montar nada na
+  mão. Viagem ao Centro da Terra ganha uma ficha por nível (1 a 4).
+- **16 equipes credenciadas** — `Nível 1 - Equipe A` a `Nível 4 - Equipe D` (4 por nível) —, cada
+  uma já inscrita em todas as 7 modalidades do seu nível.
 
-As modalidades sobem sem ficha (grupos/critérios de pontuação) nem inscrição de equipe — isso é
-feito pela própria interface do coordenador (`Fichas`, dentro de cada modalidade), que já é o
-fluxo real de criação. O seed só monta o esqueleto para não começar do zero.
+Tudo isso é o mesmo conteúdo (modalidade, ficha, critério, equipe, inscrição) que já existe hoje
+no ambiente de desenvolvimento do time.
 
 ## Acessando
 
@@ -65,8 +68,9 @@ fluxo real de criação. O seed só monta o esqueleto para não começar do zero
 - Backend (Swagger): http://localhost:8000/docs
 - Healthcheck: http://localhost:8000/api/v1/health
 
-Login como coordenador com as credenciais do seed acima para criar fichas, inscrever equipes nas
-modalidades, gerar rodadas/horários e liberar o ranking.
+Login como coordenador com as credenciais do seed acima. Com o ambiente populado dá pra ir direto
+pra rodadas/horários (individual) ou chaveamento (confronto) e lançar pontuação — fichas e
+equipes já estão prontas.
 
 ## Comandos úteis
 

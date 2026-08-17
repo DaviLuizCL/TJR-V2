@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,8 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import hash_senha
 from app.db.session import AsyncSessionLocal
+from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo, ModificadorTipo
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
+from app.models.ficha import Ficha, FichaStatus
+from app.models.grupo import Grupo
+from app.models.inscricao import Inscricao
 from app.models.modalidade import (
     Consolidacao,
     FormatoChaveamento,
@@ -73,6 +77,298 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         ficha_unica_entre_niveis=False,
     ),
 )
+
+EQUIPES_TJR: tuple[tuple[str, int], ...] = tuple(
+    (f"Nível {nivel} - Equipe {letra}", nivel) for nivel in (1, 2, 3, 4) for letra in "ABCD"
+)
+
+
+def _c(
+    nome: str,
+    categoria: CategoriaCriterio,
+    tipo: CriterioTipo,
+    *,
+    pontos: float | None = None,
+    valores_permitidos: list | None = None,
+    max_ocorrencias: int | None = None,
+    modificador_tipo: ModificadorTipo | None = None,
+    modificador_valor: float | None = None,
+) -> dict:
+    return dict(
+        nome=nome,
+        categoria=categoria,
+        tipo=tipo,
+        pontos=pontos,
+        valores_permitidos=valores_permitidos,
+        max_ocorrencias=max_ocorrencias,
+        modificador_tipo=modificador_tipo,
+        modificador_valor=modificador_valor,
+    )
+
+
+_FICHA_RESULTADO_COMBATE: tuple[tuple[str, tuple[dict, ...]], ...] = (
+    (
+        "Resultado",
+        (_c("Venceu o combate", CategoriaCriterio.PONTUACAO, CriterioTipo.BOOLEANO, pontos=1),),
+    ),
+)
+
+_ESCALA_DANCA = [0, 2, 5, 7, 10]
+
+_FICHA_DANCA: tuple[tuple[str, tuple[dict, ...]], ...] = (
+    (
+        "Parte Artística",
+        (
+            _c(
+                "Adequação do Figurino",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Desenvolvimento da Temática na Coreografia",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Nível Técnico da Coreografia Conjunta de Humanos e Robôs",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Ousadia dos Movimentos dos Robôs",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Ousadia dos Movimentos dos Humanos",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Adequação da Música",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Sincronia da Música e da Coreografia",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Harmonia da Atuação de Humanos e Robôs",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+        ),
+    ),
+    (
+        "Parte Técnica — Robótica",
+        (
+            _c(
+                "Complexidade de Construção dos Robôs: Eletromecânica",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+            _c(
+                "Complexidade de Construção dos Robôs: Programação",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=_ESCALA_DANCA,
+            ),
+        ),
+    ),
+    (
+        "Modificadores",
+        (
+            _c(
+                "Paralisação durante o desempenho",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.MODIFICADOR,
+                modificador_tipo=ModificadorTipo.ZERA_TOTAL,
+            ),
+            _c(
+                "Ultrapassou 5 minutos de apresentação",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.MODIFICADOR,
+                modificador_tipo=ModificadorTipo.PERCENTUAL,
+                modificador_valor=10,
+            ),
+        ),
+    ),
+)
+
+_FICHA_RESGATE_DE_ALTO_RISCO: tuple[tuple[str, tuple[dict, ...]], ...] = (
+    (
+        "Percurso",
+        (
+            _c("Pacote de Leite", CategoriaCriterio.PONTUACAO, CriterioTipo.CONTADOR, pontos=10),
+            _c("Lombada", CategoriaCriterio.PONTUACAO, CriterioTipo.CONTADOR, pontos=10),
+            _c(
+                "Superação de Vazio",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.CONTADOR,
+                pontos=10,
+            ),
+            _c(
+                "Superação de Rampa Inclinada",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.CONTADOR,
+                pontos=50,
+            ),
+            _c(
+                "Alvo Removido e Descartado: Mesmo piso",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=20,
+            ),
+            _c(
+                "Alvo Removido e Descartado: Pisos diferentes",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=50,
+            ),
+            _c(
+                "Finalização com Sucesso",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=50,
+            ),
+            _c(
+                "Objeto lata invertido de posição (ponta cabeça)",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=50,
+            ),
+            _c(
+                "Penalidades (Falha de Progresso)",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.CONTADOR,
+                pontos=0,
+            ),
+        ),
+    ),
+)
+
+_FICHA_RESGATE_NO_PLANO: tuple[tuple[str, tuple[dict, ...]], ...] = (
+    (
+        "Percurso",
+        (
+            _c("Pacote de Leite", CategoriaCriterio.PONTUACAO, CriterioTipo.CONTADOR, pontos=10),
+            _c("Lombada", CategoriaCriterio.PONTUACAO, CriterioTipo.CONTADOR, pontos=10),
+            _c(
+                "Superação de Vazio",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.CONTADOR,
+                pontos=10,
+            ),
+            _c(
+                "Percurso sem falhas antes do objeto alvo",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=50,
+            ),
+            _c(
+                "Percurso sem falhas depois do objeto alvo",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=50,
+            ),
+            _c(
+                "Alvo Removido e Descartado",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=50,
+            ),
+            _c(
+                "Finalização com Sucesso",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=20,
+            ),
+            _c(
+                "Penalidades (Falha de Progresso)",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.CONTADOR,
+                pontos=0,
+            ),
+        ),
+    ),
+)
+
+
+def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]], ...]:
+    criterios: list[dict] = [
+        _c(
+            "Atingir os 6 Cn sem o alvo, na ida",
+            CategoriaCriterio.PONTUACAO,
+            CriterioTipo.CONTADOR,
+            pontos=6,
+            max_ocorrencias=6,
+        ),
+        _c(
+            "Atingir o Cc sem o alvo, na ida",
+            CategoriaCriterio.PONTUACAO,
+            CriterioTipo.BOOLEANO,
+            pontos=4,
+        ),
+        _c(
+            "Capturar o alvo A, em Cc",
+            CategoriaCriterio.PONTUACAO,
+            CriterioTipo.BOOLEANO,
+            pontos=10,
+        ),
+        _c(
+            "Atingir os 6 Cn com o alvo, na volta",
+            CategoriaCriterio.PONTUACAO,
+            CriterioTipo.CONTADOR,
+            pontos=12,
+            max_ocorrencias=6,
+        ),
+        _c(
+            "Atingir o Cs com o alvo, na volta",
+            CategoriaCriterio.PONTUACAO,
+            CriterioTipo.BOOLEANO,
+            pontos=8,
+        ),
+        _c("Soltar o alvo A, em Cs", CategoriaCriterio.PONTUACAO, CriterioTipo.BOOLEANO, pontos=10),
+        _c("Atravessar a borda", CategoriaCriterio.PENALIDADE, CriterioTipo.CONTADOR, pontos=5),
+    ]
+    if inclui_reinicio:
+        criterios.append(
+            _c(
+                "Reinício entre as rodadas",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.CONTADOR,
+                pontos=20,
+            )
+        )
+    return (("Percurso", tuple(criterios)),)
+
+
+FICHAS_TJR: dict[str, tuple[tuple[str, tuple[dict, ...]], ...]] = {
+    "Sumô": _FICHA_RESULTADO_COMBATE,
+    "Cabo de Guerra": _FICHA_RESULTADO_COMBATE,
+    "Corrida de Carros Autônomos": _FICHA_RESULTADO_COMBATE,
+    "Dança": _FICHA_DANCA,
+    "Resgate de Alto Risco": _FICHA_RESGATE_DE_ALTO_RISCO,
+    "Resgate no Plano": _FICHA_RESGATE_NO_PLANO,
+}
+
+FICHA_VIAGEM_POR_NIVEL: dict[int, tuple[tuple[str, tuple[dict, ...]], ...]] = {
+    1: _ficha_viagem(inclui_reinicio=False),
+    2: _ficha_viagem(inclui_reinicio=False),
+    3: _ficha_viagem(inclui_reinicio=True),
+    4: _ficha_viagem(inclui_reinicio=True),
+}
 
 
 async def seed_coordenador(db: AsyncSession, *, email: str, senha: str) -> Usuario:
@@ -146,6 +442,77 @@ async def seed_modalidades(db: AsyncSession, evento: Evento) -> list[Modalidade]
     return modalidades
 
 
+async def _obter_ou_criar_ficha(
+    db: AsyncSession,
+    *,
+    modalidade_id,
+    nivel: int | None,
+    grupos_spec: tuple[tuple[str, tuple[dict, ...]], ...],
+) -> Ficha:
+    resultado = await db.execute(
+        select(Ficha).where(Ficha.modalidade_id == modalidade_id, Ficha.nivel == nivel)
+    )
+    ficha = resultado.scalar_one_or_none()
+    if ficha is not None:
+        return ficha
+
+    ficha = Ficha(
+        modalidade_id=modalidade_id,
+        nivel=nivel,
+        versao=1,
+        status=FichaStatus.PUBLICADA,
+        publicada_em=datetime.now(UTC),
+    )
+    db.add(ficha)
+    await db.flush()
+
+    for grupo_ordem, (nome_grupo, criterios) in enumerate(grupos_spec, start=1):
+        grupo = Grupo(ficha_id=ficha.id, nome=nome_grupo, ordem=grupo_ordem)
+        db.add(grupo)
+        await db.flush()
+
+        for criterio_ordem, spec in enumerate(criterios, start=1):
+            db.add(
+                Criterio(
+                    grupo_id=grupo.id,
+                    nome=spec["nome"],
+                    categoria=spec["categoria"],
+                    tipo=spec["tipo"],
+                    pontos=spec["pontos"],
+                    valores_permitidos=spec["valores_permitidos"],
+                    max_ocorrencias=spec["max_ocorrencias"],
+                    modificador_tipo=spec["modificador_tipo"],
+                    modificador_valor=spec["modificador_valor"],
+                    ordem=criterio_ordem,
+                )
+            )
+        await db.flush()
+
+    return ficha
+
+
+async def seed_fichas(db: AsyncSession, modalidades: list[Modalidade]) -> list[Ficha]:
+    fichas: list[Ficha] = []
+    for modalidade in modalidades:
+        if modalidade.nome in FICHAS_TJR:
+            fichas.append(
+                await _obter_ou_criar_ficha(
+                    db,
+                    modalidade_id=modalidade.id,
+                    nivel=None,
+                    grupos_spec=FICHAS_TJR[modalidade.nome],
+                )
+            )
+        elif modalidade.nome == "Viagem ao Centro da Terra":
+            for nivel, grupos_spec in FICHA_VIAGEM_POR_NIVEL.items():
+                fichas.append(
+                    await _obter_ou_criar_ficha(
+                        db, modalidade_id=modalidade.id, nivel=nivel, grupos_spec=grupos_spec
+                    )
+                )
+    return fichas
+
+
 async def seed_equipes(db: AsyncSession, *, por_nivel: int = 10) -> list[Equipe]:
     equipes: list[Equipe] = []
     for nivel in (1, 2, 3, 4):
@@ -161,14 +528,52 @@ async def seed_equipes(db: AsyncSession, *, por_nivel: int = 10) -> list[Equipe]
     return equipes
 
 
+async def seed_equipes_credenciadas(db: AsyncSession) -> list[Equipe]:
+    equipes: list[Equipe] = []
+    for nome, nivel in EQUIPES_TJR:
+        resultado = await db.execute(select(Equipe).where(Equipe.nome == nome))
+        equipe = resultado.scalar_one_or_none()
+        if equipe is None:
+            equipe = Equipe(nome=nome, nivel=nivel, ativo=True)
+            db.add(equipe)
+            await db.flush()
+        equipes.append(equipe)
+    return equipes
+
+
+async def seed_inscricoes(
+    db: AsyncSession, modalidades: list[Modalidade], equipes: list[Equipe]
+) -> list[Inscricao]:
+    inscricoes: list[Inscricao] = []
+    for modalidade in modalidades:
+        for equipe in equipes:
+            if equipe.nivel not in modalidade.niveis_aplicaveis:
+                continue
+
+            resultado = await db.execute(
+                select(Inscricao).where(
+                    Inscricao.equipe_id == equipe.id, Inscricao.modalidade_id == modalidade.id
+                )
+            )
+            inscricao = resultado.scalar_one_or_none()
+            if inscricao is None:
+                inscricao = Inscricao(equipe_id=equipe.id, modalidade_id=modalidade.id)
+                db.add(inscricao)
+                await db.flush()
+            inscricoes.append(inscricao)
+    return inscricoes
+
+
 async def _main() -> None:
     async with AsyncSessionLocal() as db:
         await seed_coordenador(
             db, email=settings.seed_coordenador_email, senha=settings.seed_coordenador_senha
         )
         evento = await seed_evento(db)
-        await seed_modalidades(db, evento)
-        await seed_equipes(db, por_nivel=10)
+        modalidades = await seed_modalidades(db, evento)
+        await seed_fichas(db, modalidades)
+        equipes = await seed_equipes_credenciadas(db)
+        await seed_inscricoes(db, modalidades, equipes)
         await db.commit()
 
 
