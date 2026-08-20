@@ -32,3 +32,18 @@ def test_evento_update_permite_campos_parciais():
 def test_evento_update_rejeita_status_fora_do_enum():
     with pytest.raises(ValidationError):
         EventoUpdate(status="FOO")
+
+
+def test_evento_create_rejeita_nome_so_com_espacos():
+    with pytest.raises(ValidationError):
+        EventoCreate(
+            nome="   ", ano=2026, data_inicio=date(2026, 3, 10), data_fim=date(2026, 3, 12)
+        )
+
+
+def test_evento_create_tira_espaco_das_pontas_do_nome():
+    dto = EventoCreate(
+        nome="  TJR 2026  ", ano=2026, data_inicio=date(2026, 3, 10), data_fim=date(2026, 3, 12)
+    )
+
+    assert dto.nome == "TJR 2026"

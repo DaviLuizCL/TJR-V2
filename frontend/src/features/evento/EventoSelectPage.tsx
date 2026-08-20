@@ -10,7 +10,7 @@ import { useAuthStore } from "../../lib/auth-store";
 
 const schema = z
   .object({
-    nome: z.string().min(1, "Informe o nome do evento"),
+    nome: z.string().trim().min(1, "Informe o nome do evento"),
     ano: z.coerce.number().int("Ano invalido"),
     data_inicio: z.string().min(1, "Informe a data de inicio"),
     data_fim: z.string().min(1, "Informe a data de fim"),
@@ -26,7 +26,15 @@ export function EventoSelectPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [erroGeral, setErroGeral] = useState<string | null>(null);
-  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
+  const papel = useAuthStore((state) => state.usuario?.papel);
+  const ehCoordenador = papel === "COORDENADOR";
+  const ehArbitro = papel === "ARBITRO";
+  // Arbitro so usa a tela de Pontuar - mandar pra /modalidades (area
+  // administrativa) so exporia links/acoes que ele nao pode usar (ver
+  // mesma logica em components/Header.tsx).
+  function destinoDoEvento(eventoId: string): string {
+    return ehArbitro ? `/eventos/${eventoId}/individual` : `/eventos/${eventoId}/modalidades`;
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["eventos"],
@@ -73,7 +81,7 @@ export function EventoSelectPage() {
           {data?.map((evento) => (
             <li key={evento.id}>
               <Link
-                to={`/eventos/${evento.id}/modalidades`}
+                to={destinoDoEvento(evento.id)}
                 className="block rounded border border-slate-200 bg-white px-4 py-3 hover:border-slate-400"
               >
                 <span className="font-medium text-slate-800">{evento.nome}</span>

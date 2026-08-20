@@ -17,7 +17,12 @@ asyncpg = "^0.29.0"
 psycopg2-binary = "^2.9.9"
 python-jose = { extras = ["cryptography"], version = "^3.3.0" }
 passlib = { extras = ["bcrypt"], version = "^1.7.4" }
-bcrypt = "^4.2.0"
+# passlib 1.7.4 (2020, sem releases desde entao) sonda bcrypt.__about__ pra
+# descobrir a versao do backend - modulo removido no bcrypt 4.1 (2023), o
+# que gera "AttributeError: module 'bcrypt' has no attribute '__about__'" a
+# cada hash/verificacao de senha. Trava em 4.0.x (ultima serie com o modulo)
+# ate o passlib lancar uma versao compativel.
+bcrypt = ">=4.0.1,<4.1"
 python-multipart = "^0.0.12"
 
 [tool.poetry.group.dev.dependencies]

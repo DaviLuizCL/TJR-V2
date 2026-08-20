@@ -11,7 +11,7 @@ import { useAuthStore } from "../../lib/auth-store";
 const NIVEIS = [1, 2, 3, 4] as const;
 
 const schema = z.object({
-  nome: z.string().min(1, "Informe o nome da equipe"),
+  nome: z.string().trim().min(1, "Informe o nome da equipe"),
   nivel: z.coerce.number().int().min(1).max(4),
 });
 

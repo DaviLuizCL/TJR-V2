@@ -3,16 +3,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.common import NomeObrigatorio
+
 
 class ArenaCreate(BaseModel):
     modalidade_id: UUID
-    nome: str
+    nome: NomeObrigatorio
     niveis_aplicaveis: list[int] | None = None
     ativo: bool = True
 
 
 class ArenaUpdate(BaseModel):
-    nome: str | None = None
+    nome: NomeObrigatorio | None = None
     niveis_aplicaveis: list[int] | None = None
     ativo: bool | None = None
 

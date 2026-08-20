@@ -4,17 +4,18 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from app.models.evento import EventoStatus
+from app.schemas.common import NomeObrigatorio
 
 
 class EventoCreate(BaseModel):
-    nome: str
+    nome: NomeObrigatorio
     ano: int
     data_inicio: date
     data_fim: date
 
 
 class EventoUpdate(BaseModel):
-    nome: str | None = None
+    nome: NomeObrigatorio | None = None
     ano: int | None = None
     data_inicio: date | None = None
     data_fim: date | None = None

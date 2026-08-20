@@ -364,6 +364,106 @@ describe("ModalidadeListPage", () => {
     expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
   });
 
+  it("BUG-04: arbitro nao ve o botao de liberar/ocultar ranking", async () => {
+    logarComo("ARBITRO");
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [
+              {
+                id: "m1",
+                nome: "Sumo",
+                tipo_disputa: "CONFRONTO",
+                status: "PUBLICADA",
+                ranking_liberado: false,
+              },
+            ],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await screen.findByText("Sumo");
+    expect(screen.queryByRole("button", { name: /liberar ranking/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ocultar ranking/i })).not.toBeInTheDocument();
+  });
+
+  it("BUG-04: secretaria tambem nao ve o botao de liberar/ocultar ranking", async () => {
+    logarComo("SECRETARIA");
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [
+              {
+                id: "m1",
+                nome: "Sumo",
+                tipo_disputa: "CONFRONTO",
+                status: "PUBLICADA",
+                ranking_liberado: false,
+              },
+            ],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await screen.findByText("Sumo");
+    expect(screen.queryByRole("button", { name: /liberar ranking/i })).not.toBeInTheDocument();
+  });
+
+  it("BUG-04: mostra mensagem de erro quando alternar o ranking falha (ex.: 403)", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [
+              {
+                id: "m1",
+                nome: "Sumo",
+                tipo_disputa: "CONFRONTO",
+                status: "PUBLICADA",
+                ranking_liberado: false,
+              },
+            ],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+    vi.mocked(api.PATCH).mockResolvedValue({
+      data: undefined,
+      error: { erro: { codigo: "FORBIDDEN", mensagem: "Sem permissao." } },
+    } as never);
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /liberar ranking/i }));
+
+    expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
+    // O rotulo do botao nao pode mudar como se tivesse dado certo.
+    expect(screen.getByRole("button", { name: /liberar ranking/i })).toBeInTheDocument();
+  });
+
   it("secretaria tambem nao ve o botao 'Abrir evento'", async () => {
     logarComo("SECRETARIA");
     vi.mocked(api.GET).mockImplementation(async (path: string) => {

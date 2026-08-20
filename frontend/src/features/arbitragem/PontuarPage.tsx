@@ -239,13 +239,27 @@ export function PontuarPage() {
         </div>
       )}
 
-      {pendencias.length === 0 && (
+      {pendencias.length === 0 && equipesFiltradas.length === 0 && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
-          {equipesFiltradas.length === 0 ? (
-            <p>Nenhuma equipe pendente: a modalidade ainda nao tem equipe inscrita.</p>
-          ) : (
-            <p>✓ Nenhuma equipe pendente: todas ja completaram todas as rodadas.</p>
-          )}
+          <p>Nenhuma equipe pendente: a modalidade ainda nao tem equipe inscrita.</p>
+        </div>
+      )}
+
+      {pendencias.length === 0 && equipesFiltradas.length > 0 && rodadasOrdenadas.length === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
+          <p>Nenhuma rodada foi criada para esta modalidade. Gere as rodadas antes de pontuar.</p>
+          <Link
+            to={`/eventos/${eventoId}/individual?aba=rodadas`}
+            className="mt-1 inline-block text-xs font-medium text-amber-900 underline"
+          >
+            Gerar rodadas →
+          </Link>
+        </div>
+      )}
+
+      {pendencias.length === 0 && equipesFiltradas.length > 0 && rodadasOrdenadas.length > 0 && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
+          <p>✓ Nenhuma equipe pendente: todas ja completaram todas as rodadas.</p>
         </div>
       )}
 
@@ -311,7 +325,7 @@ export function PontuarPage() {
         })}
       </ul>
 
-      {completas.length > 0 && (
+      {completas.length > 0 && rodadasOrdenadas.length > 0 && (
         <p className="mt-6 flex items-center gap-1 text-sm text-slate-500">
           <span className="text-emerald-600" aria-hidden="true">
             ✓

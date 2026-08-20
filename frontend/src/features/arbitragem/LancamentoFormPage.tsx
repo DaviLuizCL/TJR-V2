@@ -1,8 +1,13 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { api, extrairErro } from "../../api/client";
+import { api } from "../../api/client";
+import { db, type LancamentoOutboxItem } from "../../lib/db";
+import { derivarLancamentoAtivo, type LancamentoAtivoView } from "../../lib/lancamento-outbox-view";
+import { enfileirarConfirmarLancamento, enfileirarCriarLancamento } from "../../lib/outbox";
+import { sincronizar } from "../../lib/sync";
 import { CriterioPreview, type CriterioItem, type ValorEstado } from "../ficha/FichaPreviewPage";
 
 interface RodadaInfo {
@@ -57,12 +62,6 @@ interface FichaCompleta {
   grupos: GrupoItem[];
 }
 
-interface LancamentoResultado {
-  id: string;
-  status: string;
-  total: number;
-}
-
 interface LancamentoResumo {
   id: string;
   equipe_id: string;
@@ -78,7 +77,6 @@ export function LancamentoFormPage() {
     rodadaId: string;
   }>();
 
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const equipeIdPreselecionado = searchParams.get("equipeId");
@@ -95,7 +93,6 @@ export function LancamentoFormPage() {
   const [tentativa, setTentativa] = useState(() => Number(searchParams.get("tentativa")) || 1);
   const [valores, setValores] = useState<Record<string, ValorEstado>>({});
   const [totalPreview, setTotalPreview] = useState<number | null>(null);
-  const [lancamento, setLancamento] = useState<LancamentoResultado | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
@@ -236,23 +233,55 @@ export function LancamentoFormPage() {
     enabled: !!fichaId,
   });
 
-  // Se a equipe+tentativa atual ja tem um lancamento PENDENTE (ex.: o
-  // arbitro registrou, saiu da tela antes de confirmar - "← Voltar" perde o
-  // estado local - e reabriu o mesmo card depois), retoma direto pra
-  // confirmacao em vez de deixar tentar "Registrar lancamento" de novo, que
-  // o backend recusaria (LANCAMENTO_JA_EXISTE).
+  // Fila local (outbox) desta equipe+tentativa: um lancamento vai pra ca
+  // imediatamente ao registrar/confirmar, antes de qualquer resposta da
+  // rede (contrato offline-first, secao 8 do CLAUDE.md). A tela reflete o
+  // estado da fila em tempo real via useLiveQuery.
+  const itensDaFila =
+    useLiveQuery(
+      () =>
+        rodadaId && equipeId
+          ? db.lancamentoOutbox
+              .where("[contexto.rodadaId+contexto.equipeId+contexto.tentativa]")
+              .equals([rodadaId, equipeId, tentativa])
+              .toArray()
+          : Promise.resolve<LancamentoOutboxItem[]>([]),
+      [rodadaId, equipeId, tentativa],
+    ) ?? [];
+
+  // Se a equipe+tentativa atual ja tem um lancamento PENDENTE vindo do
+  // servidor mas nada na fila local desta sessao (ex.: o arbitro registrou
+  // em outro momento/dispositivo, ou reabriu o app depois de sincronizar),
+  // retoma direto pra confirmacao em vez de deixar tentar "Registrar
+  // lancamento" de novo, que o backend recusaria (LANCAMENTO_JA_EXISTE).
   const lancamentoPendenteExistente = (lancamentosDaRodada ?? []).find(
     (l) => l.equipe_id === equipeId && l.tentativa === tentativa && l.status === "PENDENTE",
   );
-  const lancamentoAtivo: LancamentoResultado | null =
-    lancamento ??
+  const lancamentoAtivo: LancamentoAtivoView | null =
+    derivarLancamentoAtivo({ itensDaFila }) ??
     (lancamentoPendenteExistente
       ? {
           id: lancamentoPendenteExistente.id,
-          status: lancamentoPendenteExistente.status,
+          lancamentoLocalId: lancamentoPendenteExistente.id,
+          status: lancamentoPendenteExistente.status as "PENDENTE" | "CONFIRMADO",
           total: lancamentoPendenteExistente.total ?? 0,
+          estadoSincronizacao: "sincronizado",
         }
       : null);
+
+  function rotuloEstadoSincronizacao(view: LancamentoAtivoView): string {
+    if (view.status === "CONFIRMADO") return "pontuação enviada e confirmada";
+    switch (view.estadoSincronizacao) {
+      case "pendente":
+        return "na fila — será enviada quando a rede voltar";
+      case "enviando":
+        return "enviando...";
+      case "erro":
+        return "erro ao enviar, aguardando nova tentativa";
+      default:
+        return "pontuação enviada, aguardando confirmação";
+    }
+  }
 
   async function simular(novosValores: Record<string, ValorEstado>) {
     if (!fichaId) return;
@@ -297,7 +326,7 @@ export function LancamentoFormPage() {
   }
 
   async function registrarLancamento() {
-    if (!fichaId || !rodadaId || !equipeId) return;
+    if (!fichaId || !rodadaId || !equipeId || enviando) return;
     setErro(null);
     setEnviando(true);
 
@@ -306,44 +335,47 @@ export function LancamentoFormPage() {
       ...valor,
     }));
 
-    const { data, error } = await api.POST("/api/v1/lancamentos", {
-      body: {
-        ficha_id: fichaId,
-        rodada_id: rodadaId,
+    try {
+      // Grava na fila local (outbox) e resolve na hora, sem esperar a rede -
+      // e o que resolve o BUG-01 do relatorio: o clique nunca mais fica preso
+      // esperando fetch, porque nao ha mais fetch nenhum neste caminho.
+      await enfileirarCriarLancamento({
+        fichaId,
+        rodadaId,
+        equipeId,
         tentativa,
-        equipe_id: equipeId,
-        ...(isConfronto ? { partida_id: partidaId } : {}),
-        client_operation_id: crypto.randomUUID(),
         itens,
-      } as never,
-    });
-
-    await queryClient.invalidateQueries({ queryKey: ["lancamentos-da-rodada", rodadaId] });
-    setEnviando(false);
-    if (error || !data) {
-      setErro(extrairErro(error).mensagem);
-      return;
+        totalPreview: totalPreview ?? 0,
+        partidaId: isConfronto ? partidaId : undefined,
+      });
+      void sincronizar();
+    } catch {
+      setErro("Não foi possível registrar o lançamento neste dispositivo. Tente novamente.");
+    } finally {
+      setEnviando(false);
     }
-
-    setLancamento(data as LancamentoResultado);
   }
 
   async function confirmarLancamento() {
-    if (!lancamentoAtivo) return;
+    if (!lancamentoAtivo || confirmando) return;
     setErro(null);
     setConfirmando(true);
-    const { data, error } = await api.POST("/api/v1/lancamentos/{lancamento_id}/confirmar", {
-      params: { path: { lancamento_id: lancamentoAtivo.id } },
-    });
-    setConfirmando(false);
 
-    if (error || !data) {
-      setErro(extrairErro(error).mensagem);
+    try {
+      await enfileirarConfirmarLancamento({
+        lancamentoLocalId: lancamentoAtivo.lancamentoLocalId,
+        ...(lancamentoAtivo.estadoSincronizacao === "sincronizado"
+          ? { lancamentoServidorId: lancamentoAtivo.id }
+          : {}),
+        revision: 1,
+      });
+      void sincronizar();
+    } catch {
+      setErro("Não foi possível confirmar o lançamento neste dispositivo. Tente novamente.");
+      setConfirmando(false);
       return;
     }
-
-    await queryClient.invalidateQueries({ queryKey: ["lancamentos-da-rodada", rodadaId] });
-    await queryClient.invalidateQueries({ queryKey: ["partidas-da-rodada", rodadaId] });
+    setConfirmando(false);
 
     if (voltarParaPontuar) {
       navigate(destinoPontuar);
@@ -354,7 +386,6 @@ export function LancamentoFormPage() {
     setPartidaId("");
     setValores({});
     setTotalPreview(null);
-    setLancamento(null);
   }
 
   if (
@@ -560,12 +591,28 @@ export function LancamentoFormPage() {
             </button>
           )}
 
-          {lancamentoAtivo && (
+          {lancamentoAtivo && lancamentoAtivo.estadoSincronizacao === "conflito" && (
+            <div className="rounded border border-red-300 bg-red-50 p-4">
+              <p className="text-sm font-semibold text-red-800">
+                Conflito ao sincronizar este lançamento
+              </p>
+              <p className="mt-1 text-sm text-red-700">{lancamentoAtivo.conflito?.mensagem}</p>
+              <p className="mt-2 text-sm text-red-700">
+                O lançamento não foi sobrescrito. Fale com a secretaria ou a coordenação antes de
+                tentar novamente.
+              </p>
+            </div>
+          )}
+
+          {lancamentoAtivo && lancamentoAtivo.estadoSincronizacao !== "conflito" && (
             <div
               className={`rounded border p-4 ${
                 lancamentoAtivo.status === "CONFIRMADO"
                   ? "border-emerald-200 bg-emerald-50"
-                  : "border-slate-200 bg-white"
+                  : lancamentoAtivo.estadoSincronizacao === "pendente" ||
+                      lancamentoAtivo.estadoSincronizacao === "enviando"
+                    ? "border-amber-200 bg-amber-50"
+                    : "border-slate-200 bg-white"
               }`}
             >
               <p className="text-sm text-slate-500">
@@ -574,10 +621,7 @@ export function LancamentoFormPage() {
                     ✓
                   </span>
                 )}
-                Total persistido —{" "}
-                {lancamentoAtivo.status === "CONFIRMADO"
-                  ? "pontuação enviada e confirmada"
-                  : "pontuação enviada, aguardando confirmação"}
+                Total persistido — {rotuloEstadoSincronizacao(lancamentoAtivo)}
               </p>
               <p className="text-3xl font-bold text-slate-900">{lancamentoAtivo.total}</p>
               <p className="mt-1 text-sm text-slate-600">Status: {lancamentoAtivo.status}</p>

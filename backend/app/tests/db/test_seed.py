@@ -6,6 +6,8 @@ from app.db.seed import (
     FICHA_VIAGEM_POR_NIVEL,
     FICHAS_TJR,
     MODALIDADES_TJR,
+    seed_agendamentos,
+    seed_arenas,
     seed_coordenador,
     seed_equipes,
     seed_equipes_credenciadas,
@@ -13,7 +15,10 @@ from app.db.seed import (
     seed_fichas,
     seed_inscricoes,
     seed_modalidades,
+    seed_rodadas,
 )
+from app.models.agendamento import Agendamento
+from app.models.arena import Arena
 from app.models.criterio import Criterio
 from app.models.equipe import Equipe
 from app.models.evento import Evento
@@ -21,6 +26,8 @@ from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
 from app.models.inscricao import Inscricao
 from app.models.modalidade import Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.partida import Partida
+from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
 
 
@@ -248,3 +255,133 @@ async def test_seed_inscricoes_e_idempotente(db_session):
 
     resultado = await db_session.execute(select(Inscricao))
     assert len(resultado.scalars().all()) == len(modalidades) * len(equipes)
+
+
+async def test_seed_modalidades_individual_tem_duracao_e_pausa_configuradas(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    individuais = [m for m in modalidades if m.tipo_disputa == TipoDisputa.INDIVIDUAL]
+    assert len(individuais) > 0
+    for modalidade in individuais:
+        assert modalidade.duracao_maxima_rodada_seg is not None
+        assert modalidade.duracao_maxima_rodada_seg > 0
+        assert modalidade.pausa_entre_rodadas_seg is not None
+
+
+async def test_seed_arenas_cria_arena_ativa_para_cada_modalidade_individual(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    coordenador = await seed_coordenador(db_session, email="arenas-1@tjr.app", senha="senha-123")
+
+    arenas = await seed_arenas(db_session, modalidades, usuario_id=coordenador.id)
+
+    individuais = [m for m in modalidades if m.tipo_disputa == TipoDisputa.INDIVIDUAL]
+    assert len(arenas) == len(individuais)
+    for arena in arenas:
+        assert arena.ativo is True
+
+
+async def test_seed_arenas_e_idempotente(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    coordenador = await seed_coordenador(db_session, email="arenas-2@tjr.app", senha="senha-123")
+
+    await seed_arenas(db_session, modalidades, usuario_id=coordenador.id)
+    await db_session.flush()
+    await seed_arenas(db_session, modalidades, usuario_id=coordenador.id)
+    await db_session.flush()
+
+    individuais = [m for m in modalidades if m.tipo_disputa == TipoDisputa.INDIVIDUAL]
+    resultado = await db_session.execute(select(Arena))
+    assert len(resultado.scalars().all()) == len(individuais)
+
+
+async def test_seed_rodadas_cria_qtd_rodadas_para_cada_modalidade(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+    await seed_inscricoes(db_session, modalidades, equipes)
+    coordenador = await seed_coordenador(db_session, email="rodadas-1@tjr.app", senha="senha-123")
+
+    rodadas = await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+
+    assert len(rodadas) == sum(m.qtd_rodadas for m in modalidades)
+
+
+async def test_seed_rodadas_confronto_ja_vem_com_partidas(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+    await seed_inscricoes(db_session, modalidades, equipes)
+    coordenador = await seed_coordenador(db_session, email="rodadas-2@tjr.app", senha="senha-123")
+
+    await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+
+    sumo = next(m for m in modalidades if m.nome == "Sumô")
+    resultado = await db_session.execute(select(Rodada).where(Rodada.modalidade_id == sumo.id))
+    primeira_rodada = next(r for r in resultado.scalars().all() if r.numero == 1)
+    resultado_partidas = await db_session.execute(
+        select(Partida).where(Partida.rodada_id == primeira_rodada.id)
+    )
+    assert len(resultado_partidas.scalars().all()) > 0
+
+
+async def test_seed_rodadas_e_idempotente(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+    await seed_inscricoes(db_session, modalidades, equipes)
+    coordenador = await seed_coordenador(db_session, email="rodadas-3@tjr.app", senha="senha-123")
+
+    await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+    await db_session.flush()
+    await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+    await db_session.flush()
+
+    resultado = await db_session.execute(select(Rodada))
+    assert len(resultado.scalars().all()) == sum(m.qtd_rodadas for m in modalidades)
+
+
+async def test_seed_agendamentos_cobre_toda_equipe_inscrita_em_modalidade_individual(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+    await seed_inscricoes(db_session, modalidades, equipes)
+    coordenador = await seed_coordenador(db_session, email="agend-1@tjr.app", senha="senha-123")
+    await seed_arenas(db_session, modalidades, usuario_id=coordenador.id)
+    await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+
+    agendamentos = await seed_agendamentos(
+        db_session, evento, modalidades, usuario_id=coordenador.id
+    )
+
+    danca = next(m for m in modalidades if m.nome == "Dança")
+    resultado_rodadas = await db_session.execute(
+        select(Rodada).where(Rodada.modalidade_id == danca.id)
+    )
+    rodada_ids = {r.id for r in resultado_rodadas.scalars().all()}
+    da_danca = [a for a in agendamentos if a.rodada_id in rodada_ids]
+
+    equipes_do_nivel = [e for e in equipes if e.nivel in danca.niveis_aplicaveis]
+    assert len(da_danca) == len(equipes_do_nivel) * danca.qtd_rodadas
+
+
+async def test_seed_agendamentos_e_idempotente(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+    await seed_inscricoes(db_session, modalidades, equipes)
+    coordenador = await seed_coordenador(db_session, email="agend-2@tjr.app", senha="senha-123")
+    await seed_arenas(db_session, modalidades, usuario_id=coordenador.id)
+    await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+
+    await seed_agendamentos(db_session, evento, modalidades, usuario_id=coordenador.id)
+    await db_session.flush()
+    total_antes = (await db_session.execute(select(Agendamento))).scalars().all()
+
+    await seed_agendamentos(db_session, evento, modalidades, usuario_id=coordenador.id)
+    await db_session.flush()
+    total_depois = (await db_session.execute(select(Agendamento))).scalars().all()
+
+    assert len(total_antes) == len(total_depois)

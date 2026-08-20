@@ -104,6 +104,48 @@ describe("EquipeListPage", () => {
     );
   });
 
+  it("BUG-07: nao envia o formulario quando o nome tem so espacos", async () => {
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /criar equipe/i });
+    await userEvent.type(screen.getByLabelText(/nome da equipe/i), "   ");
+    await userEvent.selectOptions(screen.getByLabelText(/nivel da equipe/i), "1");
+    await userEvent.click(screen.getByRole("button", { name: /criar equipe/i }));
+
+    expect(await screen.findByText(/informe o nome da equipe/i)).toBeInTheDocument();
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it("BUG-07: tira espaco das pontas do nome antes de enviar", async () => {
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+    vi.mocked(api.POST).mockResolvedValue({
+      data: { id: "nova-equipe", nome: "Equipe Nova", nivel: 1, ativo: true },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /criar equipe/i });
+    await userEvent.type(screen.getByLabelText(/nome da equipe/i), "  Equipe Nova  ");
+    await userEvent.selectOptions(screen.getByLabelText(/nivel da equipe/i), "1");
+    await userEvent.click(screen.getByRole("button", { name: /criar equipe/i }));
+
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith(
+        "/api/v1/equipes",
+        expect.objectContaining({ body: { nome: "Equipe Nova", nivel: 1, ativo: true } }),
+      ),
+    );
+  });
+
   it("desativa uma equipe ativa", async () => {
     vi.mocked(api.GET).mockResolvedValue({
       data: {

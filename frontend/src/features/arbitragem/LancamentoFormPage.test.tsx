@@ -1,10 +1,13 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { db } from "../../lib/db";
+import { queryClient } from "../../lib/query-client";
+import { _resetarSincronizacaoParaTeste } from "../../lib/sync";
 import { LancamentoFormPage } from "./LancamentoFormPage";
 
 vi.mock("../../api/client", () => ({
@@ -17,8 +20,11 @@ function TelaDePontuar() {
   return <div>TELA DE PONTUAR{location.search}</div>;
 }
 
+// sync.ts invalida queries no queryClient global (o mesmo usado em produção
+// via main.tsx) - os testes usam essa mesma instancia em vez de criar uma
+// local, senao a invalidacao do sync nunca alcancaria o cache que a tela
+// esta observando.
 function renderPage(caminho = "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo") {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[caminho]}>
@@ -130,8 +136,11 @@ function mockGet() {
   });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+  await db.lancamentoOutbox.clear();
+  queryClient.clear();
+  _resetarSincronizacaoParaTeste();
 });
 
 describe("LancamentoFormPage", () => {
@@ -1321,8 +1330,105 @@ describe("LancamentoFormPage", () => {
     });
   });
 
-  describe("feedback visual de envio e erro", () => {
-    it("mostra mensagem de erro quando a confirmacao falha", async () => {
+  describe("feedback visual de fila offline (BUG-01 do relatorio de testes)", () => {
+    it("registrar nao trava esperando a rede: mostra o lancamento na fila mesmo que o POST nunca responda", async () => {
+      // Reproduz o BUG-01: antes, um POST que nunca resolve deixava o botao
+      // preso em "Enviando..." pra sempre e nada era salvo. Agora o clique
+      // so grava na fila local (Dexie) e nao espera rede nenhuma - por isso
+      // nem precisa resolver o mock pra este teste passar.
+      mockGet();
+      vi.mocked(api.POST).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/fichas/{ficha_id}/simular") {
+          return { data: { total: 10 }, error: undefined } as never;
+        }
+        if (path === "/api/v1/lancamentos") {
+          return new Promise(() => {}) as never; // nunca resolve: simula rede/API fora do ar
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+
+      renderPage();
+
+      await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
+      await screen.findByText("Lombada");
+      await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+
+      const blocoTotal = (await screen.findByText(/total persistido/i)).closest("div")!;
+      expect(within(blocoTotal).getByText("10")).toBeInTheDocument();
+      expect(within(blocoTotal).getByText(/na fila/i)).toBeInTheDocument();
+      // O botao "Registrar lancamento" nao pode ficar preso desabilitado -
+      // ele simplesmente some, porque ja existe um lancamento ativo (na
+      // fila) pra essa equipe/tentativa.
+      expect(
+        screen.queryByRole("button", { name: /registrar lancamento/i }),
+      ).not.toBeInTheDocument();
+
+      // Espera a chamada de fato acontecer (mesmo sem resolver) antes do
+      // teste terminar, pra ela nao ficar "pendurada" e vazar sua contagem
+      // de chamada pro proximo teste (timing real entre testes).
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith(
+          "/api/v1/lancamentos",
+          expect.objectContaining({ body: expect.objectContaining({ equipe_id: "eq-1" }) }),
+        ),
+      );
+    });
+
+    it("confirmar tambem nao espera a rede: reseta o formulario mesmo que o POST de confirmar nunca responda", async () => {
+      mockGet();
+      vi.mocked(api.POST).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/fichas/{ficha_id}/simular") {
+          return { data: { total: 10 }, error: undefined } as never;
+        }
+        if (path === "/api/v1/lancamentos") {
+          return {
+            data: {
+              id: "lanc-1",
+              ficha_id: "ficha-1",
+              rodada_id: "rod-1",
+              equipe_id: "eq-1",
+              tentativa: 1,
+              revision: 1,
+              status: "PENDENTE",
+              total: 10,
+              itens: [],
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/lancamentos/{lancamento_id}/confirmar") {
+          return new Promise(() => {}) as never; // nunca resolve
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+
+      renderPage();
+
+      await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
+      await screen.findByText("Lombada");
+      await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+      await screen.findByText(/total persistido/i);
+      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+
+      await waitFor(() => {
+        const select = screen.getByLabelText(/^equipe$/i) as HTMLSelectElement;
+        expect(select.value).toBe("");
+      });
+
+      // Espera a chamada de confirmar de fato acontecer (mesmo sem resolver)
+      // antes do teste terminar, pra ela nao ficar "pendurada" e vazar sua
+      // contagem de chamada pro proximo teste (timing real entre testes).
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith(
+          "/api/v1/lancamentos/{lancamento_id}/confirmar",
+          expect.anything(),
+        ),
+      );
+    });
+
+    it("guarda o erro na fila local (sem repetir sozinho) quando o servidor recusa a confirmacao, mesmo com a tela ja tendo seguido em frente", async () => {
       mockGet();
       vi.mocked(api.POST).mockImplementation(async (path: string) => {
         if (path === "/api/v1/fichas/{ficha_id}/simular") {
@@ -1348,6 +1454,7 @@ describe("LancamentoFormPage", () => {
           return {
             data: undefined,
             error: { erro: { codigo: "LANCAMENTO_NAO_PENDENTE", mensagem: "Nao esta pendente." } },
+            response: { status: 422 },
           } as never;
         }
         return { data: undefined, error: undefined } as never;
@@ -1362,114 +1469,28 @@ describe("LancamentoFormPage", () => {
       await screen.findByText(/total persistido/i);
       await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
 
-      expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
-    });
-
-    it("desabilita e avisa 'Enviando...' no botao registrar enquanto a requisicao esta em andamento", async () => {
-      mockGet();
-      let resolverPost!: (value: unknown) => void;
-      vi.mocked(api.POST).mockImplementation(async (path: string) => {
-        if (path === "/api/v1/fichas/{ficha_id}/simular") {
-          return { data: { total: 10 }, error: undefined } as never;
-        }
-        if (path === "/api/v1/lancamentos") {
-          return new Promise((resolve) => {
-            resolverPost = resolve;
-          }) as never;
-        }
-        return { data: undefined, error: undefined } as never;
-      });
-
-      renderPage();
-
-      await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
-      await screen.findByText("Lombada");
-      await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-
-      const botao = await screen.findByRole("button", { name: /enviando/i });
-      expect(botao).toBeDisabled();
-
-      resolverPost({
-        data: {
-          id: "lanc-1",
-          ficha_id: "ficha-1",
-          rodada_id: "rod-1",
-          equipe_id: "eq-1",
-          tentativa: 1,
-          revision: 1,
-          status: "PENDENTE",
-          total: 10,
-          itens: [],
-        },
-        error: undefined,
-      });
-
-      await screen.findByText(/total persistido/i);
-    });
-
-    it("desabilita e avisa 'Confirmando...' no botao confirmar enquanto a requisicao esta em andamento", async () => {
-      mockGet();
-      let resolverConfirmar!: (value: unknown) => void;
-      vi.mocked(api.POST).mockImplementation(async (path: string) => {
-        if (path === "/api/v1/fichas/{ficha_id}/simular") {
-          return { data: { total: 10 }, error: undefined } as never;
-        }
-        if (path === "/api/v1/lancamentos") {
-          return {
-            data: {
-              id: "lanc-1",
-              ficha_id: "ficha-1",
-              rodada_id: "rod-1",
-              equipe_id: "eq-1",
-              tentativa: 1,
-              revision: 1,
-              status: "PENDENTE",
-              total: 10,
-              itens: [],
-            },
-            error: undefined,
-          } as never;
-        }
-        if (path === "/api/v1/lancamentos/{lancamento_id}/confirmar") {
-          return new Promise((resolve) => {
-            resolverConfirmar = resolve;
-          }) as never;
-        }
-        return { data: undefined, error: undefined } as never;
-      });
-
-      renderPage();
-
-      await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
-      await screen.findByText("Lombada");
-      await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-      await screen.findByText(/total persistido/i);
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
-
-      const botao = await screen.findByRole("button", { name: /confirmando/i });
-      expect(botao).toBeDisabled();
-
-      resolverConfirmar({
-        data: {
-          id: "lanc-1",
-          ficha_id: "ficha-1",
-          rodada_id: "rod-1",
-          equipe_id: "eq-1",
-          tentativa: 1,
-          revision: 1,
-          status: "CONFIRMADO",
-          total: 10,
-          itens: [],
-        },
-        error: undefined,
-      });
-
+      // A tela ja segue otimista pro proximo lancamento (contrato "a UI
+      // confirma na hora" - secao 8 do CLAUDE.md), mas o erro nao pode ser
+      // perdido: fica guardado na fila local, visivel de novo se o arbitro
+      // reabrir esse mesmo lancamento (equipe+rodada+tentativa) depois.
       await waitFor(() => {
         const select = screen.getByLabelText(/^equipe$/i) as HTMLSelectElement;
         expect(select.value).toBe("");
       });
+
+      await waitFor(async () => {
+        const todos = await db.lancamentoOutbox.toArray();
+        const itensConfirmar = todos.filter((item) => item.tipo === "CONFIRMAR");
+        expect(itensConfirmar).toHaveLength(1);
+        expect(itensConfirmar[0].status).toBe("ERRO");
+      });
+
+      const chamadasDeConfirmar = vi
+        .mocked(api.POST)
+        .mock.calls.filter(
+          (chamada) => chamada[0] === "/api/v1/lancamentos/{lancamento_id}/confirmar",
+        );
+      expect(chamadasDeConfirmar).toHaveLength(1);
     });
   });
 });

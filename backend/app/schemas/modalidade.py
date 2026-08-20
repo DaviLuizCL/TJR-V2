@@ -4,11 +4,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.modalidade import Consolidacao, FormatoChaveamento, ModalidadeStatus, TipoDisputa
+from app.schemas.common import NomeObrigatorio
 
 
 class ModalidadeCreate(BaseModel):
     evento_id: UUID
-    nome: str
+    nome: NomeObrigatorio
     descricao: str | None = None
     tipo_disputa: TipoDisputa
     formato_chaveamento: FormatoChaveamento | None = None
@@ -27,7 +28,7 @@ class ModalidadeCreate(BaseModel):
 
 
 class ModalidadeUpdate(BaseModel):
-    nome: str | None = None
+    nome: NomeObrigatorio | None = None
     descricao: str | None = None
     tipo_disputa: TipoDisputa | None = None
     formato_chaveamento: FormatoChaveamento | None = None

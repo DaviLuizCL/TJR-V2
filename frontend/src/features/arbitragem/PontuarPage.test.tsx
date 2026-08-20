@@ -35,6 +35,7 @@ interface MockConfig {
   agendamentos?: unknown[];
   equipes?: unknown[];
   inscricoes?: unknown[];
+  rodadas?: unknown[];
 }
 
 function mockGet(cfg: MockConfig = {}) {
@@ -60,16 +61,12 @@ function mockGet(cfg: MockConfig = {}) {
       } as never;
     }
     if (path === "/api/v1/rodadas") {
+      const rodadas = cfg.rodadas ?? [
+        { id: "rod-1", modalidade_id: "mod-1", numero: 1 },
+        { id: "rod-2", modalidade_id: "mod-1", numero: 2 },
+      ];
       return {
-        data: {
-          itens: [
-            { id: "rod-1", modalidade_id: "mod-1", numero: 1 },
-            { id: "rod-2", modalidade_id: "mod-1", numero: 2 },
-          ],
-          total: 2,
-          page: 1,
-          size: 200,
-        },
+        data: { itens: rodadas, total: rodadas.length, page: 1, size: 200 },
         error: undefined,
       } as never;
     }
@@ -354,6 +351,30 @@ describe("PontuarPage", () => {
     renderPage();
 
     expect(await screen.findByText(/nenhuma equipe pendente/i)).toBeInTheDocument();
+  });
+
+  it("BUG-03: sem rodada nenhuma criada, mostra aviso especifico em vez de 'todas completaram'", async () => {
+    mockGet({ rodadas: [] });
+
+    renderPage();
+
+    expect(await screen.findByText(/nenhuma rodada foi criada/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/todas ja completaram todas as rodadas/i),
+    ).not.toBeInTheDocument();
+    // Nao pode aparecer nenhuma equipe pendente nem no rodape de completas -
+    // sem rodada, nao existe "completou" nem "pendente" possivel ainda.
+    expect(screen.queryByText(/equipe.*completa/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
+  });
+
+  it("BUG-03: sem rodada nenhuma criada mas tambem sem equipe inscrita, mantem a mensagem de sem equipe (nao a de sem rodada)", async () => {
+    mockGet({ rodadas: [], equipes: [], inscricoes: [] });
+
+    renderPage();
+
+    expect(await screen.findByText(/nenhuma equipe pendente/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nenhuma rodada foi criada/i)).not.toBeInTheDocument();
   });
 
   it("abrir a pagina com ?nivel= na url ja vem com esse nivel selecionado no filtro", async () => {

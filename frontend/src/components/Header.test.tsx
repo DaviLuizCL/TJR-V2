@@ -129,6 +129,17 @@ describe("Header", () => {
     expect(screen.getByRole("button", { name: /sair/i })).toBeInTheDocument();
   });
 
+  it("BUG-06: a navegacao quebra linha em vez de forcar rolagem horizontal em telas estreitas", () => {
+    // jsdom nao calcula layout real (nao ha como medir overflow de verdade
+    // aqui - ver verificacao manual descrita no plano), entao o teste
+    // possivel e estrutural: garante que a classe que permite quebra de
+    // linha esta presente e nao foi removida por engano numa mudanca futura.
+    renderHeader();
+
+    const nav = screen.getByRole("link", { name: /eventos/i }).closest("nav")!;
+    expect(nav.className).toMatch(/flex-wrap/);
+  });
+
   it("clicar em Sair limpa a sessao e manda pro login", async () => {
     logarComo("COORDENADOR");
 

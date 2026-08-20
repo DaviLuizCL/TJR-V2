@@ -40,3 +40,14 @@ def test_modalidade_create_rejeita_tipo_disputa_fora_do_enum():
 def test_modalidade_create_rejeita_tentativas_por_rodada_zero():
     with pytest.raises(ValidationError):
         ModalidadeCreate(**_payload(tentativas_por_rodada=0))
+
+
+def test_modalidade_create_rejeita_nome_so_com_espacos():
+    with pytest.raises(ValidationError):
+        ModalidadeCreate(**_payload(nome="   "))
+
+
+def test_modalidade_create_tira_espaco_das_pontas_do_nome():
+    dto = ModalidadeCreate(**_payload(nome="  Sumo de Robos  "))
+
+    assert dto.nome == "Sumo de Robos"

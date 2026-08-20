@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api } from "../../api/client";
+import { api, extrairErro } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
 import { useEventoStore } from "../../lib/evento-store";
 import { AbrirEventoModal } from "./AbrirEventoModal";
@@ -36,11 +36,14 @@ function classesStatusFicha(texto: string): string {
 function ModalidadeItem({
   modalidade,
   eventoId,
+  ehCoordenador,
 }: {
   modalidade: ModalidadeResumo;
   eventoId: string;
+  ehCoordenador: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [erro, setErro] = useState<string | null>(null);
   const { data: fichas } = useQuery({
     queryKey: ["fichas", modalidade.id],
     queryFn: async () => {
@@ -54,54 +57,66 @@ function ModalidadeItem({
   const texto = statusFicha(fichas);
 
   async function alternarRanking() {
-    await api.PATCH("/api/v1/modalidades/{modalidade_id}", {
+    setErro(null);
+    const { error } = await api.PATCH("/api/v1/modalidades/{modalidade_id}", {
       params: { path: { modalidade_id: modalidade.id } },
       body: { ranking_liberado: !modalidade.ranking_liberado },
     });
+
+    if (error) {
+      setErro(extrairErro(error).mensagem);
+      return;
+    }
+
     await queryClient.invalidateQueries({ queryKey: ["modalidades", eventoId] });
   }
 
   return (
-    <li className="flex items-center justify-between rounded border border-slate-200 bg-white px-4 py-3 hover:border-slate-400">
-      <Link to={`/eventos/${eventoId}/modalidades/${modalidade.id}/editar`} className="flex-1">
-        <p className="font-medium text-slate-800">{modalidade.nome}</p>
-        <p className="text-sm text-slate-500">{modalidade.tipo_disputa}</p>
-      </Link>
-      <div className="flex items-center gap-2">
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-          {modalidade.status}
-        </span>
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-medium ${classesStatusFicha(texto)}`}
-        >
-          {texto}
-        </span>
-        <Link
-          to={`/eventos/${eventoId}/modalidades/${modalidade.id}/fichas`}
-          className="text-sm font-medium text-slate-700 underline"
-        >
-          Fichas
+    <li className="rounded border border-slate-200 bg-white px-4 py-3 hover:border-slate-400">
+      <div className="flex items-center justify-between">
+        <Link to={`/eventos/${eventoId}/modalidades/${modalidade.id}/editar`} className="flex-1">
+          <p className="font-medium text-slate-800">{modalidade.nome}</p>
+          <p className="text-sm text-slate-500">{modalidade.tipo_disputa}</p>
         </Link>
-        <Link
-          to={`/eventos/${eventoId}/modalidades/${modalidade.id}/inscricoes`}
-          className="text-sm font-medium text-slate-700 underline"
-        >
-          Inscricoes
-        </Link>
-        <Link
-          to={`/eventos/${eventoId}/modalidades/${modalidade.id}/rodadas`}
-          className="text-sm font-medium text-slate-700 underline"
-        >
-          Rodadas
-        </Link>
-        <button
-          type="button"
-          onClick={alternarRanking}
-          className="text-sm font-medium text-slate-700 underline"
-        >
-          {modalidade.ranking_liberado ? "Ocultar ranking" : "Liberar ranking"}
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+            {modalidade.status}
+          </span>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-medium ${classesStatusFicha(texto)}`}
+          >
+            {texto}
+          </span>
+          <Link
+            to={`/eventos/${eventoId}/modalidades/${modalidade.id}/fichas`}
+            className="text-sm font-medium text-slate-700 underline"
+          >
+            Fichas
+          </Link>
+          <Link
+            to={`/eventos/${eventoId}/modalidades/${modalidade.id}/inscricoes`}
+            className="text-sm font-medium text-slate-700 underline"
+          >
+            Inscricoes
+          </Link>
+          <Link
+            to={`/eventos/${eventoId}/modalidades/${modalidade.id}/rodadas`}
+            className="text-sm font-medium text-slate-700 underline"
+          >
+            Rodadas
+          </Link>
+          {ehCoordenador && (
+            <button
+              type="button"
+              onClick={alternarRanking}
+              className="text-sm font-medium text-slate-700 underline"
+            >
+              {modalidade.ranking_liberado ? "Ocultar ranking" : "Liberar ranking"}
+            </button>
+          )}
+        </div>
       </div>
+      {erro && <p className="mt-2 text-sm text-red-600">{erro}</p>}
     </li>
   );
 }
@@ -168,7 +183,12 @@ export function ModalidadeListPage() {
 
       <ul className="space-y-2">
         {modalidades?.map((modalidade) => (
-          <ModalidadeItem key={modalidade.id} modalidade={modalidade} eventoId={eventoId!} />
+          <ModalidadeItem
+            key={modalidade.id}
+            modalidade={modalidade}
+            eventoId={eventoId!}
+            ehCoordenador={ehCoordenador}
+          />
         ))}
       </ul>
 

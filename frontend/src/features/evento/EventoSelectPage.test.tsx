@@ -90,6 +90,26 @@ describe("EventoSelectPage", () => {
     );
   });
 
+  it("BUG-07: nao envia o formulario quando o nome do evento tem so espacos", async () => {
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /criar evento/i });
+
+    await userEvent.type(screen.getByLabelText(/nome do evento/i), "   ");
+    await userEvent.type(screen.getByLabelText(/^ano/i), "2027");
+    await userEvent.type(screen.getByLabelText(/data de inicio/i), "2027-03-10");
+    await userEvent.type(screen.getByLabelText(/data de fim/i), "2027-03-12");
+    await userEvent.click(screen.getByRole("button", { name: /criar evento/i }));
+
+    expect(await screen.findByText(/informe o nome do evento/i)).toBeInTheDocument();
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
   it("arbitro nao ve o formulario de criar evento, so a lista", async () => {
     logarComo("ARBITRO");
     vi.mocked(api.GET).mockResolvedValue({
@@ -120,6 +140,42 @@ describe("EventoSelectPage", () => {
 
     await screen.findByText(/nenhum evento cadastrado/i);
     expect(screen.queryByRole("button", { name: /criar evento/i })).not.toBeInTheDocument();
+  });
+
+  it("BUG-04: arbitro clicando num evento vai direto pra Individual, nao pra area administrativa de Modalidades", async () => {
+    logarComo("ARBITRO");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: {
+        itens: [{ id: "e1", nome: "TJR 2026", ano: 2026, status: "RASCUNHO" }],
+        total: 1,
+        page: 1,
+        size: 50,
+      },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /tjr 2026/i });
+    expect(link).toHaveAttribute("href", "/eventos/e1/individual");
+  });
+
+  it("coordenador clicando num evento vai pra Modalidades (fluxo administrativo)", async () => {
+    logarComo("COORDENADOR");
+    vi.mocked(api.GET).mockResolvedValue({
+      data: {
+        itens: [{ id: "e1", nome: "TJR 2026", ano: 2026, status: "RASCUNHO" }],
+        total: 1,
+        page: 1,
+        size: 50,
+      },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /tjr 2026/i });
+    expect(link).toHaveAttribute("href", "/eventos/e1/modalidades");
   });
 
   it("coordenador continua vendo o formulario de criar evento", async () => {

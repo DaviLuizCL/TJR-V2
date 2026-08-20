@@ -3,15 +3,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.common import NomeObrigatorio
+
 
 class EquipeCreate(BaseModel):
-    nome: str
+    nome: NomeObrigatorio
     nivel: int = Field(ge=1, le=4)
     ativo: bool = True
 
 
 class EquipeUpdate(BaseModel):
-    nome: str | None = None
+    nome: NomeObrigatorio | None = None
     nivel: int | None = Field(default=None, ge=1, le=4)
     ativo: bool | None = None
 

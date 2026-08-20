@@ -2,6 +2,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { Header } from "./components/Header";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { useSincronizarOutbox } from "./lib/use-sincronizar-outbox";
 import { LancamentoFormPage } from "./features/arbitragem/LancamentoFormPage";
 import { PartidaScorerPage } from "./features/arbitragem/PartidaScorerPage";
 import { LoginPage } from "./features/auth/LoginPage";
@@ -35,6 +36,8 @@ function AppLayout() {
 }
 
 export default function App() {
+  useSincronizarOutbox();
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

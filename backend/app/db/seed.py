@@ -1,5 +1,7 @@
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
+from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import hash_senha
 from app.db.session import AsyncSessionLocal
+from app.models.agendamento import Agendamento
+from app.models.arena import Arena
 from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo, ModificadorTipo
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
@@ -20,7 +24,14 @@ from app.models.modalidade import (
     ModalidadeStatus,
     TipoDisputa,
 )
+from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
+from app.schemas.arena import ArenaCreate
+from app.services import agendamento as agendamento_service
+from app.services import arena as arena_service
+from app.services import rodada as rodada_service
+
+FUSO_FORTALEZA = ZoneInfo("America/Fortaleza")
 
 MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
@@ -53,6 +64,8 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         qtd_rodadas=3,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
+        duracao_maxima_rodada_seg=300,
+        pausa_entre_rodadas_seg=60,
     ),
     dict(
         nome="Resgate no Plano",
@@ -60,6 +73,8 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         qtd_rodadas=3,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
+        duracao_maxima_rodada_seg=180,
+        pausa_entre_rodadas_seg=30,
     ),
     dict(
         nome="Resgate de Alto Risco",
@@ -67,6 +82,8 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         qtd_rodadas=3,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
+        duracao_maxima_rodada_seg=180,
+        pausa_entre_rodadas_seg=30,
     ),
     dict(
         nome="Viagem ao Centro da Terra",
@@ -75,6 +92,8 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
         ficha_unica_entre_niveis=False,
+        duracao_maxima_rodada_seg=240,
+        pausa_entre_rodadas_seg=30,
     ),
 )
 
@@ -433,6 +452,8 @@ async def seed_modalidades(db: AsyncSession, evento: Evento) -> list[Modalidade]
                 ficha_unica_entre_niveis=spec.get("ficha_unica_entre_niveis", True),
                 qtd_rodadas=spec["qtd_rodadas"],
                 tentativas_por_rodada=spec["tentativas_por_rodada"],
+                duracao_maxima_rodada_seg=spec.get("duracao_maxima_rodada_seg"),
+                pausa_entre_rodadas_seg=spec.get("pausa_entre_rodadas_seg"),
                 consolidacao=spec["consolidacao"],
                 status=ModalidadeStatus.PUBLICADA,
             )
@@ -564,9 +585,94 @@ async def seed_inscricoes(
     return inscricoes
 
 
+async def seed_arenas(
+    db: AsyncSession, modalidades: list[Modalidade], *, usuario_id: UUID
+) -> list[Arena]:
+    arenas: list[Arena] = []
+    for modalidade in modalidades:
+        if modalidade.tipo_disputa != TipoDisputa.INDIVIDUAL:
+            continue
+
+        resultado = await db.execute(select(Arena).where(Arena.modalidade_id == modalidade.id))
+        existentes = list(resultado.scalars().all())
+        if existentes:
+            arenas.extend(existentes)
+            continue
+
+        arena = await arena_service.criar_arena(
+            db,
+            ArenaCreate(
+                modalidade_id=modalidade.id,
+                nome=f"Arena {modalidade.nome}",
+                niveis_aplicaveis=None,
+                ativo=True,
+            ),
+            usuario_id=usuario_id,
+        )
+        arenas.append(arena)
+    return arenas
+
+
+async def seed_rodadas(
+    db: AsyncSession, modalidades: list[Modalidade], *, usuario_id: UUID
+) -> list[Rodada]:
+    rodadas: list[Rodada] = []
+    for modalidade in modalidades:
+        rodadas.extend(
+            await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id)
+        )
+    return rodadas
+
+
+def _horario_inicio_padrao(evento: Evento) -> datetime:
+    inicio_local = datetime.combine(evento.data_inicio, time(8, 0), tzinfo=FUSO_FORTALEZA)
+    return inicio_local.astimezone(UTC)
+
+
+async def seed_agendamentos(
+    db: AsyncSession, evento: Evento, modalidades: list[Modalidade], *, usuario_id: UUID
+) -> list[Agendamento]:
+    agendamentos: list[Agendamento] = []
+    horario_inicio = _horario_inicio_padrao(evento)
+
+    for modalidade in modalidades:
+        if modalidade.tipo_disputa != TipoDisputa.INDIVIDUAL:
+            continue
+
+        resultado_existentes = await db.execute(
+            select(Agendamento)
+            .join(Rodada, Agendamento.rodada_id == Rodada.id)
+            .where(Rodada.modalidade_id == modalidade.id)
+        )
+        existentes = list(resultado_existentes.scalars().all())
+        if existentes:
+            agendamentos.extend(existentes)
+            continue
+
+        resultado_rodadas = await db.execute(
+            select(Rodada.id)
+            .where(Rodada.modalidade_id == modalidade.id)
+            .order_by(Rodada.numero)
+        )
+        rodada_ids = [row[0] for row in resultado_rodadas.all()]
+        if not rodada_ids:
+            continue
+
+        novos = await agendamento_service.gerar_agendamentos(
+            db,
+            modalidade.id,
+            rodada_ids,
+            horario_inicio,
+            usuario_id=usuario_id,
+        )
+        agendamentos.extend(novos)
+
+    return agendamentos
+
+
 async def _main() -> None:
     async with AsyncSessionLocal() as db:
-        await seed_coordenador(
+        coordenador = await seed_coordenador(
             db, email=settings.seed_coordenador_email, senha=settings.seed_coordenador_senha
         )
         evento = await seed_evento(db)
@@ -574,6 +680,9 @@ async def _main() -> None:
         await seed_fichas(db, modalidades)
         equipes = await seed_equipes_credenciadas(db)
         await seed_inscricoes(db, modalidades, equipes)
+        await seed_arenas(db, modalidades, usuario_id=coordenador.id)
+        await seed_rodadas(db, modalidades, usuario_id=coordenador.id)
+        await seed_agendamentos(db, evento, modalidades, usuario_id=coordenador.id)
         await db.commit()
 
 
