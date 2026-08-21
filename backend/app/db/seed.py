@@ -19,6 +19,7 @@ from app.models.grupo import Grupo
 from app.models.inscricao import Inscricao
 from app.models.modalidade import (
     Consolidacao,
+    DecisaoPartida,
     FormatoChaveamento,
     Modalidade,
     ModalidadeStatus,
@@ -41,6 +42,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         qtd_rodadas=5,
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.SOMA_RODADAS,
+        decisao_partida=DecisaoPartida.SOMA_PONTOS,
     ),
     dict(
         nome="Cabo de Guerra",
@@ -49,13 +51,14 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         qtd_rodadas=5,
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.SOMA_RODADAS,
+        decisao_partida=DecisaoPartida.SOMA_PONTOS,
     ),
     dict(
         nome="Corrida de Carros Autônomos",
         tipo_disputa=TipoDisputa.CONFRONTO,
         formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
         qtd_rodadas=5,
-        tentativas_por_rodada=2,
+        tentativas_por_rodada=3,
         consolidacao=Consolidacao.SOMA_RODADAS,
     ),
     dict(
@@ -125,10 +128,84 @@ def _c(
     )
 
 
-_FICHA_RESULTADO_COMBATE: tuple[tuple[str, tuple[dict, ...]], ...] = (
+# Cabo de Guerra e Sumô: 1 criterio ESCALA de "resultado do combate" pra caber
+# no fluxo rapido de 1 clique do PartidaScorerPage (ficha com >1 criterio cai
+# no formulario generico). 0 = empate/nulo (nao decide o combate - Empate e
+# Nulo da ficha oficial dao no mesmo pra quem vence, decisao consciente de
+# nao distinguir os dois valores no registro). Nomes dos criterios batem com
+# ROTULOS_ESCALA em PartidaScorerPage.tsx.
+_FICHA_CABO_DE_GUERRA: tuple[tuple[str, tuple[dict, ...]], ...] = (
     (
         "Resultado",
-        (_c("Venceu o combate", CategoriaCriterio.PONTUACAO, CriterioTipo.BOOLEANO, pontos=1),),
+        (
+            _c(
+                "Resultado do arrasto",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=[0, 1, 2],
+            ),
+        ),
+    ),
+)
+
+_FICHA_SUMO: tuple[tuple[str, tuple[dict, ...]], ...] = (
+    (
+        "Resultado",
+        (
+            _c(
+                "Resultado do combate",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.ESCALA,
+                valores_permitidos=[0, 1, 2],
+            ),
+        ),
+    ),
+)
+
+# Corrida de Carros Autônomos: ficha detalhada igual a oficial - 6 criterios,
+# por isso essa modalidade nao entra no fluxo rapido de 1 clique do
+# PartidaScorerPage (so ficha com exatamente 1 criterio entra), cai no
+# formulario generico de ficha. "Carro que ficou na frente" e o criterio que
+# decide o combate (o arbitro marca o vencedor de acordo com a jurisprudencia
+# da propria ficha oficial: se o outro carro violou uma regra, o vencedor e
+# quem nao violou) - pontos bem acima da soma de todas as penalidades e do
+# maximo razoavel de "Evitar a colisao", pra nunca ser superado por elas.
+_FICHA_CORRIDA_DE_CARROS: tuple[tuple[str, tuple[dict, ...]], ...] = (
+    (
+        "Eventos da corrida",
+        (
+            _c("Evitar a colisão", CategoriaCriterio.PONTUACAO, CriterioTipo.CONTADOR, pontos=1),
+            _c(
+                "Colisão com a parte traseira do outro",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.BOOLEANO,
+                pontos=1,
+            ),
+            _c(
+                "Evasão da pista",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.BOOLEANO,
+                pontos=1,
+            ),
+            _c(
+                "Posicionamento transversal",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.BOOLEANO,
+                pontos=1,
+            ),
+            _c(
+                "Percurso em sentido contrário",
+                CategoriaCriterio.PENALIDADE,
+                CriterioTipo.BOOLEANO,
+                pontos=1,
+            ),
+            _c(
+                "Carro que ficou na frente",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=10,
+            ),
+        ),
     ),
 )
 
@@ -374,9 +451,9 @@ def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]
 
 
 FICHAS_TJR: dict[str, tuple[tuple[str, tuple[dict, ...]], ...]] = {
-    "Sumô": _FICHA_RESULTADO_COMBATE,
-    "Cabo de Guerra": _FICHA_RESULTADO_COMBATE,
-    "Corrida de Carros Autônomos": _FICHA_RESULTADO_COMBATE,
+    "Sumô": _FICHA_SUMO,
+    "Cabo de Guerra": _FICHA_CABO_DE_GUERRA,
+    "Corrida de Carros Autônomos": _FICHA_CORRIDA_DE_CARROS,
     "Dança": _FICHA_DANCA,
     "Resgate de Alto Risco": _FICHA_RESGATE_DE_ALTO_RISCO,
     "Resgate no Plano": _FICHA_RESGATE_NO_PLANO,
@@ -455,6 +532,7 @@ async def seed_modalidades(db: AsyncSession, evento: Evento) -> list[Modalidade]
                 duracao_maxima_rodada_seg=spec.get("duracao_maxima_rodada_seg"),
                 pausa_entre_rodadas_seg=spec.get("pausa_entre_rodadas_seg"),
                 consolidacao=spec["consolidacao"],
+                decisao_partida=spec.get("decisao_partida", DecisaoPartida.COMBATES_VENCIDOS),
                 status=ModalidadeStatus.PUBLICADA,
             )
             db.add(modalidade)
@@ -618,9 +696,7 @@ async def seed_rodadas(
 ) -> list[Rodada]:
     rodadas: list[Rodada] = []
     for modalidade in modalidades:
-        rodadas.extend(
-            await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id)
-        )
+        rodadas.extend(await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id))
     return rodadas
 
 
@@ -650,9 +726,7 @@ async def seed_agendamentos(
             continue
 
         resultado_rodadas = await db.execute(
-            select(Rodada.id)
-            .where(Rodada.modalidade_id == modalidade.id)
-            .order_by(Rodada.numero)
+            select(Rodada.id).where(Rodada.modalidade_id == modalidade.id).order_by(Rodada.numero)
         )
         rodada_ids = [row[0] for row in resultado_rodadas.all()]
         if not rodada_ids:

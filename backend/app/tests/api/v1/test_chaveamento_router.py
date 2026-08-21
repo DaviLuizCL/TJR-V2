@@ -107,3 +107,73 @@ async def test_gerar_chaveamento_com_formato_todos_contra_todos_retorna_422(clie
 
     assert resposta.status_code == 422
     assert resposta.json()["erro"]["codigo"] == "FORMATO_CHAVEAMENTO_INVALIDO_PARA_GERAR"
+
+
+async def test_resetar_chaveamento_apaga_rodada_e_retorna_204(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-4@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
+    for i in range(4):
+        await _criar_equipe_inscrita(client, headers, modalidade_id, f"Equipe {i}")
+    await client.post(
+        "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers
+    )
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/reset",
+        json={"justificativa": "formato errado, recomecar do zero"},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 204
+
+    listagem = await client.get(
+        "/api/v1/rodadas", params={"modalidade_id": modalidade_id}, headers=headers
+    )
+    assert listagem.json()["itens"] == []
+
+
+async def test_resetar_chaveamento_com_papel_arbitro_retorna_403(client, db_session):
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-chav-5@tjr.app"
+    )
+    evento_id = await _criar_evento(client, coord_headers)
+    modalidade_id = await _criar_modalidade(client, coord_headers, evento_id, "MATA_MATA")
+    headers_arbitro = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-chav-2@tjr.app"
+    )
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/reset",
+        json={"justificativa": "engano"},
+        headers=headers_arbitro,
+    )
+
+    assert resposta.status_code == 403
+
+
+async def test_resetar_chaveamento_em_modalidade_individual_retorna_422(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-6@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    resposta_modalidade = await client.post(
+        "/api/v1/modalidades",
+        json={
+            "evento_id": evento_id,
+            "nome": "Resgate",
+            "tipo_disputa": "INDIVIDUAL",
+            "niveis_aplicaveis": [1],
+            "ficha_unica_entre_niveis": True,
+            "qtd_rodadas": 3,
+            "consolidacao": "SOMA_RODADAS",
+        },
+        headers=headers,
+    )
+    modalidade_id = resposta_modalidade.json()["id"]
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/reset",
+        json={"justificativa": "engano"},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 422

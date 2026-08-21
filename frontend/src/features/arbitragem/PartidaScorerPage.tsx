@@ -18,6 +18,7 @@ interface ModalidadeInfo {
   id: string;
   ficha_unica_entre_niveis: boolean;
   tentativas_por_rodada: number;
+  decisao_partida: string;
 }
 
 interface FichaResumo {
@@ -29,8 +30,10 @@ interface FichaResumo {
 interface CriterioItem {
   id: string;
   nome: string;
+  categoria: string;
   tipo: string;
   valores_permitidos: number[] | null;
+  max_ocorrencias: number | null;
 }
 
 interface FichaCompleta {
@@ -66,10 +69,195 @@ function corResultado(totalA: number, totalB: number, lado: "A" | "B"): string {
 
 const ROTULOS_ESCALA: Record<string, Record<number, string>> = {
   "Resultado do arrasto": { 1: "Arrasto parcial", 2: "Arrasto pro fosso" },
+  "Resultado do combate": { 1: "Waza-ari", 2: "Ippon" },
 };
 
 function rotuloEscala(nomeCriterio: string, valor: number): string {
   return ROTULOS_ESCALA[nomeCriterio]?.[valor] ?? String(valor);
+}
+
+function suportaScorerInline(criterios: CriterioItem[]): boolean {
+  return (
+    criterios.length > 1 &&
+    criterios.every((c) => c.tipo === "BOOLEANO" || c.tipo === "CONTADOR")
+  );
+}
+
+function corCriterio(categoria: string, pressed: boolean): string {
+  const ePenalidade = categoria === "PENALIDADE";
+  if (pressed) {
+    return ePenalidade
+      ? "border-red-500 bg-red-50 text-red-800"
+      : "border-emerald-500 bg-emerald-50 text-emerald-800";
+  }
+  return ePenalidade
+    ? "border-red-200 text-slate-800 hover:border-red-400 hover:bg-red-50"
+    : "border-emerald-200 text-slate-800 hover:border-emerald-400 hover:bg-emerald-50";
+}
+
+function ColunaEquipeMultiCriterio({
+  criterios,
+  nome,
+  estado,
+  desabilitado,
+  onAlterar,
+  onAlternar,
+}: {
+  criterios: CriterioItem[];
+  nome: string;
+  estado: Record<string, number>;
+  desabilitado: boolean;
+  onAlterar: (criterioId: string, delta: number, max: number | null) => void;
+  onAlternar: (criterioId: string) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-semibold text-slate-700">{nome}</p>
+      <div className="flex flex-col gap-2">
+        {criterios.map((criterio) =>
+          criterio.tipo === "BOOLEANO" ? (
+            <button
+              key={criterio.id}
+              type="button"
+              disabled={desabilitado}
+              aria-pressed={!!estado[criterio.id]}
+              onClick={() => onAlternar(criterio.id)}
+              className={`min-h-12 w-full rounded border px-3 py-2 text-left text-sm font-medium disabled:opacity-50 ${corCriterio(
+                criterio.categoria,
+                !!estado[criterio.id],
+              )}`}
+            >
+              {criterio.nome}
+            </button>
+          ) : (
+            <div
+              key={criterio.id}
+              className={`flex min-h-12 w-full items-center gap-2 rounded border px-2 py-1 ${corCriterio(
+                criterio.categoria,
+                false,
+              )}`}
+            >
+              <span className="flex-1 text-sm text-slate-800">{criterio.nome}</span>
+              <button
+                type="button"
+                disabled={desabilitado}
+                aria-label={`Diminuir ${criterio.nome} - ${nome}`}
+                onClick={() => onAlterar(criterio.id, -1, criterio.max_ocorrencias)}
+                className="flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-lg leading-none disabled:opacity-50"
+              >
+                −
+              </button>
+              <span className="w-4 text-center text-sm font-semibold">
+                {estado[criterio.id] ?? 0}
+              </span>
+              <button
+                type="button"
+                disabled={desabilitado}
+                aria-label={`Aumentar ${criterio.nome} - ${nome}`}
+                onClick={() => onAlterar(criterio.id, 1, criterio.max_ocorrencias)}
+                className="flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-lg leading-none disabled:opacity-50"
+              >
+                +
+              </button>
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MultiCriterioScorer({
+  criterios,
+  nomeA,
+  nomeB,
+  desabilitado,
+  onRegistrar,
+}: {
+  criterios: CriterioItem[];
+  nomeA: string;
+  nomeB: string | null;
+  desabilitado: boolean;
+  onRegistrar: (itensA: ItemEnvio[], itensB: ItemEnvio[]) => void;
+}) {
+  const [estadoA, setEstadoA] = useState<Record<string, number>>({});
+  const [estadoB, setEstadoB] = useState<Record<string, number>>({});
+
+  function alterar(
+    lado: "A" | "B",
+    criterioId: string,
+    delta: number,
+    max: number | null,
+  ) {
+    const setEstado = lado === "A" ? setEstadoA : setEstadoB;
+    setEstado((atual) => {
+      const valorAtual = atual[criterioId] ?? 0;
+      let proximo = valorAtual + delta;
+      if (proximo < 0) proximo = 0;
+      if (max !== null && proximo > max) proximo = max;
+      return { ...atual, [criterioId]: proximo };
+    });
+  }
+
+  function alternar(lado: "A" | "B", criterioId: string) {
+    const setEstado = lado === "A" ? setEstadoA : setEstadoB;
+    const setEstadoOposto = lado === "A" ? setEstadoB : setEstadoA;
+
+    setEstado((atual) => {
+      const ligando = !atual[criterioId];
+      // Um combate so tem um "vencedor"/"violador" por criterio: marcar pra
+      // um lado desmarca automaticamente do outro, ja que fisicamente nao da
+      // pra acontecer a mesma coisa (ex.: "Carro que ficou na frente") pras
+      // duas equipes ao mesmo tempo. So se aplica a criterio BOOLEANO (essa
+      // funcao nunca e chamada pra CONTADOR) - "Evitar a colisao" continua
+      // independente por equipe.
+      if (ligando) {
+        setEstadoOposto((atualOposto) =>
+          atualOposto[criterioId] ? { ...atualOposto, [criterioId]: 0 } : atualOposto,
+        );
+      }
+      return { ...atual, [criterioId]: ligando ? 1 : 0 };
+    });
+  }
+
+  function itensDe(estado: Record<string, number>): ItemEnvio[] {
+    return Object.entries(estado)
+      .filter(([, ocorrencias]) => ocorrencias > 0)
+      .map(([criterio_id, ocorrencias]) => ({ criterio_id, ocorrencias }));
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <ColunaEquipeMultiCriterio
+          criterios={criterios}
+          nome={nomeA}
+          estado={estadoA}
+          desabilitado={desabilitado}
+          onAlterar={(criterioId, delta, max) => alterar("A", criterioId, delta, max)}
+          onAlternar={(criterioId) => alternar("A", criterioId)}
+        />
+        {nomeB && (
+          <ColunaEquipeMultiCriterio
+            criterios={criterios}
+            nome={nomeB}
+            estado={estadoB}
+            desabilitado={desabilitado}
+            onAlterar={(criterioId, delta, max) => alterar("B", criterioId, delta, max)}
+            onAlternar={(criterioId) => alternar("B", criterioId)}
+          />
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={desabilitado}
+        onClick={() => onRegistrar(itensDe(estadoA), itensDe(estadoB))}
+        className="min-h-12 rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+      >
+        Registrar
+      </button>
+    </div>
+  );
 }
 
 export function PartidaScorerPage() {
@@ -178,12 +366,16 @@ export function PartidaScorerPage() {
     ? Array.from({ length: modalidade.tentativas_por_rodada }, (_, i) => i + 1)
     : [];
 
+  const usaSomaPontos = modalidade?.decisao_partida === "SOMA_PONTOS";
+
   let empateTecnico = false;
   let empatouNoDesempate = false;
   const tentativaDesempate = tentativasArr.length + 1;
   if (partida?.status === "AGENDADA" && partida.equipe_b_id) {
     let vitoriasA = 0;
     let vitoriasB = 0;
+    let somaA = 0;
+    let somaB = 0;
     let todasDecididas = true;
     for (const t of tentativasArr) {
       const lancA = lancamentoConfirmado(partida.equipe_a_id, t);
@@ -192,10 +384,18 @@ export function PartidaScorerPage() {
         todasDecididas = false;
         break;
       }
+      somaA += lancA.total;
+      somaB += lancB.total;
       if (lancA.total > lancB.total) vitoriasA += 1;
       else if (lancB.total > lancA.total) vitoriasB += 1;
     }
-    empateTecnico = todasDecididas && vitoriasA === vitoriasB;
+    // Mesma regra do backend (registrar_resultado_lancamento): com
+    // decisao_partida=SOMA_PONTOS quem decide a partida e o total somado dos
+    // combates, nao quantos combates cada equipe venceu - o empate tecnico
+    // (que libera o combate extra) precisa usar o mesmo criterio, senao o
+    // banner pode nao aparecer quando o backend genuinamente precisa do
+    // desempate, ou aparecer quando o backend ja decidiu pela soma.
+    empateTecnico = todasDecididas && (usaSomaPontos ? somaA === somaB : vitoriasA === vitoriasB);
 
     if (empateTecnico) {
       const lancADesempate = lancamentoConfirmado(partida.equipe_a_id, tentativaDesempate);
@@ -307,6 +507,14 @@ export function PartidaScorerPage() {
     ]);
   }
 
+  function enviarMultiCriterio(tentativa: number, itensA: ItemEnvio[], itensB: ItemEnvio[]) {
+    if (!partida) return;
+    void enviarCombate(tentativa, [
+      { equipeId: partida.equipe_a_id, itens: itensA },
+      ...(partida.equipe_b_id ? [{ equipeId: partida.equipe_b_id, itens: itensB }] : []),
+    ]);
+  }
+
   const carregando =
     !partidas || !modalidade || !fichas || !equipes || !lancamentos || (!!fichaResumo && !ficha);
 
@@ -345,7 +553,9 @@ export function PartidaScorerPage() {
       )}
       {empateTecnico && !empatouNoDesempate && (
         <p className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-800">
-          Empate na contagem de combates — decida com o combate extra de desempate abaixo.
+          {usaSomaPontos
+            ? "Empate na soma dos pontos — decida com o combate extra de desempate abaixo."
+            : "Empate na contagem de combates — decida com o combate extra de desempate abaixo."}
         </p>
       )}
       {empatouNoDesempate && (
@@ -426,33 +636,17 @@ export function PartidaScorerPage() {
                 ) : criterioUnico?.tipo === "ESCALA" ? (
                   <div>
                     <p className="mb-2 text-xs font-medium text-slate-500">Defina o resultado</p>
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                       <div>
                         <p className="mb-1 text-xs text-slate-600">{nomeA}</p>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-col gap-2">
                           {valoresNaoZero.map((v) => (
                             <button
                               key={v}
                               type="button"
                               disabled={enviando === tentativa}
                               onClick={() => enviarEscala(tentativa, "A", v)}
-                              className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                            >
-                              {rotuloEscala(criterioUnico.nome, v)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-xs text-slate-600">{nomeB}</p>
-                        <div className="flex flex-wrap gap-2">
-                          {valoresNaoZero.map((v) => (
-                            <button
-                              key={v}
-                              type="button"
-                              disabled={enviando === tentativa}
-                              onClick={() => enviarEscala(tentativa, "B", v)}
-                              className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+                              className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
                             >
                               {rotuloEscala(criterioUnico.nome, v)}
                             </button>
@@ -464,13 +658,39 @@ export function PartidaScorerPage() {
                           type="button"
                           disabled={enviando === tentativa}
                           onClick={() => enviarEscala(tentativa, "EMPATE")}
-                          className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
+                          className="min-h-12 rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
                         >
                           Empate
                         </button>
                       )}
+                      <div>
+                        <p className="mb-1 text-xs text-slate-600">{nomeB}</p>
+                        <div className="flex flex-col gap-2">
+                          {valoresNaoZero.map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              disabled={enviando === tentativa}
+                              onClick={() => enviarEscala(tentativa, "B", v)}
+                              className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+                            >
+                              {rotuloEscala(criterioUnico.nome, v)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
+                ) : suportaScorerInline(criterios) ? (
+                  <MultiCriterioScorer
+                    criterios={criterios}
+                    nomeA={nomeA}
+                    nomeB={nomeB}
+                    desabilitado={enviando === tentativa}
+                    onRegistrar={(itensA, itensB) =>
+                      enviarMultiCriterio(tentativa, itensA, itensB)
+                    }
+                  />
                 ) : (
                   <Link
                     to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodadaId}/lancamentos/novo?partidaId=${partidaId}`}
@@ -526,17 +746,17 @@ export function PartidaScorerPage() {
                   </button>
                 </div>
               ) : criterioUnico?.tipo === "ESCALA" ? (
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="mb-1 text-xs text-slate-600">{nomeA}</p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2">
                       {valoresNaoZero.map((v) => (
                         <button
                           key={v}
                           type="button"
                           disabled={enviando === tentativaDesempate}
                           onClick={() => enviarEscala(tentativaDesempate, "A", v)}
-                          className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+                          className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
                         >
                           {rotuloEscala(criterioUnico.nome, v)}
                         </button>
@@ -545,14 +765,14 @@ export function PartidaScorerPage() {
                   </div>
                   <div>
                     <p className="mb-1 text-xs text-slate-600">{nomeB}</p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2">
                       {valoresNaoZero.map((v) => (
                         <button
                           key={v}
                           type="button"
                           disabled={enviando === tentativaDesempate}
                           onClick={() => enviarEscala(tentativaDesempate, "B", v)}
-                          className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+                          className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
                         >
                           {rotuloEscala(criterioUnico.nome, v)}
                         </button>
@@ -560,6 +780,16 @@ export function PartidaScorerPage() {
                     </div>
                   </div>
                 </div>
+              ) : suportaScorerInline(criterios) ? (
+                <MultiCriterioScorer
+                  criterios={criterios}
+                  nomeA={nomeA}
+                  nomeB={nomeB}
+                  desabilitado={enviando === tentativaDesempate}
+                  onRegistrar={(itensA, itensB) =>
+                    enviarMultiCriterio(tentativaDesempate, itensA, itensB)
+                  }
+                />
               ) : (
                 <Link
                   to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodadaId}/lancamentos/novo?partidaId=${partidaId}`}

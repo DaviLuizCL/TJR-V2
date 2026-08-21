@@ -1,16 +1,25 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { ChaveamentoPage } from "./ChaveamentoPage";
 
 vi.mock("../../api/client", () => ({
-  api: { GET: vi.fn() },
+  api: { GET: vi.fn(), POST: vi.fn() },
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
+
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -27,7 +36,46 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAuthStore.setState({ accessToken: null, refreshToken: null, usuario: null });
 });
+
+function mockRespostasComRodada() {
+  vi.mocked(api.GET).mockImplementation(async (path: string, opts?: unknown) => {
+    if (path === "/api/v1/modalidades") {
+      return {
+        data: {
+          itens: [
+            {
+              id: "mod-1",
+              nome: "Combate Mata-Mata",
+              tipo_disputa: "CONFRONTO",
+              formato_chaveamento: "MATA_MATA",
+            },
+          ],
+          total: 1,
+          page: 1,
+          size: 200,
+        },
+        error: undefined,
+      } as never;
+    }
+    if (path === "/api/v1/rodadas") {
+      return {
+        data: { itens: [{ id: "rod-1", modalidade_id: "mod-1", numero: 1 }], total: 1, page: 1, size: 200 },
+        error: undefined,
+      } as never;
+    }
+    if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
+      return { data: [], error: undefined } as never;
+    }
+    if (path === "/api/v1/equipes") {
+      return { data: { itens: [], total: 0, page: 1, size: 200 }, error: undefined } as never;
+    }
+    const opt = opts as never;
+    void opt;
+    return { data: undefined, error: undefined } as never;
+  });
+}
 
 describe("ChaveamentoPage", () => {
   it("mostra as rodadas em colunas com as partidas e destaca o vencedor", async () => {
@@ -432,5 +480,75 @@ describe("ChaveamentoPage", () => {
     await userEvent.selectOptions(seletor, "mod-2");
 
     expect(await screen.findByText("Rodada 1")).toBeInTheDocument();
+  });
+
+  it("arbitro nao ve o botao de resetar chaveamento", async () => {
+    mockRespostasComRodada();
+    logarComo("ARBITRO");
+
+    renderPage();
+
+    expect(await screen.findByText("Rodada 1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /resetar chaveamento/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador ve o botao de resetar chaveamento", async () => {
+    mockRespostasComRodada();
+    logarComo("COORDENADOR");
+
+    renderPage();
+
+    expect(await screen.findByText("Rodada 1")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /resetar chaveamento/i })).toBeInTheDocument();
+  });
+
+  it("exige justificativa preenchida antes de confirmar o reset", async () => {
+    mockRespostasComRodada();
+    logarComo("COORDENADOR");
+
+    renderPage();
+
+    const botaoResetar = await screen.findByRole("button", { name: /resetar chaveamento/i });
+    await userEvent.click(botaoResetar);
+
+    const dialog = await screen.findByRole("dialog", { name: /resetar chaveamento/i });
+    const botaoConfirmar = within(dialog).getByRole("button", { name: /confirmar reset/i });
+    expect(botaoConfirmar).toBeDisabled();
+
+    await userEvent.type(
+      within(dialog).getByLabelText(/justificativa/i),
+      "Formato errado, era pra ser todos-contra-todos.",
+    );
+    expect(botaoConfirmar).not.toBeDisabled();
+  });
+
+  it("confirma o reset chamando o endpoint com a justificativa", async () => {
+    mockRespostasComRodada();
+    logarComo("COORDENADOR");
+    vi.mocked(api.POST).mockResolvedValue({ data: undefined, error: undefined } as never);
+
+    renderPage();
+
+    const botaoResetar = await screen.findByRole("button", { name: /resetar chaveamento/i });
+    await userEvent.click(botaoResetar);
+
+    const dialog = await screen.findByRole("dialog", { name: /resetar chaveamento/i });
+    await userEvent.type(
+      within(dialog).getByLabelText(/justificativa/i),
+      "Formato errado, era pra ser todos-contra-todos.",
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: /confirmar reset/i }));
+
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/modalidades/{modalidade_id}/chaveamento/reset",
+      expect.objectContaining({
+        params: { path: { modalidade_id: "mod-1" } },
+        body: { justificativa: "Formato errado, era pra ser todos-contra-todos." },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /resetar chaveamento/i })).not.toBeInTheDocument(),
+    );
   });
 });

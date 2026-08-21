@@ -1,18 +1,25 @@
+import json
 import random
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
 from app.models.equipe import Equipe
 from app.models.inscricao import Inscricao
 from app.models.lancamento import Lancamento, LancamentoStatus
-from app.models.modalidade import FormatoChaveamento, Modalidade, TipoDisputa
+from app.models.lancamento_item import LancamentoItem
+from app.models.modalidade import DecisaoPartida, FormatoChaveamento, Modalidade, TipoDisputa
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.services.audit import registrar_audit_log
 from app.services.modalidade import obter_modalidade
+
+
+def _dump(obj) -> dict:
+    bruto = {c.key: getattr(obj, c.key) for c in inspect(obj).mapper.column_attrs}
+    return json.loads(json.dumps(bruto, default=str))
 
 
 def _parear_com_bye(equipe_ids: list[UUID]) -> list[tuple[UUID, UUID | None]]:
@@ -253,31 +260,55 @@ async def registrar_resultado_lancamento(
     if not all((equipe_b_id, t) in por_equipe_tentativa for t in tentativas):
         return
 
+    # Duas formas de decidir a partida a partir dos combates confirmados
+    # (Modalidade.decisao_partida, default COMBATES_VENCIDOS):
+    # - COMBATES_VENCIDOS (regra historica): conta quantos combates
+    #   individuais cada equipe ganhou (quem tem mais pontos NAQUELE
+    #   combate), e quem ganha mais combates vence a partida - igual a um
+    #   melhor-de-3 de sets, nao soma pontos entre combates.
+    # - SOMA_PONTOS: soma o total de todos os combates e quem tiver mais
+    #   pontos no total vence - pensado pra Cabo de Guerra/Sumo, onde cada
+    #   round vale um numero de pontos diferente (ex.: Fosso=2, Arraste
+    #   Parcial=1) e isso precisa se acumular, nao so contar quem venceu
+    #   mais rounds.
+    usa_soma = modalidade.decisao_partida == DecisaoPartida.SOMA_PONTOS
+
     vitorias_a = vitorias_b = 0
+    soma_a = soma_b = 0.0
     for t in tentativas:
-        total_a = por_equipe_tentativa[(equipe_a_id, t)].total
-        total_b = por_equipe_tentativa[(equipe_b_id, t)].total
+        total_a = float(por_equipe_tentativa[(equipe_a_id, t)].total)
+        total_b = float(por_equipe_tentativa[(equipe_b_id, t)].total)
+        soma_a += total_a
+        soma_b += total_b
         if total_a > total_b:
             vitorias_a += 1
         elif total_b > total_a:
             vitorias_b += 1
 
-    if vitorias_a == vitorias_b and eh_chaveamento:
-        # Ponto de ouro: se a contagem de combates empatar, um combate extra
-        # na tentativa seguinte (fora de tentativas_por_rodada) decide a
-        # partida, sem reescrever o resultado dos combates anteriores - so
-        # se aplica a mata-mata, onde a partida travada bloqueia o avanco do
-        # chaveamento (todos-contra-todos aceita EMPATADA numa boa).
+    pontuacao_a = soma_a if usa_soma else vitorias_a
+    pontuacao_b = soma_b if usa_soma else vitorias_b
+
+    if pontuacao_a == pontuacao_b and eh_chaveamento:
+        # Ponto de ouro: se a decisao empatar, um combate extra na tentativa
+        # seguinte (fora de tentativas_por_rodada) decide a partida, sem
+        # reescrever o resultado dos combates anteriores - so se aplica a
+        # mata-mata, onde a partida travada bloqueia o avanco do chaveamento
+        # (todos-contra-todos aceita EMPATADA numa boa).
         tentativa_desempate = modalidade.tentativas_por_rodada + 1
         lanc_a_desempate = por_equipe_tentativa.get((equipe_a_id, tentativa_desempate))
         lanc_b_desempate = por_equipe_tentativa.get((equipe_b_id, tentativa_desempate))
         if lanc_a_desempate and lanc_b_desempate:
-            if lanc_a_desempate.total > lanc_b_desempate.total:
-                vitorias_a += 1
-            elif lanc_b_desempate.total > lanc_a_desempate.total:
-                vitorias_b += 1
+            total_a_desempate = float(lanc_a_desempate.total)
+            total_b_desempate = float(lanc_b_desempate.total)
+            if usa_soma:
+                pontuacao_a += total_a_desempate
+                pontuacao_b += total_b_desempate
+            elif total_a_desempate > total_b_desempate:
+                pontuacao_a += 1
+            elif total_b_desempate > total_a_desempate:
+                pontuacao_b += 1
 
-    if vitorias_a == vitorias_b:
+    if pontuacao_a == pontuacao_b:
         if not eh_todos_contra_todos:
             return
         partida.status = PartidaStatus.EMPATADA
@@ -289,11 +320,11 @@ async def registrar_resultado_lancamento(
             entidade_id=partida.id,
             acao="EMPATAR",
             antes=None,
-            depois={"status": "EMPATADA", "vitorias_a": vitorias_a, "vitorias_b": vitorias_b},
+            depois={"status": "EMPATADA", "pontuacao_a": pontuacao_a, "pontuacao_b": pontuacao_b},
         )
         return
 
-    vencedor_id = equipe_a_id if vitorias_a > vitorias_b else equipe_b_id
+    vencedor_id = equipe_a_id if pontuacao_a > pontuacao_b else equipe_b_id
 
     partida.status = PartidaStatus.ENCERRADA
     partida.vencedor_id = vencedor_id
@@ -308,10 +339,85 @@ async def registrar_resultado_lancamento(
         antes=None,
         depois={
             "vencedor_id": str(vencedor_id),
-            "vitorias_a": vitorias_a,
-            "vitorias_b": vitorias_b,
+            "pontuacao_a": pontuacao_a,
+            "pontuacao_b": pontuacao_b,
         },
     )
 
     if eh_chaveamento:
         await avancar_se_rodada_completa(db, rodada.id, usuario_id=usuario_id)
+
+
+async def resetar_chaveamento(
+    db: AsyncSession, modalidade_id: UUID, *, usuario_id: UUID, justificativa: str
+) -> None:
+    """Apaga de verdade rodadas/partidas/lancamentos/itens de uma modalidade de
+    confronto e recomeca o chaveamento do zero.
+
+    Excecao deliberada a regra de "nunca apagar dado de pontuacao": serve pro
+    caso em que o coordenador configurou o formato errado (ex.: mata-mata
+    quando devia ser todos-contra-todos) e precisa desfazer tudo, nao so
+    corrigir. Antes de apagar, grava um snapshot completo no audit_log
+    (JSONB aceita qualquer coisa serializavel) - o rastro sobrevive mesmo sem
+    as linhas originais. So depois disso a modalidade libera trocar
+    formato_chaveamento (ver atualizar_modalidade) e gerar chaveamento de novo.
+    """
+    modalidade = await obter_modalidade(db, modalidade_id)
+    if modalidade.tipo_disputa != TipoDisputa.CONFRONTO:
+        raise AppError(
+            codigo="RESET_APENAS_CONFRONTO",
+            mensagem="Reset de chaveamento so se aplica a modalidade de confronto.",
+            status_code=422,
+        )
+
+    rodadas = list(
+        (await db.execute(select(Rodada).where(Rodada.modalidade_id == modalidade_id)))
+        .scalars()
+        .all()
+    )
+    if not rodadas:
+        return
+
+    rodada_ids = [r.id for r in rodadas]
+    partidas = list(
+        (await db.execute(select(Partida).where(Partida.rodada_id.in_(rodada_ids)))).scalars().all()
+    )
+    lancamentos = list(
+        (await db.execute(select(Lancamento).where(Lancamento.rodada_id.in_(rodada_ids))))
+        .scalars()
+        .all()
+    )
+    lancamento_ids = [lanc.id for lanc in lancamentos]
+    itens = list(
+        (
+            await db.execute(
+                select(LancamentoItem).where(LancamentoItem.lancamento_id.in_(lancamento_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    snapshot = {
+        "rodadas": [_dump(r) for r in rodadas],
+        "partidas": [_dump(p) for p in partidas],
+        "lancamentos": [_dump(lanc) for lanc in lancamentos],
+        "itens": [_dump(item) for item in itens],
+    }
+
+    await registrar_audit_log(
+        db,
+        usuario_id=usuario_id,
+        entidade="modalidade",
+        entidade_id=modalidade_id,
+        acao="RESET_CHAVEAMENTO",
+        antes=snapshot,
+        depois=None,
+        justificativa=justificativa,
+    )
+
+    await db.execute(delete(LancamentoItem).where(LancamentoItem.lancamento_id.in_(lancamento_ids)))
+    await db.execute(delete(Lancamento).where(Lancamento.rodada_id.in_(rodada_ids)))
+    await db.execute(delete(Partida).where(Partida.rodada_id.in_(rodada_ids)))
+    await db.execute(delete(Rodada).where(Rodada.modalidade_id == modalidade_id))
+    await db.flush()

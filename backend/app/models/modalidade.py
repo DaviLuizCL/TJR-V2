@@ -31,6 +31,11 @@ class ModalidadeStatus(StrEnum):
     ENCERRADA = "ENCERRADA"
 
 
+class DecisaoPartida(StrEnum):
+    COMBATES_VENCIDOS = "COMBATES_VENCIDOS"
+    SOMA_PONTOS = "SOMA_PONTOS"
+
+
 class Modalidade(TimestampedBase):
     __tablename__ = "modalidade"
 
@@ -66,3 +71,13 @@ class Modalidade(TimestampedBase):
         Enum(ModalidadeStatus, name="modalidade_status")
     )
     ranking_liberado: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # So tem efeito em CONFRONTO: como o vencedor de uma partida e decidido a
+    # partir dos combates (tentativas) - ver services/chaveamento.py. Default
+    # COMBATES_VENCIDOS preserva o comportamento historico (quem ganha mais
+    # combates individuais vence, nao quem soma mais pontos - regra 6 do
+    # CLAUDE.md); SOMA_PONTOS e a excecao pra modalidade tipo Cabo de Guerra/
+    # Sumo, onde o placar por round deve se acumular pra decidir a partida.
+    decisao_partida: Mapped[DecisaoPartida] = mapped_column(
+        Enum(DecisaoPartida, name="decisao_partida"), default=DecisaoPartida.COMBATES_VENCIDOS
+    )

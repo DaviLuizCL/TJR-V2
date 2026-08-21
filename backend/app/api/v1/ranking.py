@@ -1,17 +1,18 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import obter_papel_atual
+from app.core.deps import exigir_papel, obter_papel_atual
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.models.equipe import Equipe
-from app.models.usuario import Papel
+from app.models.usuario import Papel, Usuario
 from app.schemas.ranking import ClassificacaoItemOut, RankingModalidadeResumoOut, RankingOut
 from app.services import consolidacao as consolidacao_service
 from app.services import modalidade as modalidade_service
+from app.services import relatorio as relatorio_service
 
 router = APIRouter()
 
@@ -86,4 +87,18 @@ async def obter_ranking(
         ),
         ranking_liberado=modalidade.ranking_liberado,
         itens=itens,
+    )
+
+
+@router.get("/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf")
+async def baixar_relatorio_auditoria(
+    modalidade_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    usuario: Usuario = Depends(exigir_papel(*_PAPEIS_STAFF)),
+) -> Response:
+    pdf_bytes = await relatorio_service.gerar_relatorio_auditoria_pdf(db, modalidade_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=relatorio-{modalidade_id}.pdf"},
     )

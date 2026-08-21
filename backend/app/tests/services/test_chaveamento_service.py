@@ -7,13 +7,17 @@ from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.core.security import hash_senha
+from app.models.audit_log import AuditLog
 from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
 from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
+from app.models.lancamento import Lancamento
+from app.models.lancamento_item import LancamentoItem
 from app.models.modalidade import (
     Consolidacao,
+    DecisaoPartida,
     FormatoChaveamento,
     Modalidade,
     ModalidadeStatus,
@@ -24,13 +28,17 @@ from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.inscricao import InscricaoCreate
 from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
+from app.schemas.modalidade import ModalidadeUpdate
 from app.services.chaveamento import (
     avancar_se_rodada_completa,
     gerar_chaveamento_inicial,
     registrar_resultado_lancamento,
+    resetar_chaveamento,
 )
 from app.services.inscricao import criar_inscricao
 from app.services.lancamento import confirmar_lancamento, criar_lancamento
+from app.services.modalidade import atualizar_modalidade
+from app.services.rodada import gerar_rodadas
 
 
 async def _criar_coordenador(db_session, email="coord-chaveamento@tjr.app") -> Usuario:
@@ -57,6 +65,7 @@ async def _criar_modalidade_confronto(
     formato=FormatoChaveamento.MATA_MATA,
     niveis_aplicaveis=None,
     tentativas_por_rodada=1,
+    decisao_partida=DecisaoPartida.COMBATES_VENCIDOS,
 ) -> Modalidade:
     evento = Evento(
         nome="TJR 2026",
@@ -78,6 +87,7 @@ async def _criar_modalidade_confronto(
         qtd_rodadas=5,
         tentativas_por_rodada=tentativas_por_rodada,
         consolidacao=Consolidacao.SOMA_RODADAS,
+        decisao_partida=decisao_partida,
         status=ModalidadeStatus.PUBLICADA,
     )
     db_session.add(modalidade)
@@ -878,3 +888,276 @@ async def test_todos_contra_todos_marca_empatada_quando_combates_empatam(db_sess
     partida_final = await db_session.get(Partida, partida.id)
     assert partida_final.status == PartidaStatus.EMPATADA
     assert partida_final.vencedor_id is None
+
+
+async def test_soma_pontos_decide_vencedor_pelo_total_mesmo_com_1_combate_vencido_cada(db_session):
+    """Reproduz o cenario relatado: cada equipe vence 1 combate (1 a 1 na
+    contagem, que empataria em COMBATES_VENCIDOS), mas o total de pontos
+    somado dos 2 combates e diferente - com decisao_partida=SOMA_PONTOS a
+    equipe com mais pontos no total vence a partida, nao empata.
+    """
+    coordenador = await _criar_coordenador(db_session, "c27soma@tjr.app")
+    arbitro = await _criar_arbitro(db_session, "a27soma@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session,
+        formato=FormatoChaveamento.TODOS_CONTRA_TODOS,
+        tentativas_por_rodada=2,
+        decisao_partida=DecisaoPartida.SOMA_PONTOS,
+    )
+    equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+    rodada = Rodada(
+        modalidade_id=modalidade.id,
+        numero=1,
+        modo_horario=ModoHorario.AUTOMATICO,
+        status=RodadaStatus.AGENDADA,
+    )
+    db_session.add(rodada)
+    await db_session.flush()
+    partida = Partida(
+        rodada_id=rodada.id,
+        equipe_a_id=equipes[0].id,
+        equipe_b_id=equipes[1].id,
+        status=PartidaStatus.AGENDADA,
+    )
+    db_session.add(partida)
+    await db_session.flush()
+
+    # combate 1: equipe[0] vence 20x0; combate 2: equipe[1] vence 0x10.
+    # 1 combate vencido cada (empataria em COMBATES_VENCIDOS), mas a soma dos
+    # totais (20+0=20 contra 0+10=10) da vitoria pra equipe[0].
+    for tentativa, (ocorrencias_a, ocorrencias_b) in enumerate([(2, 0), (0, 1)], start=1):
+        await _lancar_e_confirmar(
+            db_session,
+            ficha,
+            rodada,
+            equipes[0],
+            criterio,
+            partida,
+            arbitro,
+            ocorrencias_a,
+            tentativa=tentativa,
+        )
+        await _lancar_e_confirmar(
+            db_session,
+            ficha,
+            rodada,
+            equipes[1],
+            criterio,
+            partida,
+            arbitro,
+            ocorrencias_b,
+            tentativa=tentativa,
+        )
+
+    partida_final = await db_session.get(Partida, partida.id)
+    assert partida_final.status == PartidaStatus.ENCERRADA
+    assert partida_final.vencedor_id == equipes[0].id
+
+
+async def test_soma_pontos_mata_mata_usa_ponto_de_ouro_quando_soma_tambem_empata(db_session):
+    coordenador = await _criar_coordenador(db_session, "c28soma@tjr.app")
+    arbitro = await _criar_arbitro(db_session, "a28soma@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session,
+        formato=FormatoChaveamento.MATA_MATA,
+        tentativas_por_rodada=2,
+        decisao_partida=DecisaoPartida.SOMA_PONTOS,
+    )
+    equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+    rodada = Rodada(
+        modalidade_id=modalidade.id,
+        numero=1,
+        modo_horario=ModoHorario.AUTOMATICO,
+        status=RodadaStatus.AGENDADA,
+    )
+    db_session.add(rodada)
+    await db_session.flush()
+    partida = Partida(
+        rodada_id=rodada.id,
+        equipe_a_id=equipes[0].id,
+        equipe_b_id=equipes[1].id,
+        status=PartidaStatus.AGENDADA,
+    )
+    db_session.add(partida)
+    await db_session.flush()
+
+    # combate 1: equipe[0] 20x0; combate 2: equipe[1] 0x20 -> soma 20x20, empata
+    for tentativa, (ocorrencias_a, ocorrencias_b) in enumerate([(2, 0), (0, 2)], start=1):
+        await _lancar_e_confirmar(
+            db_session,
+            ficha,
+            rodada,
+            equipes[0],
+            criterio,
+            partida,
+            arbitro,
+            ocorrencias_a,
+            tentativa=tentativa,
+        )
+        await _lancar_e_confirmar(
+            db_session,
+            ficha,
+            rodada,
+            equipes[1],
+            criterio,
+            partida,
+            arbitro,
+            ocorrencias_b,
+            tentativa=tentativa,
+        )
+
+    partida_apos_normais = await db_session.get(Partida, partida.id)
+    assert partida_apos_normais.status == PartidaStatus.AGENDADA
+
+    # ponto de ouro (tentativa 3): equipe[0] marca 10, equipe[1] marca 0 ->
+    # soma vira 30x20, equipe[0] vence
+    await _lancar_e_confirmar(
+        db_session,
+        ficha,
+        rodada,
+        equipes[0],
+        criterio,
+        partida,
+        arbitro,
+        1,
+        tentativa=3,
+    )
+    await _lancar_e_confirmar(
+        db_session,
+        ficha,
+        rodada,
+        equipes[1],
+        criterio,
+        partida,
+        arbitro,
+        0,
+        tentativa=3,
+    )
+
+    partida_final = await db_session.get(Partida, partida.id)
+    assert partida_final.status == PartidaStatus.ENCERRADA
+    assert partida_final.vencedor_id == equipes[0].id
+
+
+# ---------- resetar_chaveamento ----------
+
+
+async def test_resetar_chaveamento_recusa_modalidade_individual(db_session):
+    coordenador = await _criar_coordenador(db_session, "c27@tjr.app")
+    evento = Evento(
+        nome="E",
+        ano=2026,
+        data_inicio=date(2026, 3, 10),
+        data_fim=date(2026, 3, 12),
+        status=EventoStatus.RASCUNHO,
+    )
+    db_session.add(evento)
+    await db_session.flush()
+    modalidade = Modalidade(
+        evento_id=evento.id,
+        nome="Individual",
+        tipo_disputa=TipoDisputa.INDIVIDUAL,
+        niveis_aplicaveis=[1],
+        ficha_unica_entre_niveis=True,
+        qtd_rodadas=1,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        status=ModalidadeStatus.PUBLICADA,
+    )
+    db_session.add(modalidade)
+    await db_session.flush()
+
+    with pytest.raises(AppError) as exc_info:
+        await resetar_chaveamento(
+            db_session, modalidade.id, usuario_id=coordenador.id, justificativa="engano"
+        )
+
+    assert exc_info.value.codigo == "RESET_APENAS_CONFRONTO"
+
+
+async def test_resetar_chaveamento_sem_rodada_e_no_op(db_session):
+    coordenador = await _criar_coordenador(db_session, "c28@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session)
+
+    await resetar_chaveamento(
+        db_session, modalidade.id, usuario_id=coordenador.id, justificativa="engano"
+    )
+
+    resultado = await db_session.execute(
+        select(AuditLog).where(
+            AuditLog.entidade_id == modalidade.id, AuditLog.acao == "RESET_CHAVEAMENTO"
+        )
+    )
+    assert resultado.scalar_one_or_none() is None
+
+
+async def test_resetar_chaveamento_apaga_tudo_e_grava_snapshot_no_audit_log(db_session):
+    coordenador = await _criar_coordenador(db_session, "c29@tjr.app")
+    arbitro = await _criar_arbitro(db_session, "a29@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=FormatoChaveamento.MATA_MATA)
+    equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+
+    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    resultado = await db_session.execute(select(Partida).where(Partida.rodada_id == rodada.id))
+    partida = resultado.scalars().first()
+
+    await _lancar_e_confirmar(
+        db_session, ficha, rodada, equipes[0], criterio, partida, arbitro, 5, tentativa=1
+    )
+
+    await resetar_chaveamento(
+        db_session,
+        modalidade.id,
+        usuario_id=coordenador.id,
+        justificativa="Coordenacao pediu mata-mata, mas o formato certo era todos-contra-todos.",
+    )
+
+    assert (await db_session.get(Rodada, rodada.id)) is None
+    assert (await db_session.get(Partida, partida.id)) is None
+    resultado = await db_session.execute(
+        select(Lancamento).where(Lancamento.rodada_id == rodada.id)
+    )
+    assert resultado.scalars().all() == []
+    resultado = await db_session.execute(
+        select(LancamentoItem).join(Lancamento).where(Lancamento.rodada_id == rodada.id)
+    )
+    assert resultado.scalars().all() == []
+
+    resultado = await db_session.execute(
+        select(AuditLog).where(
+            AuditLog.entidade_id == modalidade.id, AuditLog.acao == "RESET_CHAVEAMENTO"
+        )
+    )
+    log = resultado.scalar_one()
+    assert log.justificativa.startswith("Coordenacao pediu mata-mata")
+    assert len(log.antes["rodadas"]) == 1
+    assert len(log.antes["partidas"]) == 2
+    assert len(log.antes["lancamentos"]) == 1
+    assert len(log.antes["itens"]) == 1
+
+
+async def test_resetar_chaveamento_libera_trocar_formato_e_gerar_de_novo(db_session):
+    coordenador = await _criar_coordenador(db_session, "c30@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=FormatoChaveamento.MATA_MATA)
+    await _inscrever_equipes(db_session, modalidade, coordenador, 4)
+    await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+
+    await resetar_chaveamento(
+        db_session, modalidade.id, usuario_id=coordenador.id, justificativa="engano de formato"
+    )
+
+    atualizada = await atualizar_modalidade(
+        db_session,
+        modalidade.id,
+        ModalidadeUpdate(formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS),
+        usuario_id=coordenador.id,
+    )
+    assert atualizada.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS
+
+    # todos-contra-todos gera rodadas pelo returno manual (gerar_rodadas), nao
+    # pelo gerar_chaveamento_inicial (esse so vale pra MATA_MATA)
+    novas_rodadas = await gerar_rodadas(db_session, modalidade.id, usuario_id=coordenador.id)
+    assert len(novas_rodadas) > 0
+    assert novas_rodadas[0].numero == 1

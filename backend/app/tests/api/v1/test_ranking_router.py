@@ -311,3 +311,37 @@ async def test_ranking_mata_mata_traz_vitorias_derrotas_e_eliminado_por(client, 
     assert por_equipe[str(equipe_b.id)]["derrotas"] == 1
     assert por_equipe[str(equipe_b.id)]["eliminado_por_nome"] == "Equipe A"
     assert por_equipe[str(equipe_b.id)]["equipe_nivel"] == 2
+
+
+async def test_relatorio_auditoria_pdf_staff_ve_mesmo_sem_ranking_liberado(client, db_session):
+    coordenador = await _criar_usuario(
+        db_session, email="coord-relatorio-1@tjr.app", papel=Papel.COORDENADOR
+    )
+    evento = await _criar_evento(db_session)
+    modalidade, _equipe = await _criar_modalidade_com_classificacao(db_session, evento, coordenador)
+    headers_secretaria = await _auth_header(
+        client, db_session, Papel.SECRETARIA, "secretaria-relatorio-1@tjr.app"
+    )
+
+    resposta = await client.get(
+        f"/api/v1/ranking/modalidades/{modalidade.id}/relatorio-auditoria.pdf",
+        headers=headers_secretaria,
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.headers["content-type"] == "application/pdf"
+    assert resposta.content.startswith(b"%PDF")
+
+
+async def test_relatorio_auditoria_pdf_sem_token_recebe_401(client, db_session):
+    coordenador = await _criar_usuario(
+        db_session, email="coord-relatorio-2@tjr.app", papel=Papel.COORDENADOR
+    )
+    evento = await _criar_evento(db_session)
+    modalidade, _equipe = await _criar_modalidade_com_classificacao(db_session, evento, coordenador)
+
+    resposta = await client.get(
+        f"/api/v1/ranking/modalidades/{modalidade.id}/relatorio-auditoria.pdf"
+    )
+
+    assert resposta.status_code == 401

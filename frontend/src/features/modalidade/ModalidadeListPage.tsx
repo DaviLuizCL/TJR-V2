@@ -71,6 +71,29 @@ function ModalidadeItem({
     await queryClient.invalidateQueries({ queryKey: ["modalidades", eventoId] });
   }
 
+  async function baixarRelatorio() {
+    setErro(null);
+    const { data, error } = await api.GET(
+      "/api/v1/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf",
+      {
+        params: { path: { modalidade_id: modalidade.id } },
+        parseAs: "blob",
+      },
+    );
+
+    if (error || !data) {
+      setErro(extrairErro(error).mensagem);
+      return;
+    }
+
+    const url = URL.createObjectURL(data as Blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `relatorio-${modalidade.nome}.pdf`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <li className="rounded border border-slate-200 bg-white px-4 py-3 hover:border-slate-400">
       <div className="flex items-center justify-between">
@@ -112,6 +135,15 @@ function ModalidadeItem({
               className="text-sm font-medium text-slate-700 underline"
             >
               {modalidade.ranking_liberado ? "Ocultar ranking" : "Liberar ranking"}
+            </button>
+          )}
+          {ehCoordenador && (
+            <button
+              type="button"
+              onClick={baixarRelatorio}
+              className="text-sm font-medium text-slate-700 underline"
+            >
+              Baixar relatório (PDF)
             </button>
           )}
         </div>

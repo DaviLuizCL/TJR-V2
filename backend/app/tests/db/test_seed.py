@@ -19,16 +19,34 @@ from app.db.seed import (
 )
 from app.models.agendamento import Agendamento
 from app.models.arena import Arena
-from app.models.criterio import Criterio
+from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo
 from app.models.equipe import Equipe
 from app.models.evento import Evento
 from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
 from app.models.inscricao import Inscricao
-from app.models.modalidade import Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import DecisaoPartida, Modalidade, ModalidadeStatus, TipoDisputa
 from app.models.partida import Partida
 from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
+
+
+async def _criterios_da_modalidade(db_session, modalidades, nome_modalidade) -> list[Criterio]:
+    modalidade = next(m for m in modalidades if m.nome == nome_modalidade)
+    resultado = await db_session.execute(select(Ficha).where(Ficha.modalidade_id == modalidade.id))
+    ficha = resultado.scalar_one()
+    resultado_grupos = await db_session.execute(select(Grupo).where(Grupo.ficha_id == ficha.id))
+    grupos = resultado_grupos.scalars().all()
+    resultado_criterios = await db_session.execute(
+        select(Criterio).where(Criterio.grupo_id.in_([g.id for g in grupos]))
+    )
+    return list(resultado_criterios.scalars().all())
+
+
+async def _criterio_unico_da_modalidade(db_session, modalidades, nome_modalidade) -> Criterio:
+    criterios = await _criterios_da_modalidade(db_session, modalidades, nome_modalidade)
+    assert len(criterios) == 1
+    return criterios[0]
 
 
 async def test_seed_coordenador_cria_usuario_coordenador(db_session):
@@ -214,6 +232,109 @@ async def test_seed_fichas_e_idempotente(db_session):
     assert len(resultado.scalars().all()) == 1
 
 
+async def test_seed_fichas_cabo_de_guerra_tem_criterio_escala_resultado_do_arrasto(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    criterio = await _criterio_unico_da_modalidade(db_session, modalidades, "Cabo de Guerra")
+
+    assert criterio.nome == "Resultado do arrasto"
+    assert criterio.tipo == CriterioTipo.ESCALA
+    assert criterio.valores_permitidos == [0, 1, 2]
+
+
+async def test_seed_fichas_sumo_tem_criterio_escala_resultado_do_combate(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    criterio = await _criterio_unico_da_modalidade(db_session, modalidades, "Sumô")
+
+    assert criterio.nome == "Resultado do combate"
+    assert criterio.tipo == CriterioTipo.ESCALA
+    assert criterio.valores_permitidos == [0, 1, 2]
+
+
+async def test_seed_fichas_corrida_de_carros_tem_os_criterios_da_ficha_oficial(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    criterios = await _criterios_da_modalidade(
+        db_session, modalidades, "Corrida de Carros Autônomos"
+    )
+    por_nome = {c.nome: c for c in criterios}
+
+    assert set(por_nome) == {
+        "Evitar a colisão",
+        "Colisão com a parte traseira do outro",
+        "Evasão da pista",
+        "Posicionamento transversal",
+        "Percurso em sentido contrário",
+        "Carro que ficou na frente",
+    }
+
+    evitar_colisao = por_nome["Evitar a colisão"]
+    assert evitar_colisao.tipo == CriterioTipo.CONTADOR
+    assert evitar_colisao.categoria == CategoriaCriterio.PONTUACAO
+    assert float(evitar_colisao.pontos) == 1.0
+
+    for nome_violacao in (
+        "Colisão com a parte traseira do outro",
+        "Evasão da pista",
+        "Posicionamento transversal",
+        "Percurso em sentido contrário",
+    ):
+        violacao = por_nome[nome_violacao]
+        assert violacao.tipo == CriterioTipo.BOOLEANO
+        assert violacao.categoria == CategoriaCriterio.PENALIDADE
+
+    ficou_na_frente = por_nome["Carro que ficou na frente"]
+    assert ficou_na_frente.tipo == CriterioTipo.BOOLEANO
+    assert ficou_na_frente.categoria == CategoriaCriterio.PONTUACAO
+    assert float(ficou_na_frente.pontos) > sum(
+        float(por_nome[n].pontos)
+        for n in (
+            "Colisão com a parte traseira do outro",
+            "Evasão da pista",
+            "Posicionamento transversal",
+            "Percurso em sentido contrário",
+        )
+    )
+
+
+async def test_carro_que_violou_perde_a_corrida_mesmo_com_evitar_colisao_marcado(db_session):
+    """O carro que colide/evade/etc perde a corrida na comparacao de totais,
+    mesmo acumulando pontos em 'Evitar a colisao' - a violacao tem que
+    dominar o total, e nao so descontar um pouco.
+    """
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    criterios = await _criterios_da_modalidade(
+        db_session, modalidades, "Corrida de Carros Autônomos"
+    )
+    por_nome = {c.nome: c for c in criterios}
+
+    pontos_violador = float(por_nome["Evitar a colisão"].pontos) * 5 - float(
+        por_nome["Evasão da pista"].pontos
+    )
+    pontos_vencedor = float(por_nome["Carro que ficou na frente"].pontos)
+
+    assert max(pontos_violador, 0) < pontos_vencedor
+
+
+async def test_seed_modalidades_corrida_de_carros_roda_melhor_de_3(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    corrida = next(m for m in modalidades if m.nome == "Corrida de Carros Autônomos")
+
+    assert corrida.tentativas_por_rodada == 3
+
+
 async def test_seed_equipes_credenciadas_cria_quatro_por_nivel(db_session):
     equipes = await seed_equipes_credenciadas(db_session)
 
@@ -385,3 +506,20 @@ async def test_seed_agendamentos_e_idempotente(db_session):
     total_depois = (await db_session.execute(select(Agendamento))).scalars().all()
 
     assert len(total_antes) == len(total_depois)
+
+
+async def test_seed_modalidades_cabo_de_guerra_e_sumo_usam_soma_pontos(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    por_nome = {m.nome: m for m in modalidades}
+    assert por_nome["Cabo de Guerra"].decisao_partida == DecisaoPartida.SOMA_PONTOS
+    assert por_nome["Sumô"].decisao_partida == DecisaoPartida.SOMA_PONTOS
+
+
+async def test_seed_modalidades_corrida_de_carros_usa_combates_vencidos(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    corrida = next(m for m in modalidades if m.nome == "Corrida de Carros Autônomos")
+    assert corrida.decisao_partida == DecisaoPartida.COMBATES_VENCIDOS

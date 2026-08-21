@@ -24,6 +24,7 @@ passlib = { extras = ["bcrypt"], version = "^1.7.4" }
 # ate o passlib lancar uma versao compativel.
 bcrypt = ">=4.0.1,<4.1"
 python-multipart = "^0.0.12"
+reportlab = "^4.2.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"

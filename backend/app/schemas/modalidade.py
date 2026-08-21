@@ -3,7 +3,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.modalidade import Consolidacao, FormatoChaveamento, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import (
+    Consolidacao,
+    DecisaoPartida,
+    FormatoChaveamento,
+    ModalidadeStatus,
+    TipoDisputa,
+)
 from app.schemas.common import NomeObrigatorio
 
 
@@ -25,6 +31,7 @@ class ModalidadeCreate(BaseModel):
     desempates: list[dict] | None = None
     pontos_vitoria: float = 3
     pontos_empate: float = 1
+    decisao_partida: DecisaoPartida = DecisaoPartida.COMBATES_VENCIDOS
 
 
 class ModalidadeUpdate(BaseModel):
@@ -46,6 +53,7 @@ class ModalidadeUpdate(BaseModel):
     ranking_liberado: bool | None = None
     pontos_vitoria: float | None = None
     pontos_empate: float | None = None
+    decisao_partida: DecisaoPartida | None = None
 
 
 class ModalidadeOut(BaseModel):
@@ -71,5 +79,6 @@ class ModalidadeOut(BaseModel):
     pontos_empate: float
     status: ModalidadeStatus
     ranking_liberado: bool
+    decisao_partida: DecisaoPartida
     criado_em: datetime
     atualizado_em: datetime

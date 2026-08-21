@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
@@ -11,6 +11,7 @@ from app.models.modalidade import (
     ModalidadeStatus,
     TipoDisputa,
 )
+from app.models.rodada import Rodada
 from app.schemas.modalidade import ModalidadeCreate, ModalidadeUpdate
 from app.services.audit import registrar_audit_log
 from app.services.evento import obter_evento
@@ -140,6 +141,7 @@ def _serializar(modalidade: Modalidade) -> dict:
         "pontos_empate": float(modalidade.pontos_empate),
         "status": modalidade.status.value,
         "ranking_liberado": modalidade.ranking_liberado,
+        "decisao_partida": modalidade.decisao_partida.value,
     }
 
 
@@ -176,6 +178,7 @@ async def criar_modalidade(
         desempates=dto.desempates,
         pontos_vitoria=dto.pontos_vitoria,
         pontos_empate=dto.pontos_empate,
+        decisao_partida=dto.decisao_partida,
         status=ModalidadeStatus.RASCUNHO,
     )
     db.add(modalidade)
@@ -228,6 +231,21 @@ async def atualizar_modalidade(
     antes = _serializar(modalidade)
 
     dados = dto.model_dump(exclude_unset=True)
+
+    if (
+        "formato_chaveamento" in dados
+        and dados["formato_chaveamento"] != modalidade.formato_chaveamento
+    ):
+        tem_rodada = await db.scalar(select(exists().where(Rodada.modalidade_id == modalidade.id)))
+        if tem_rodada:
+            raise AppError(
+                codigo="FORMATO_CHAVEAMENTO_TRAVADO",
+                mensagem=(
+                    "Nao e possivel trocar o formato de chaveamento depois que a modalidade "
+                    "ja tem rodada criada. Resete o chaveamento para recomecar do zero."
+                ),
+                status_code=422,
+            )
 
     _validar_regras(
         tipo_disputa=dados.get("tipo_disputa", modalidade.tipo_disputa),

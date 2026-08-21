@@ -260,6 +260,57 @@ describe("ModalidadeListPage", () => {
     );
   });
 
+  it("coordenador baixa o relatorio de auditoria em pdf da modalidade", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [
+              {
+                id: "m1",
+                nome: "Sumo",
+                tipo_disputa: "CONFRONTO",
+                status: "PUBLICADA",
+                ranking_liberado: false,
+              },
+            ],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf") {
+        return {
+          data: new Blob(["%PDF-conteudo"], { type: "application/pdf" }),
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+    const criarObjectUrl = vi.fn().mockReturnValue("blob:fake-url");
+    const revogarObjectUrl = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL: criarObjectUrl, revokeObjectURL: revogarObjectUrl });
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /baixar relat[oó]rio/i }));
+
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith(
+        "/api/v1/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf",
+        expect.objectContaining({
+          params: { path: { modalidade_id: "m1" } },
+          parseAs: "blob",
+        }),
+      ),
+    );
+    expect(criarObjectUrl).toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
   it("clicar em 'Abrir evento' abre o modal com uma linha por modalidade", async () => {
     vi.mocked(api.GET).mockImplementation(async (path: string) => {
       if (path === "/api/v1/modalidades") {

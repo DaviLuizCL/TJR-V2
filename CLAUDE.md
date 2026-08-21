@@ -307,9 +307,12 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
 
 1. ~~Painel de criação de modalidade e ficha~~ — completa.
 2. ~~Equipes, inscrições e rodadas com horário~~ — completa.
-3. ~~App do árbitro e lançamento de pontuação~~ — fluxo **online** completo (individual e
-   confronto, com seletor de tentativa/partida). Fila offline (outbox/Dexie do PWA, seção 8)
-   **ainda não implementada** — adiamento consciente, não esquecido.
+3. ~~App do árbitro e lançamento de pontuação~~ — fluxo online completo (individual e confronto,
+   com seletor de tentativa/partida) **+ outbox de envio** (Dexie, seção 8): lançamento grava na
+   fila local na hora do clique, sincroniza sozinho quando a rede volta, nunca sobrescreve
+   conflito em silêncio. Cache de leitura offline (baixar ficha/rodadas/equipes/partidas antes da
+   rodada, pra abrir o app sem rede nenhuma) continua **fora de escopo** — adiamento consciente,
+   não esquecido; ver detalhe no fim da seção 12.
 4. **Chaveamento e placar público** ← atual. Já prontos: motor de chaveamento (mata-mata,
    todos-contra-todos) separado por nível, partida em
    melhor-de-3 combates, ranking público por modalidade (liberado pelo coordenador, formato de
@@ -434,6 +437,255 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
    `ChaveamentoPage`) continuam existindo como componentes — só perderam o wrapper
    `<main>`/`<h1>` próprio, porque agora só renderizam como conteúdo de aba dentro do hub. Header
    final: Eventos/Equipes/Modalidades/Fichas/Individual/Combates/Painel (7 itens).
+
+   **Sessão de correção de um relatório de testes de terceiro** (20/08/2026, commit `399793b`
+   testado, `RELATORIO_TESTES_TJR_V2.pdf` — um amigo do usuário rodou os fluxos manualmente e
+   achou 7 defeitos reais apesar de toda a suíte automatizada estar verde). Todos corrigidos em
+   TDD, um por vez, plano aprovado antes de começar:
+
+   - **Outbox de envio (Dexie) finalmente implementado** — `frontend/src/lib/db.ts` (tabela
+     `lancamentoOutbox`), `outbox.ts` (`enfileirarCriarLancamento`/`enfileirarConfirmarLancamento`
+     — só gravam local, nunca chamam `api`), `sync.ts` (`sincronizar()`, drena a fila em ordem,
+     reentrância via flag `precisaNovaPassada` — sem isso uma segunda chamada durante uma
+     drenagem em andamento era descartada em silêncio), `lancamento-outbox-view.ts`
+     (`derivarLancamentoAtivo`, função pura que decide o que mostrar a partir só do outbox —
+     **não depende do refetch da listagem da rodada**, porque esse refetch pode demorar mais que
+     o sync e deixar a tela mostrando "nada" por um instante). `LancamentoFormPage.tsx` foi
+     reescrito: clique em Registrar/Confirmar grava no Dexie (via `useLiveQuery` de
+     `dexie-react-hooks`) e dispara `sincronizar()` em paralelo, nunca mais espera `api.POST`
+     direto. `App.tsx` chama `useSincronizarOutbox()` (sync no mount + no evento `online` da
+     janela). Conflito de negócio (409 `LANCAMENTO_JA_EXISTE`, 422 `LANCAMENTO_NAO_PENDENTE`) vira
+     estado `CONFLITO`/`ERRO` no item da fila — mostrado num bloco vermelho na ficha, sem retry
+     automático, sem sobrescrever nada; o árbitro precisa envolver a secretaria/coordenação.
+     **Escopo explicitamente cortado pelo usuário**: só a fila de escrita. Cache de leitura
+     offline (baixar ficha/rodadas/equipes/partidas antes da rodada) continua de fora — não é a
+     seção 8 completa, é a metade que faltava resolvida.
+   - **Seed agora deixa o ambiente pronto pra pontuar** — `backend/app/db/seed.py` ganhou
+     `seed_arenas`/`seed_rodadas`/`seed_agendamentos` (reaproveitando os services de
+     arena/rodada/agendamento, não duplicando lógica de bracket/agendamento), chamados em
+     `_main()` depois de `seed_inscricoes`. As 4 modalidades `INDIVIDUAL` do seed passaram a
+     definir `duracao_maxima_rodada_seg`/`pausa_entre_rodadas_seg` (antes ficavam `NULL`, o que
+     derrubava a geração de horário com `422 DURACAO_RODADA_NAO_CONFIGURADA`). `make environment`
+     em banco limpo agora entrega rodadas + arena + agendamento completo pra toda equipe inscrita,
+     sem nenhum passo manual — validado rodando migration+seed do zero numa stack Docker isolada
+     (projeto `docker compose -p` separado, sem tocar no banco de dev real) até criar um
+     lançamento de verdade via API.
+   - **Tela Pontuar (individual) não confunde "sem rodada" com "tudo completo"** —
+     `PontuarPage.tsx` agora tem um terceiro estado vazio explícito (`rodadasOrdenadas.length ===
+     0`) com aviso âmbar e link "Gerar rodadas →"; antes, zero rodadas caía no mesmo texto verde
+     de "✓ todas já completaram".
+   - **Árbitro não cai mais na área administrativa por padrão** — `EventoSelectPage` roteia
+     árbitro pra `/eventos/:id/individual` ao clicar num evento (mesma convenção que
+     `Header.tsx` já usava pros links do cabeçalho). O botão "Liberar/Ocultar ranking" em
+     `ModalidadeListPage` ficou restrito a `ehCoordenador` (mesmo padrão dos outros controles da
+     página) e `alternarRanking()` passou a mostrar erro na tela em vez de falhar em silêncio.
+     **Decisão consciente**: a rota `/modalidades` em si **não** foi fechada com `ProtectedRoute
+     papeisPermitidos` — SECRETARIA e ARBITRO têm leitura legítima ali por design (backend
+     `_PAPEIS_LEITURA` inclui os dois pra GET, só escrita é `COORDENADOR`-only); fechar a rota
+     inteira quebraria esse padrão já coberto por teste.
+   - **Sessão renova sozinha** — `frontend/src/api/client.ts` chama `POST /api/v1/auth/refresh`
+     no primeiro 401 (clonando a request original **antes** dela ser consumida pelo fetch real, e
+     guardando o clone num `Map` por `id` da requisição, já que não dá pra clonar depois), repete
+     a chamada original com o token novo, e só desloga se o refresh também falhar. Refreshes
+     concorrentes (duas chamadas recebendo 401 ao mesmo tempo) dividem a mesma promise em voo, só
+     um `POST /auth/refresh` sai. `createClient()` do `openapi-fetch` captura `globalThis.fetch`
+     uma única vez na criação — por isso o client usa `fetch: (r) => globalThis.fetch(r)`
+     (indireção, não a referência direta), senão nenhum teste conseguiria trocar o fetch global.
+   - **Header não quebra mais em celular** — `gap-6` virou `flex-wrap gap-x-6 gap-y-2`; a
+     navegação agora quebra linha em vez de forçar rolagem horizontal.
+   - **Nome só com espaços é rejeitado** — `NomeObrigatorio` novo em
+     `backend/app/schemas/common.py` (`Annotated[str, StringConstraints(strip_whitespace=True,
+     min_length=1)]`), primeiro uso desse padrão no projeto (nenhum schema usava
+     `field_validator`/`StringConstraints` antes), aplicado em equipe/evento/modalidade/arena/
+     usuário. Frontend: `.trim()` adicionado nos schemas zod de `EquipeListPage` e
+     `EventoSelectPage`.
+   - **Dependências**: `bcrypt` fixado em `<4.1` no `pyproject.toml` (passlib 1.7.4, sem release
+     desde 2020, sonda `bcrypt.__about__`, removido no bcrypt 4.1+ — gerava
+     `AttributeError` a cada hash/verificação de senha, sem quebrar o login mas poluindo os logs).
+     `react-router-dom` atualizado de `^6.26.2` pra `7.18.2` (a série 6.x inteira tem as duas
+     CVEs do `npm audit`, não existe patch 6.x — só 7.18+; upgrade major mas de baixo risco pro
+     uso deste projeto, API clássica `BrowserRouter`/`Routes`/`Route`, sem o modo "framework" do
+     v7; confirmado com suíte completa + `npm run build` depois do bump).
+   - **Pegadinha de Docker**: pacote instalado via `docker compose exec <serviço> npm install
+     ...` só grava no filesystem efêmero do container (ou no volume anônimo de `node_modules`)
+     daquele momento — **não fica na imagem**. Depois de qualquer `npm install`/`pip install`
+     assim durante uma sessão, é preciso `docker compose build <serviço>` e, se o volume anônimo
+     de `node_modules` sobrepuser o node_modules novo da imagem ao recriar, `docker compose rm
+     -fsv <serviço>` (o `-v` remove o volume anônimo) antes de `up -d` de novo — só rodar os
+     testes dentro do container já quente não garante que a mudança sobreviva a um restart.
+
+   **Sessão de redirecionamento de escopo pro TJR 2026** (21/08/2026). Com o tempo curto pra
+   virada, decisão consciente do usuário: parar de modelar pensando em reaproveitar o sistema
+   pra outras instâncias/competições futuras e focar só nas modalidades já existentes do
+   evento atual — sem fechar a porta (abas, modelo de dados e a estrutura de `modalidade`/
+   `ficha` seguem genéricas), só sem investir tempo extra em generalização que não vai ser
+   usada agora. Quatro entregas:
+
+   - **`formato_chaveamento` trava depois que a modalidade tem rodada criada** —
+     `atualizar_modalidade` (`services/modalidade.py`) recusa com `422
+     FORMATO_CHAVEAMENTO_TRAVADO` se o valor mudar e já existir `Rodada` pra aquela modalidade.
+     Motivado por caso real de confronto (Cabo de Guerra, Sumô, Corrida de Carros Autônomos):
+     coordenador escolhe mata-mata ou todos-contra-todos, e trocar no meio da competição
+     bagunça a leitura de classificação (`consolidacao.py` decide o cálculo pelo campo).
+   - **Reset de chaveamento** (`resetar_chaveamento` em `services/chaveamento.py`, rota `POST
+     /modalidades/{id}/chaveamento/reset`, só `COORDENADOR`, exige `justificativa`) — via de
+     escape do item acima: apaga de verdade rodada/partida/lançamento/item daquela modalidade e
+     libera trocar o formato e gerar chaveamento do zero. **Exceção deliberada à regra
+     inviolável 5** ("nada de DELETE em dado de pontuação"), decidida explicitamente com o
+     usuário depois de confirmar que ele queria desfazer de verdade (não só corrigir/anular) um
+     caso em que o árbitro rodou o formato errado. Antes de apagar, grava um snapshot completo
+     (`_dump`, via `inspect(obj).mapper.column_attrs` + `json.dumps(default=str)`) no
+     `audit_log` como `acao="RESET_CHAVEAMENTO"` — o rastro sobrevive mesmo sem as linhas
+     originais, só que fora das tabelas de pontuação. Front: botão vermelho "Resetar
+     chaveamento" em `ChaveamentoPage.tsx`, só pra coordenador, com modal de confirmação que
+     exige justificativa preenchida antes de habilitar o envio.
+   - **Aba "Ranking" tirada do Painel interno** (`PainelPage.tsx`) — investigação mostrou que
+     não existe nenhum link de navegação pro ranking público hoje (só URL direta), então não
+     tinha o que esconder ali; o único lugar do sistema com link de fato pra visualização de
+     ranking era essa aba do painel staff. Removida temporariamente (reversível — a aba e o
+     componente `RankingClassificacao` continuam existindo, só desconectados), decisão do
+     coordenador: tempo curto, ranking ainda não está pronto pra mostrar nem pro staff.
+   - **Relatório de auditoria em PDF** — `services/relatorio.py`
+     (`gerar_relatorio_auditoria_pdf`, nova dependência `reportlab`) monta, por modalidade, a
+     classificação completa (reaproveita `consolidacao.calcular_classificacao`, mesma fonte do
+     `RankingOut`) e todos os lançamentos com seus itens (rodada, tentativa, status, total,
+     árbitro, critério a critério) — pensado pra equipe contestar resultado e a secretaria
+     conferir na mão. Rota `GET /ranking/modalidades/{id}/relatorio-auditoria.pdf`, mesmo grupo
+     de papéis que já vê ranking não liberado (`COORDENADOR`/`ARBITRO`/`SECRETARIA`). Front:
+     botão "Baixar relatório (PDF)" em `ModalidadeListPage.tsx`, ao lado de
+     "Liberar/Ocultar ranking", usando `parseAs: "blob"` do `openapi-fetch` +
+     `URL.createObjectURL` (primeiro download binário do projeto — sem precedente de
+     `parseAs`/blob antes desta sessão).
+
+   Fichas específicas de Cabo de Guerra/Sumô/Corrida de Carros Autônomos (o seed já cria essas
+   três modalidades, `db/seed.py`, hoje com uma ficha genérica `_FICHA_RESULTADO_COMBATE`
+   compartilhada) ficaram de fora desta sessão — o usuário vai detalhar critério a critério no
+   `HISTORIAS.md`, tarefa separada.
+
+   **Fichas reais de Cabo de Guerra/Sumô/Corrida de Carros Autônomos** (mesma sessão, depois de
+   comparar `HISTORIAS.md` com as fichas oficiais em PDF na pasta `FICHAS-DE-PONTUAÇÃO/` — achou
+   3 divergências reais entre o texto e o PDF, perguntado e resolvido antes de implementar):
+   - **Cabo de Guerra e Sumô: `tentativas_por_rodada=2`**, não 3 (a ficha oficial só tem Round 1
+     e Round 2). O combate extra de desempate ("ponto de ouro", seção 6) cobre o caso de empate
+     em `MATA_MATA` sem precisar de um 3º round fixo. `_FICHA_CABO_DE_GUERRA`/`_FICHA_SUMO`
+     (`db/seed.py`) viraram 1 único critério `ESCALA` cada — `"Resultado do arrasto"` (Cabo de
+     Guerra) e `"Resultado do combate"` (Sumô), `valores_permitidos=[0, 1, 2]` — pra caber no
+     fluxo rápido de 1 clique do `PartidaScorerPage` (ficha com mais de 1 critério cai no
+     formulário genérico). Decisão consciente: **Empate (+1 pra cada) e Nulo (0 pra cada) da
+     ficha oficial do Cabo de Guerra viram o mesmo "Empate" no sistema** — pro resultado do round
+     dá no mesmo (ninguém vence), e distinguir os dois exigiria sair do fluxo de 1 clique. Rótulo
+     de `ESCALA` por nome de critério em `ROTULOS_ESCALA` (`PartidaScorerPage.tsx`): Cabo de
+     Guerra já existia (`1 = "Arrasto parcial", 2 = "Arrasto pro fosso"`, de uma sessão anterior
+     de teste manual), Sumô novo (`1 = "Waza-ari", 2 = "Ippon"`).
+   - **Corrida de Carros Autônomos: `tentativas_por_rodada=3` sempre**, pra toda partida —
+     simplificação deliberada da ficha oficial (que só exige 1 corrida eliminatória em partida
+     normal, e só a Final sempre roda 2 corridas + 3ª de desempate). Implementar o "só a Final
+     tem número de corridas diferente" exigiria `tentativas_por_rodada` variar por partida
+     dentro da mesma modalidade, coisa que o modelo atual não suporta (é um campo fixo por
+     modalidade) — trabalho de modelagem novo, fora de escopo por ora. Nível da modalidade
+     confirmado como normal (separado por nível como as demais, mesmo a ficha oficial mostrando
+     "NÍVEL: ÚNICO" — era só o valor de exemplo preenchido no modelo).
+
+     `_FICHA_CORRIDA_DE_CARROS` (`db/seed.py`) **inicialmente** virou 1 critério `BOOLEANO`
+     (`"Venceu a corrida"`) pra caber no fluxo rápido de 1 clique — mas ao testar ao vivo (depois
+     de zerar e resemear o banco de dev, seção seguinte) o usuário viu que faltavam as opções
+     reais da ficha (Evitar a colisão, as 4 violações, Carro que ficou na frente) e pediu o
+     detalhamento de volta, mesmo saindo do fluxo rápido. Ficha final com 6 critérios num grupo
+     só ("Eventos da corrida"): `"Evitar a colisão"` (`CONTADOR`, `PONTUACAO`, +1 por vez, sem
+     `max_ocorrencias`); `"Colisão com a parte traseira do outro"`, `"Evasão da pista"`,
+     `"Posicionamento transversal"`, `"Percurso em sentido contrário"` (todos `BOOLEANO`,
+     `PENALIDADE`, -1 cada — só registro, o árbitro que decide o vencedor observando a
+     jurisprudência já impressa na ficha oficial); `"Carro que ficou na frente"` (`BOOLEANO`,
+     `PONTUACAO`, **+10** — de propósito bem acima da soma de todas as penalidades e de qualquer
+     acúmulo razoável de "Evitar a colisão", pra garantir que quem o árbitro marcar como vencedor
+     sempre tenha o total maior na comparação de tentativa que decide a partida, mesmo que o
+     carro perdedor tenha marcado "Evitar a colisão" várias vezes). Com >1 critério, essa
+     modalidade cai no formulário genérico de ficha (`LancamentoFormPage`), não no
+     `PartidaScorerPage` de 1 clique — trade-off aceito conscientemente pela riqueza de dado pro
+     relatório de auditoria.
+
+   **`PartidaScorerPage` ganhou um scorer inline pra ficha com vários critérios BOOLEANO/CONTADOR**
+   (motivado pela Corrida de Carros Autônomos, mas genérico por `tipo` de critério, não hard-coded
+   por nome/modalidade — qualquer ficha de combate futura nesse formato ganha o mesmo tratamento
+   de graça). Antes, ficha com mais de 1 critério caía direto no link "Lançar pela ficha completa"
+   pro `LancamentoFormPage` genérico (selecionar equipe uma de cada vez, formulário abstrato). O
+   usuário testou ao vivo e pediu layout organizado por equipe com botão selecionável, sem sair da
+   tela — `suportaScorerInline(criterios)` (`PartidaScorerPage.tsx`) libera o novo
+   `MultiCriterioScorer` quando **todos** os critérios da ficha são `BOOLEANO` ou `CONTADOR`
+   (`ESCALA`/`MODIFICADOR` misturado ainda cai no link de fallback, sem suporte inline ainda).
+   Componente mostra duas colunas (Equipe A / Equipe B), botão toggle pra cada critério `BOOLEANO`
+   (`aria-pressed`) e contador +/− pra cada `CONTADOR` (respeita `max_ocorrencias`), acumulando
+   estado local por lado até o árbitro clicar "Registrar" — que envia os dois lançamentos de uma
+   vez via `enviarCombate` (mesma função já usada pelos fluxos BOOLEANO/ESCALA de 1 critério, com
+   outbox/idempotência/auto-navegação quando a partida decide). **Achado de bug corrigido no
+   caminho**: a primeira versão definia o componente de coluna (`ColunaEquipe`) *dentro* do corpo
+   de `MultiCriterioScorer` — como toda função aninhada tem identidade nova a cada render, o React
+   desmontava/remontava a subárvore inteira a cada clique, e o segundo clique em sequência (ex.:
+   "+1" duas vezes) caía num nó DOM já destacado, perdendo o efeito. Corrigido subindo o
+   componente de coluna (`ColunaEquipeMultiCriterio`) pro nível de módulo — mesmo padrão que
+   `ColunaRodada` já usa em `ChaveamentoPage.tsx`. Lição: **nunca declarar componente dentro do
+   corpo de outro componente** neste projeto, sempre no nível de módulo, mesmo quando parece
+   "só uma função auxiliar local".
+
+   **Ajustes visuais no `MultiCriterioScorer` depois do usuário testar ao vivo**: colunas lado a
+   lado (`grid grid-cols-2`) com as opções empilhadas dentro de cada coluna (`flex-col`, antes era
+   `flex-wrap`); cor por `categoria` do critério (`corCriterio`, novo campo `categoria` em
+   `CriterioItem`) — verde (`PONTUACAO`) pro que faz a equipe ganhar, vermelho (`PENALIDADE`) pro
+   que faz perder, já visível na borda em repouso (não só no hover, pra funcionar em touch);
+   **exclusividade entre equipes pra critério `BOOLEANO`** — marcar um critério (ex.: "Carro que
+   ficou na frente") pra uma equipe desmarca automaticamente o mesmo da outra, já que fisicamente
+   as duas não podem "ganhar" o mesmo evento ao mesmo tempo. `CONTADOR` ("Evitar a colisão") fica
+   de fora dessa regra por construção — cada lado usa seu próprio contador independente
+   (`alterar`), só `BOOLEANO` passa por `alternar`, que agora zera o lado oposto ao ligar.
+
+   **Bug real de decisão de partida corrigido — `Modalidade.decisao_partida`** (achado ao vivo:
+   usuário marcou "Arrasto pro fosso" pra uma equipe num round e "Arrasto parcial" pra outra num
+   outro round, cada equipe venceu 1 round, e o sistema fechou a partida como empate). Causa: a
+   regra inviolável 6 original ("vencedor da partida = quem ganha mais combates individuais, não
+   quem soma mais pontos") é adequada pra Corrida de Carros (melhor-de-3 corridas, tipo tênis),
+   mas **não é o que Cabo de Guerra/Sumô precisam** — ali cada round vale um número de pontos
+   diferente (Fosso=2, Arraste Parcial=1 / Ippon=2, Waza-ari=1) e isso tem que se acumular pra
+   decidir quem vence, não só contar quantos rounds cada lado ganhou. Confirmado com o usuário
+   antes de mexer (regra 6 é inviolável, exigia parar e perguntar) que a soma é o comportamento
+   correto pra essas duas modalidades especificamente.
+
+   Solução: novo campo `Modalidade.decisao_partida` (enum `DecisaoPartida`:
+   `COMBATES_VENCIDOS` default / `SOMA_PONTOS`, migration `353d40a6fcc5`). Em
+   `services/chaveamento.py::registrar_resultado_lancamento`, o cálculo de quem vence a partida
+   agora bifurca por esse campo — `vitorias_a/vitorias_b` (contagem, comportamento antigo
+   preservado pra tudo que não configurar o contrário) vs `soma_a/soma_b` (soma dos `total` de
+   cada tentativa confirmada). O combate extra de desempate ("ponto de ouro", só `MATA_MATA`)
+   segue existindo nos dois modos: em `COMBATES_VENCIDOS` ele soma +1 vitória pra quem tiver mais
+   pontos nesse combate extra; em `SOMA_PONTOS` ele soma o total do combate extra na soma
+   corrente de cada lado (sem reescrever os combates anteriores, mesmo espírito de antes). Seed:
+   Cabo de Guerra e Sumô ganharam `decisao_partida=SOMA_PONTOS`; Corrida de Carros Autônomos
+   ficou no default (`COMBATES_VENCIDOS` — decisão correta pra ela: normal ou melhor-de-3 por
+   corrida, contar corridas vencidas é o que já reflete o "quem chega na frente primeiro na
+   maioria das vezes" real).
+
+   Front (`PartidaScorerPage.tsx`) também precisou saber do modo: o cálculo de "empate técnico"
+   (que decide se libera o banner + o card do combate extra) era só por contagem de vitórias,
+   independente do que o backend ia realmente decidir. Provado por álgebra que, com exatamente 2
+   tentativas (config atual de Cabo de Guerra/Sumô), empate na soma sempre implica empate na
+   contagem — mas isso é coincidência de N=2, não vale em geral pra N≥3 (testado no front com um
+   cenário de 3 combates pra provar a divergência: contagem 2-1 mas soma empatada 2-2).
+   Corrigido pra sempre bater com o backend em qualquer N: soma quando
+   `modalidade.decisao_partida === "SOMA_PONTOS"`, contagem senão. Texto do banner também virou
+   condicional ("Empate na soma dos pontos" vs "Empate na contagem de combates").
+
+   **Reset do banco de dev depois de mudar ficha de modalidade já seedada**: como
+   `_obter_ou_criar_ficha` (`db/seed.py`) é idempotente por design (não sobrescreve ficha
+   publicada existente), rodar `python -m app.db.seed` de novo **não** troca a ficha de uma
+   modalidade que já tinha sido seedada antes com o formato antigo — só cria o que ainda não
+   existe. Depois de trocar o conteúdo de `FICHAS_TJR`/`MODALIDADES_TJR` no código, quem já tinha
+   rodado o seed antes precisa: (a) sem lançamento nenhum na ficha antiga — apagar direto
+   `criterio`/`grupo`/`ficha` daquela modalidade (nessa ordem, sem `ondelete=` cascata) e rodar o
+   seed de novo; ou (b) já tem lançamento de teste em cima — mais simples zerar o banco `tjr`
+   inteiro (`DROP DATABASE`/`CREATE DATABASE`, sem mexer no `tjr_test` dos testes automatizados)
+   e rodar `alembic upgrade head` + `python -m app.db.seed` do zero. Achado ao vivo: o dev tinha
+   um evento avulso "debug" (05/08) e o evento "TJR 2026" com as 3 modalidades de combate já
+   seedadas com a ficha genérica antiga (`"Venceu o combate"`) e rodadas/partidas/lançamentos de
+   teste em cima — resolvido com reset completo (opção b).
 
 ---
 

@@ -8,7 +8,14 @@ from app.core.errors import AppError
 from app.core.security import hash_senha
 from app.models.audit_log import AuditLog
 from app.models.evento import Evento, EventoStatus
-from app.models.modalidade import Consolidacao, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import (
+    Consolidacao,
+    DecisaoPartida,
+    FormatoChaveamento,
+    ModalidadeStatus,
+    TipoDisputa,
+)
+from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.modalidade import ModalidadeCreate, ModalidadeUpdate
 from app.services.modalidade import (
@@ -317,3 +324,75 @@ async def test_atualizar_modalidade_revalida_regras_com_estado_final(db_session)
         )
 
     assert exc_info.value.codigo == "CONSOLIDACAO_N_MAIOR_QUE_QTD_RODADAS"
+
+
+async def test_atualizar_modalidade_recusa_mudar_formato_chaveamento_apos_rodada_criada(
+    db_session,
+):
+    evento = await _criar_evento(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    modalidade = await criar_modalidade(
+        db_session,
+        _payload(evento.id, formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS),
+        usuario_id=coordenador.id,
+    )
+    db_session.add(
+        Rodada(
+            modalidade_id=modalidade.id,
+            numero=1,
+            modo_horario=ModoHorario.MANUAL,
+            status=RodadaStatus.AGENDADA,
+        )
+    )
+    await db_session.flush()
+
+    with pytest.raises(AppError) as exc_info:
+        await atualizar_modalidade(
+            db_session,
+            modalidade.id,
+            ModalidadeUpdate(formato_chaveamento=FormatoChaveamento.MATA_MATA),
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "FORMATO_CHAVEAMENTO_TRAVADO"
+
+
+async def test_atualizar_modalidade_permite_mudar_formato_chaveamento_sem_rodada(db_session):
+    evento = await _criar_evento(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    modalidade = await criar_modalidade(
+        db_session,
+        _payload(evento.id, formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS),
+        usuario_id=coordenador.id,
+    )
+
+    atualizada = await atualizar_modalidade(
+        db_session,
+        modalidade.id,
+        ModalidadeUpdate(formato_chaveamento=FormatoChaveamento.MATA_MATA),
+        usuario_id=coordenador.id,
+    )
+
+    assert atualizada.formato_chaveamento == FormatoChaveamento.MATA_MATA
+
+
+async def test_criar_modalidade_default_decisao_partida_e_combates_vencidos(db_session):
+    evento = await _criar_evento(db_session)
+    coordenador = await _criar_coordenador(db_session)
+
+    modalidade = await criar_modalidade(db_session, _payload(evento.id), usuario_id=coordenador.id)
+
+    assert modalidade.decisao_partida == DecisaoPartida.COMBATES_VENCIDOS
+
+
+async def test_criar_modalidade_aceita_decisao_partida_soma_pontos(db_session):
+    evento = await _criar_evento(db_session)
+    coordenador = await _criar_coordenador(db_session)
+
+    modalidade = await criar_modalidade(
+        db_session,
+        _payload(evento.id, decisao_partida=DecisaoPartida.SOMA_PONTOS),
+        usuario_id=coordenador.id,
+    )
+
+    assert modalidade.decisao_partida == DecisaoPartida.SOMA_PONTOS

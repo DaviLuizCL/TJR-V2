@@ -562,6 +562,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Baixar Relatorio Auditoria */
+        get: operations["baixar_relatorio_auditoria_api_v1_ranking_modalidades__modalidade_id__relatorio_auditoria_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chaveamento/gerar": {
         parameters: {
             query?: never;
@@ -573,6 +590,23 @@ export interface paths {
         put?: never;
         /** Gerar Chaveamento */
         post: operations["gerar_chaveamento_api_v1_chaveamento_gerar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modalidades/{modalidade_id}/chaveamento/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resetar Chaveamento */
+        post: operations["resetar_chaveamento_api_v1_modalidades__modalidade_id__chaveamento_reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -884,6 +918,11 @@ export interface components {
             /** Ativo */
             ativo?: boolean | null;
         };
+        /**
+         * DecisaoPartida
+         * @enum {string}
+         */
+        DecisaoPartida: "COMBATES_VENCIDOS" | "SOMA_PONTOS";
         /** DetalheCriterio */
         DetalheCriterio: {
             /**
@@ -1435,6 +1474,8 @@ export interface components {
              * @default 1
              */
             pontos_empate: number;
+            /** @default COMBATES_VENCIDOS */
+            decisao_partida: components["schemas"]["DecisaoPartida"];
         };
         /** ModalidadeOut */
         ModalidadeOut: {
@@ -1482,6 +1523,7 @@ export interface components {
             status: components["schemas"]["ModalidadeStatus"];
             /** Ranking Liberado */
             ranking_liberado: boolean;
+            decisao_partida: components["schemas"]["DecisaoPartida"];
             /**
              * Criado Em
              * Format: date-time
@@ -1534,6 +1576,7 @@ export interface components {
             pontos_vitoria?: number | null;
             /** Pontos Empate */
             pontos_empate?: number | null;
+            decisao_partida?: components["schemas"]["DecisaoPartida"] | null;
         };
         /** ModificadorAplicado */
         ModificadorAplicado: {
@@ -1757,6 +1800,11 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** ResetarChaveamentoRequest */
+        ResetarChaveamentoRequest: {
+            /** Justificativa */
+            justificativa: string;
         };
         /** RodadaCreate */
         RodadaCreate: {
@@ -3387,6 +3435,37 @@ export interface operations {
             };
         };
     };
+    baixar_relatorio_auditoria_api_v1_ranking_modalidades__modalidade_id__relatorio_auditoria_pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     gerar_chaveamento_api_v1_chaveamento_gerar_post: {
         parameters: {
             query?: never;
@@ -3408,6 +3487,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RodadaOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resetar_chaveamento_api_v1_modalidades__modalidade_id__chaveamento_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetarChaveamentoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
