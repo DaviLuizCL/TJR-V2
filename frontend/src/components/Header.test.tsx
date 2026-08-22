@@ -39,13 +39,15 @@ describe("Header", () => {
     expect(screen.getByRole("link", { name: /eventos/i })).toHaveAttribute("href", "/eventos");
   });
 
-  it("sem evento atual, manda modalidades/fichas/individual/combates/painel para o seletor de eventos", () => {
+  it("sem evento atual, manda modalidades/fichas/competicoes/painel para o seletor de eventos", () => {
     renderHeader();
 
     expect(screen.getByRole("link", { name: /modalidades/i })).toHaveAttribute("href", "/eventos");
     expect(screen.getByRole("link", { name: /^fichas$/i })).toHaveAttribute("href", "/eventos");
-    expect(screen.getByRole("link", { name: /^individual$/i })).toHaveAttribute("href", "/eventos");
-    expect(screen.getByRole("link", { name: /^combates$/i })).toHaveAttribute("href", "/eventos");
+    expect(screen.getByRole("link", { name: /competi[cç][oõ]es/i })).toHaveAttribute(
+      "href",
+      "/eventos",
+    );
     expect(screen.getByRole("link", { name: /painel/i })).toHaveAttribute("href", "/eventos");
   });
 
@@ -62,13 +64,9 @@ describe("Header", () => {
       "href",
       "/eventos/evt-9/fichas",
     );
-    expect(screen.getByRole("link", { name: /^individual$/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /competi[cç][oõ]es/i })).toHaveAttribute(
       "href",
-      "/eventos/evt-9/individual",
-    );
-    expect(screen.getByRole("link", { name: /^combates$/i })).toHaveAttribute(
-      "href",
-      "/eventos/evt-9/combates",
+      "/eventos/evt-9/competicoes",
     );
     expect(screen.getByRole("link", { name: /painel/i })).toHaveAttribute(
       "href",
@@ -76,7 +74,7 @@ describe("Header", () => {
     );
   });
 
-  it("nao mostra mais os links soltos de Rodadas, Horarios, Pontuar e Chaveamento (viraram abas dentro de Individual/Combates)", () => {
+  it("nao mostra mais os links soltos de Rodadas, Horarios, Pontuar, Chaveamento, Individual e Combates (viraram abas dentro de Competicoes)", () => {
     useEventoStore.setState({ eventoAtualId: "evt-9" });
 
     renderHeader();
@@ -85,16 +83,17 @@ describe("Header", () => {
     expect(screen.queryByRole("link", { name: /^hor[aá]rios$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^pontuar$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^chaveamento$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^individual$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^combates$/i })).not.toBeInTheDocument();
   });
 
-  it("arbitro so ve Eventos, Individual e Combates - sem acesso as ferramentas de coordenacao", () => {
+  it("arbitro so ve Eventos e Competicoes - sem acesso as ferramentas de coordenacao", () => {
     logarComo("ARBITRO");
 
     renderHeader();
 
     expect(screen.getByRole("link", { name: /eventos/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^individual$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^combates$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /competi[cç][oõ]es/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /equipes/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^modalidades$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^fichas$/i })).not.toBeInTheDocument();

@@ -15,8 +15,7 @@ import { FichaListPage } from "./features/ficha/FichaListPage";
 import { FichaPreviewPage } from "./features/ficha/FichaPreviewPage";
 import { HorarioPage } from "./features/horario/HorarioPage";
 import { PontuarRoutePage } from "./features/arbitragem/PontuarRoutePage";
-import { ConfrontoHubPage } from "./features/modalidade/ConfrontoHubPage";
-import { IndividualHubPage } from "./features/modalidade/IndividualHubPage";
+import { CompeticoesPage } from "./features/modalidade/CompeticoesPage";
 import { InscricaoPage } from "./features/modalidade/InscricaoPage";
 import { PainelPage } from "./features/painel/PainelPage";
 import { ModalidadeListPage } from "./features/modalidade/ModalidadeListPage";
@@ -62,8 +61,7 @@ export default function App() {
           element={<ModalidadeWizardPage />}
         />
         <Route path="/eventos/:eventoId/fichas" element={<FichaDashboardPage />} />
-        <Route path="/eventos/:eventoId/individual" element={<IndividualHubPage />} />
-        <Route path="/eventos/:eventoId/combates" element={<ConfrontoHubPage />} />
+        <Route path="/eventos/:eventoId/competicoes" element={<CompeticoesPage />} />
         <Route path="/eventos/:eventoId/painel" element={<PainelPage />} />
         <Route
           path="/eventos/:eventoId/modalidades/:modalidadeId/horarios"

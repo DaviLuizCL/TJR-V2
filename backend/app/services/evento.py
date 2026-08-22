@@ -32,6 +32,14 @@ def _serializar(evento: Evento) -> dict:
 async def criar_evento(db: AsyncSession, dto: EventoCreate, *, usuario_id: UUID) -> Evento:
     _validar_datas(dto.data_inicio, dto.data_fim)
 
+    ja_existe = await db.scalar(select(func.count()).select_from(Evento))
+    if ja_existe:
+        raise AppError(
+            codigo="EVENTO_UNICO_JA_EXISTE",
+            mensagem="Ja existe um evento cadastrado. O sistema so suporta um evento por vez.",
+            status_code=422,
+        )
+
     evento = Evento(
         nome=dto.nome,
         ano=dto.ano,

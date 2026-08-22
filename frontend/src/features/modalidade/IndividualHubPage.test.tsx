@@ -67,8 +67,8 @@ describe("IndividualHubPage", () => {
     expect(link).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/horarios");
   });
 
-  it("abre direto na aba indicada pelo parametro ?aba=", async () => {
-    renderPage("/eventos/evt-1/individual?aba=horarios");
+  it("abre direto na aba indicada pelo parametro ?sub=", async () => {
+    renderPage("/eventos/evt-1/individual?sub=horarios");
 
     const abaHorarios = await screen.findByRole("tab", { name: /hor[aá]rios/i });
     expect(abaHorarios).toHaveAttribute("aria-selected", "true");

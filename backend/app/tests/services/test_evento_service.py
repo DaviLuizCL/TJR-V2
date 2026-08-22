@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.core.errors import AppError
 from app.core.security import hash_senha
 from app.models.audit_log import AuditLog
-from app.models.evento import EventoStatus
+from app.models.evento import Evento, EventoStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.evento import EventoCreate, EventoUpdate
 from app.services.evento import atualizar_evento, criar_evento, listar_eventos, obter_evento
@@ -53,6 +53,32 @@ async def test_criar_evento_grava_audit_log(db_session):
     assert log.depois["nome"] == "TJR 2026"
 
 
+async def test_criar_evento_rejeita_quando_ja_existe_um_evento(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    await criar_evento(
+        db_session,
+        EventoCreate(
+            nome="TJR 2026", ano=2026, data_inicio=date(2026, 3, 10), data_fim=date(2026, 3, 12)
+        ),
+        usuario_id=coordenador.id,
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_evento(
+            db_session,
+            EventoCreate(
+                nome="TJR 2027",
+                ano=2027,
+                data_inicio=date(2027, 3, 10),
+                data_fim=date(2027, 3, 12),
+            ),
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "EVENTO_UNICO_JA_EXISTE"
+    assert exc_info.value.status_code == 422
+
+
 async def test_criar_evento_rejeita_data_fim_antes_de_inicio(db_session):
     coordenador = await _criar_coordenador(db_session)
     dto = EventoCreate(
@@ -76,18 +102,19 @@ async def test_obter_evento_inexistente_lanca_erro(db_session):
 
 
 async def test_listar_eventos_pagina_resultados(db_session):
-    coordenador = await _criar_coordenador(db_session)
+    # Insercao direta via model (nao via criar_evento) porque o servico so
+    # permite um evento por vez -- ver test_criar_evento_rejeita_quando_ja_existe_um_evento.
     for i in range(3):
-        await criar_evento(
-            db_session,
-            EventoCreate(
+        db_session.add(
+            Evento(
                 nome=f"Evento {i}",
                 ano=2026,
                 data_inicio=date(2026, 1, 1),
                 data_fim=date(2026, 1, 2),
-            ),
-            usuario_id=coordenador.id,
+                status=EventoStatus.RASCUNHO,
+            )
         )
+    await db_session.flush()
 
     itens, total = await listar_eventos(db_session, page=1, size=2)
 

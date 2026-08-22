@@ -22,9 +22,8 @@ export function Header() {
 
   const linkModalidades = eventoAtualId ? `/eventos/${eventoAtualId}/modalidades` : "/eventos";
   const linkFichas = eventoAtualId ? `/eventos/${eventoAtualId}/fichas` : "/eventos";
-  const linkIndividual = eventoAtualId ? `/eventos/${eventoAtualId}/individual` : "/eventos";
+  const linkCompeticoes = eventoAtualId ? `/eventos/${eventoAtualId}/competicoes` : "/eventos";
   const linkPainel = eventoAtualId ? `/eventos/${eventoAtualId}/painel` : "/eventos";
-  const linkCombates = eventoAtualId ? `/eventos/${eventoAtualId}/combates` : "/eventos";
 
   return (
     <header className="border-b border-slate-200 bg-white px-6 py-3">
@@ -55,16 +54,10 @@ export function Header() {
           </Link>
         )}
         <Link
-          to={linkIndividual}
+          to={linkCompeticoes}
           className="text-sm font-medium text-slate-700 hover:text-slate-900"
         >
-          Individual
-        </Link>
-        <Link
-          to={linkCombates}
-          className="text-sm font-medium text-slate-700 hover:text-slate-900"
-        >
-          Combates
+          Competições
         </Link>
         {!ehArbitro && (
           <Link

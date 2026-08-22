@@ -72,6 +72,36 @@ async def test_criar_evento_com_coordenador_retorna_201(client, db_session):
     assert corpo["status"] == "RASCUNHO"
 
 
+async def test_criar_evento_quando_ja_existe_um_retorna_422(client, db_session):
+    headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-eventos-unico@tjr.app"
+    )
+    await client.post(
+        "/api/v1/eventos",
+        json={
+            "nome": "TJR 2026",
+            "ano": 2026,
+            "data_inicio": "2026-03-10",
+            "data_fim": "2026-03-12",
+        },
+        headers=headers,
+    )
+
+    resposta = await client.post(
+        "/api/v1/eventos",
+        json={
+            "nome": "TJR 2027",
+            "ano": 2027,
+            "data_inicio": "2027-03-10",
+            "data_fim": "2027-03-12",
+        },
+        headers=headers,
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_UNICO_JA_EXISTE"
+
+
 async def test_criar_evento_com_data_fim_antes_de_inicio_retorna_422(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-eventos-2@tjr.app")
 
@@ -87,17 +117,16 @@ async def test_criar_evento_com_data_fim_antes_de_inicio_retorna_422(client, db_
 
 async def test_listar_eventos_retorna_envelope_paginado(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-eventos-3@tjr.app")
-    for i in range(2):
-        await client.post(
-            "/api/v1/eventos",
-            json={
-                "nome": f"Evento {i}",
-                "ano": 2026,
-                "data_inicio": "2026-01-01",
-                "data_fim": "2026-01-02",
-            },
-            headers=headers,
-        )
+    await client.post(
+        "/api/v1/eventos",
+        json={
+            "nome": "Evento X",
+            "ano": 2026,
+            "data_inicio": "2026-01-01",
+            "data_fim": "2026-01-02",
+        },
+        headers=headers,
+    )
 
     resposta = await client.get("/api/v1/eventos?page=1&size=50", headers=headers)
 
@@ -105,7 +134,7 @@ async def test_listar_eventos_retorna_envelope_paginado(client, db_session):
     corpo = resposta.json()
     assert corpo["page"] == 1
     assert corpo["size"] == 50
-    assert corpo["total"] >= 2
+    assert corpo["total"] >= 1
     assert isinstance(corpo["itens"], list)
 
 

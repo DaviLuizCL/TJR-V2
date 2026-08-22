@@ -77,8 +77,8 @@ describe("ConfrontoHubPage", () => {
     expect(seletor).toBeInTheDocument();
   });
 
-  it("abre direto na aba indicada pelo parametro ?aba=", async () => {
-    renderPage("/eventos/evt-1/combates?aba=chaveamento");
+  it("abre direto na aba indicada pelo parametro ?sub=", async () => {
+    renderPage("/eventos/evt-1/combates?sub=chaveamento");
 
     const abaChaveamento = await screen.findByRole("tab", { name: /chaveamento/i });
     expect(abaChaveamento).toHaveAttribute("aria-selected", "true");
