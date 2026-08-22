@@ -505,6 +505,7 @@ async def listar_lancamentos_auditoria(
                 equipe_nome=equipe_nome,
                 rodada_numero=rodada_numero,
                 tentativa=lancamento.tentativa,
+                partida_id=lancamento.partida_id,
                 responsavel_nome=arbitro_nome,
                 horario_submissao=lancamento.criado_em,
                 status=lancamento.status,

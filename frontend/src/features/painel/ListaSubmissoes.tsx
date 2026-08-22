@@ -26,6 +26,16 @@ interface LancamentoAuditoria {
   status: string;
   total: number;
   itens: ItemAuditoria[];
+  partida_id: string | null;
+}
+
+interface GrupoCombate {
+  chave: string;
+  modalidade_nome: string;
+  nivel: number | null;
+  rodada_numero: number;
+  tentativa: number;
+  lados: LancamentoAuditoria[];
 }
 
 function formatarHorario(iso: string): string {
@@ -145,6 +155,93 @@ function CardSubmissao({ item }: { item: LancamentoAuditoria }) {
   );
 }
 
+function agruparPorCombate(itens: LancamentoAuditoria[]): (LancamentoAuditoria | GrupoCombate)[] {
+  const grupoPorChave = new Map<string, GrupoCombate>();
+  const resultado: (LancamentoAuditoria | GrupoCombate)[] = [];
+
+  for (const item of itens) {
+    if (!item.partida_id) {
+      resultado.push(item);
+      continue;
+    }
+
+    const chave = `${item.partida_id}-${item.tentativa}`;
+    let grupo = grupoPorChave.get(chave);
+    if (!grupo) {
+      grupo = {
+        chave,
+        modalidade_nome: item.modalidade_nome,
+        nivel: item.nivel,
+        rodada_numero: item.rodada_numero,
+        tentativa: item.tentativa,
+        lados: [],
+      };
+      grupoPorChave.set(chave, grupo);
+      resultado.push(grupo);
+    }
+    grupo.lados.push(item);
+  }
+
+  return resultado;
+}
+
+function ehGrupoCombate(item: LancamentoAuditoria | GrupoCombate): item is GrupoCombate {
+  return "lados" in item;
+}
+
+function LadoCombate({
+  lancamento,
+  vencedor,
+  empate,
+}: {
+  lancamento: LancamentoAuditoria;
+  vencedor: boolean;
+  empate: boolean;
+}) {
+  return (
+    <div
+      className={`rounded border p-3 ${
+        vencedor ? "border-green-400 bg-green-50" : "border-slate-200"
+      }`}
+    >
+      <p className="font-medium text-slate-800">{lancamento.equipe_nome}</p>
+      <p className="text-2xl font-bold text-slate-900">{lancamento.total}</p>
+      {vencedor && <p className="text-xs font-medium text-green-700">Vencedor</p>}
+      {empate && <p className="text-xs font-medium text-slate-500">Empate</p>}
+    </div>
+  );
+}
+
+function CardCombate({ grupo }: { grupo: GrupoCombate }) {
+  const [ladoA, ladoB] = grupo.lados;
+  const decidido = grupo.lados.length === 2;
+  const empate = decidido && ladoA.total === ladoB.total;
+  const ladoAVenceu = decidido && !empate && ladoA.total > ladoB.total;
+  const ladoBVenceu = decidido && !empate && ladoB.total > ladoA.total;
+
+  return (
+    <li className="rounded border border-slate-200 bg-white p-4">
+      <p className="font-semibold text-slate-800">
+        {grupo.modalidade_nome}
+        {grupo.nivel !== null ? ` · Nivel ${grupo.nivel}` : ""}
+      </p>
+      <p className="mb-3 text-xs text-slate-500">
+        Rodada {grupo.rodada_numero} · Tentativa {grupo.tentativa}
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <LadoCombate lancamento={ladoA} vencedor={ladoAVenceu} empate={empate} />
+        {ladoB ? (
+          <LadoCombate lancamento={ladoB} vencedor={ladoBVenceu} empate={empate} />
+        ) : (
+          <div className="flex items-center rounded border border-dashed border-slate-300 p-3 text-sm text-slate-400">
+            Aguardando a equipe adversária
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
+
 export function ListaSubmissoes({
   eventoId,
   modalidadeId,
@@ -181,9 +278,13 @@ export function ListaSubmissoes({
 
   return (
     <ul className="space-y-3">
-      {data.map((item) => (
-        <CardSubmissao key={item.id} item={item} />
-      ))}
+      {agruparPorCombate(data).map((item) =>
+        ehGrupoCombate(item) ? (
+          <CardCombate key={item.chave} grupo={item} />
+        ) : (
+          <CardSubmissao key={item.id} item={item} />
+        ),
+      )}
     </ul>
   );
 }

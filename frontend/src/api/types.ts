@@ -579,6 +579,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ranking/eventos/{evento_id}/relatorio-auditoria.pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Baixar Relatorio Auditoria Evento */
+        get: operations["baixar_relatorio_auditoria_evento_api_v1_ranking_eventos__evento_id__relatorio_auditoria_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chaveamento/gerar": {
         parameters: {
             query?: never;
@@ -666,6 +683,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agendamentos/estimativa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Estimar Horarios */
+        get: operations["estimar_horarios_api_v1_agendamentos_estimativa_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agendamentos": {
         parameters: {
             query?: never;
@@ -705,6 +739,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgendamentoEstimativaOut */
+        AgendamentoEstimativaOut: {
+            /**
+             * Agendamento Id
+             * Format: uuid
+             */
+            agendamento_id: string;
+            /**
+             * Horario Previsto
+             * Format: date-time
+             */
+            horario_previsto: string;
+        };
         /** AgendamentoOut */
         AgendamentoOut: {
             /**
@@ -1301,6 +1348,8 @@ export interface components {
             rodada_numero: number;
             /** Tentativa */
             tentativa: number;
+            /** Partida Id */
+            partida_id: string | null;
             /** Responsavel Nome */
             responsavel_nome: string;
             /**
@@ -3466,6 +3515,37 @@ export interface operations {
             };
         };
     };
+    baixar_relatorio_auditoria_evento_api_v1_ranking_eventos__evento_id__relatorio_auditoria_pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evento_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     gerar_chaveamento_api_v1_chaveamento_gerar_post: {
         parameters: {
             query?: never;
@@ -3685,6 +3765,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgendamentoOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimar_horarios_api_v1_agendamentos_estimativa_get: {
+        parameters: {
+            query: {
+                modalidade_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgendamentoEstimativaOut"][];
                 };
             };
             /** @description Validation Error */

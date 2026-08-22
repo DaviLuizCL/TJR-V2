@@ -66,6 +66,7 @@ class LancamentoAuditoriaOut(BaseModel):
     equipe_nome: str
     rodada_numero: int
     tentativa: int
+    partida_id: UUID | None
     responsavel_nome: str
     horario_submissao: datetime
     status: LancamentoStatus

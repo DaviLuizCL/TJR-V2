@@ -99,22 +99,23 @@ beforeEach(() => {
 });
 
 describe("PainelPage", () => {
-  it("nao mostra mais a aba Ranking (ocultada temporariamente) e vai direto pras submissoes", async () => {
+  it("mostra a aba Ranking selecionada por padrao, com uma sub-aba por modalidade do evento (mesmo sem ranking liberado)", async () => {
     mockGet();
 
     renderPage();
 
-    const card = (await screen.findByText("Joana Arbitra")).closest("li")!;
-    expect(within(card).getByText(/Sumo/)).toBeInTheDocument();
-
-    expect(screen.queryByRole("tab", { name: /ranking/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Sumo" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Sumo" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Danca" })).toBeInTheDocument();
+    expect(await screen.findByText("Equipe A")).toBeInTheDocument();
   });
 
-  it("mostra os cards de auditoria de submissoes", async () => {
+  it("troca para a aba Submissoes e mostra os cards de auditoria", async () => {
     mockGet();
 
     renderPage();
+    await screen.findByRole("tab", { name: "Sumo" });
+
+    await userEvent.click(screen.getByRole("tab", { name: "Submissões" }));
 
     const card = (await screen.findByText("Joana Arbitra")).closest("li")!;
     expect(within(card).getByText(/Sumo/)).toBeInTheDocument();
@@ -129,6 +130,8 @@ describe("PainelPage", () => {
     mockGet();
 
     renderPage();
+    await screen.findByRole("tab", { name: "Sumo" });
+    await userEvent.click(screen.getByRole("tab", { name: "Submissões" }));
     await screen.findByText("Joana Arbitra");
 
     const selectModalidade = screen.getByLabelText(/filtrar por modalidade/i);

@@ -102,3 +102,17 @@ async def baixar_relatorio_auditoria(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=relatorio-{modalidade_id}.pdf"},
     )
+
+
+@router.get("/ranking/eventos/{evento_id}/relatorio-auditoria.pdf")
+async def baixar_relatorio_auditoria_evento(
+    evento_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    usuario: Usuario = Depends(exigir_papel(*_PAPEIS_STAFF)),
+) -> Response:
+    pdf_bytes = await relatorio_service.gerar_relatorio_auditoria_evento_pdf(db, evento_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=relatorio-geral-{evento_id}.pdf"},
+    )

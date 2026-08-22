@@ -39,6 +39,7 @@ function baseLancamento(overrides: Record<string, unknown>) {
     status: "CONFIRMADO",
     total: 45,
     itens: [],
+    partida_id: null,
     ...overrides,
   };
 }
@@ -200,5 +201,132 @@ describe("ListaSubmissoes - modificadores", () => {
     const card = (await screen.findByText("Joana Arbitra")).closest("li")!;
     const secaoZerados = within(card).getByText(/^não pontuados$/i).closest("div")!;
     expect(within(secaoZerados).getByText(/completou o percurso/i)).toBeInTheDocument();
+  });
+});
+
+describe("ListaSubmissoes - modalidades de combate", () => {
+  it("agrupa os dois lados da mesma partida+tentativa num card so, com o combate e o resultado", async () => {
+    mockGet([
+      baseLancamento({
+        id: "lanc-a",
+        modalidade_nome: "Sumô",
+        equipe_nome: "Equipe A",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 10,
+      }),
+      baseLancamento({
+        id: "lanc-b",
+        modalidade_nome: "Sumô",
+        equipe_nome: "Equipe B",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 4,
+      }),
+    ]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Equipe A")).closest("li")!;
+    expect(within(card).getByText("Equipe B")).toBeInTheDocument();
+    expect(within(card).getByText(/rodada 1/i)).toBeInTheDocument();
+    expect(within(card).getByText(/tentativa 1/i)).toBeInTheDocument();
+    // Nao mostra a grade detalhada de criterio por criterio de CardSubmissao.
+    expect(within(card).queryByText(/^pontuados$/i)).not.toBeInTheDocument();
+    // So um card na lista, nao dois separados.
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  });
+
+  it("destaca o lado vencedor pelo total de cada lado", async () => {
+    mockGet([
+      baseLancamento({
+        id: "lanc-a",
+        equipe_nome: "Equipe A",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 10,
+      }),
+      baseLancamento({
+        id: "lanc-b",
+        equipe_nome: "Equipe B",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 4,
+      }),
+    ]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Equipe A")).closest("li")!;
+    const ladoA = within(card).getByText("Equipe A").closest("div")!;
+    const ladoB = within(card).getByText("Equipe B").closest("div")!;
+    expect(within(ladoA).getByText(/vencedor/i)).toBeInTheDocument();
+    expect(within(ladoB).queryByText(/vencedor/i)).not.toBeInTheDocument();
+  });
+
+  it("mostra Empate quando os dois lados da partida tem o mesmo total", async () => {
+    mockGet([
+      baseLancamento({
+        id: "lanc-a",
+        equipe_nome: "Equipe A",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 5,
+      }),
+      baseLancamento({
+        id: "lanc-b",
+        equipe_nome: "Equipe B",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 5,
+      }),
+    ]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Equipe A")).closest("li")!;
+    expect(within(card).getAllByText(/empate/i).length).toBeGreaterThan(0);
+    expect(within(card).queryByText(/vencedor/i)).not.toBeInTheDocument();
+  });
+
+  it("mostra 'aguardando a equipe adversaria' quando so um lado da partida foi lancado", async () => {
+    mockGet([
+      baseLancamento({
+        id: "lanc-a",
+        equipe_nome: "Equipe A",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 10,
+      }),
+    ]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Equipe A")).closest("li")!;
+    expect(within(card).getByText(/aguardando/i)).toBeInTheDocument();
+  });
+
+  it("lancamentos de partidas diferentes viram cards separados", async () => {
+    mockGet([
+      baseLancamento({
+        id: "lanc-a",
+        equipe_nome: "Equipe A",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 10,
+      }),
+      baseLancamento({
+        id: "lanc-c",
+        equipe_nome: "Equipe C",
+        partida_id: "partida-2",
+        tentativa: 1,
+        total: 7,
+      }),
+    ]);
+
+    renderLista();
+
+    await screen.findByText("Equipe A");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
 });

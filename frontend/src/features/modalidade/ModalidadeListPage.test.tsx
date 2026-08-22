@@ -10,7 +10,7 @@ import { useEventoStore } from "../../lib/evento-store";
 import { ModalidadeListPage } from "./ModalidadeListPage";
 
 vi.mock("../../api/client", () => ({
-  api: { GET: vi.fn(), PATCH: vi.fn() },
+  api: { GET: vi.fn() },
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
 
@@ -184,20 +184,12 @@ describe("ModalidadeListPage", () => {
     await waitFor(() => expect(useEventoStore.getState().eventoAtualId).toBe("evt-9"));
   });
 
-  it("mostra 'Liberar ranking' quando o ranking ainda nao foi liberado e libera ao clicar", async () => {
+  it("coordenador baixa o relatorio geral de auditoria em pdf do evento", async () => {
     vi.mocked(api.GET).mockImplementation(async (path: string) => {
       if (path === "/api/v1/modalidades") {
         return {
           data: {
-            itens: [
-              {
-                id: "m1",
-                nome: "Sumo",
-                tipo_disputa: "CONFRONTO",
-                status: "PUBLICADA",
-                ranking_liberado: false,
-              },
-            ],
+            itens: [{ id: "m1", nome: "Sumo", tipo_disputa: "CONFRONTO", status: "PUBLICADA" }],
             total: 1,
             page: 1,
             size: 50,
@@ -205,83 +197,7 @@ describe("ModalidadeListPage", () => {
           error: undefined,
         } as never;
       }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, error: undefined } as never);
-
-    renderPage();
-
-    await userEvent.click(await screen.findByRole("button", { name: /liberar ranking/i }));
-
-    expect(api.PATCH).toHaveBeenCalledWith(
-      "/api/v1/modalidades/{modalidade_id}",
-      expect.objectContaining({
-        params: { path: { modalidade_id: "m1" } },
-        body: { ranking_liberado: true },
-      }),
-    );
-  });
-
-  it("mostra 'Ocultar ranking' quando o ranking ja esta liberado", async () => {
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [
-              {
-                id: "m1",
-                nome: "Sumo",
-                tipo_disputa: "CONFRONTO",
-                status: "PUBLICADA",
-                ranking_liberado: true,
-              },
-            ],
-            total: 1,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, error: undefined } as never);
-
-    renderPage();
-
-    await userEvent.click(await screen.findByRole("button", { name: /ocultar ranking/i }));
-
-    expect(api.PATCH).toHaveBeenCalledWith(
-      "/api/v1/modalidades/{modalidade_id}",
-      expect.objectContaining({
-        params: { path: { modalidade_id: "m1" } },
-        body: { ranking_liberado: false },
-      }),
-    );
-  });
-
-  it("coordenador baixa o relatorio de auditoria em pdf da modalidade", async () => {
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [
-              {
-                id: "m1",
-                nome: "Sumo",
-                tipo_disputa: "CONFRONTO",
-                status: "PUBLICADA",
-                ranking_liberado: false,
-              },
-            ],
-            total: 1,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      if (path === "/api/v1/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf") {
+      if (path === "/api/v1/ranking/eventos/{evento_id}/relatorio-auditoria.pdf") {
         return {
           data: new Blob(["%PDF-conteudo"], { type: "application/pdf" }),
           error: undefined,
@@ -295,13 +211,13 @@ describe("ModalidadeListPage", () => {
 
     renderPage();
 
-    await userEvent.click(await screen.findByRole("button", { name: /baixar relat[oó]rio/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /baixar relat[oó]rio geral/i }));
 
     await waitFor(() =>
       expect(api.GET).toHaveBeenCalledWith(
-        "/api/v1/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf",
+        "/api/v1/ranking/eventos/{evento_id}/relatorio-auditoria.pdf",
         expect.objectContaining({
-          params: { path: { modalidade_id: "m1" } },
+          params: { path: { evento_id: "evt-1" } },
           parseAs: "blob",
         }),
       ),
@@ -309,6 +225,20 @@ describe("ModalidadeListPage", () => {
     expect(criarObjectUrl).toHaveBeenCalled();
 
     vi.unstubAllGlobals();
+  });
+
+  it("botao 'Baixar relatorio geral' nao aparece sem modalidade cadastrada", async () => {
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { itens: [], total: 0, page: 1, size: 50 },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/nenhuma modalidade cadastrada/i)).toBeInTheDocument());
+    expect(
+      screen.queryByRole("button", { name: /baixar relat[oó]rio geral/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("clicar em 'Abrir evento' abre o modal com uma linha por modalidade", async () => {
@@ -413,106 +343,6 @@ describe("ModalidadeListPage", () => {
 
     await screen.findByText("Sumo");
     expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
-  });
-
-  it("BUG-04: arbitro nao ve o botao de liberar/ocultar ranking", async () => {
-    logarComo("ARBITRO");
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [
-              {
-                id: "m1",
-                nome: "Sumo",
-                tipo_disputa: "CONFRONTO",
-                status: "PUBLICADA",
-                ranking_liberado: false,
-              },
-            ],
-            total: 1,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-
-    renderPage();
-
-    await screen.findByText("Sumo");
-    expect(screen.queryByRole("button", { name: /liberar ranking/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /ocultar ranking/i })).not.toBeInTheDocument();
-  });
-
-  it("BUG-04: secretaria tambem nao ve o botao de liberar/ocultar ranking", async () => {
-    logarComo("SECRETARIA");
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [
-              {
-                id: "m1",
-                nome: "Sumo",
-                tipo_disputa: "CONFRONTO",
-                status: "PUBLICADA",
-                ranking_liberado: false,
-              },
-            ],
-            total: 1,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-
-    renderPage();
-
-    await screen.findByText("Sumo");
-    expect(screen.queryByRole("button", { name: /liberar ranking/i })).not.toBeInTheDocument();
-  });
-
-  it("BUG-04: mostra mensagem de erro quando alternar o ranking falha (ex.: 403)", async () => {
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [
-              {
-                id: "m1",
-                nome: "Sumo",
-                tipo_disputa: "CONFRONTO",
-                status: "PUBLICADA",
-                ranking_liberado: false,
-              },
-            ],
-            total: 1,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-    vi.mocked(api.PATCH).mockResolvedValue({
-      data: undefined,
-      error: { erro: { codigo: "FORBIDDEN", mensagem: "Sem permissao." } },
-    } as never);
-
-    renderPage();
-
-    await userEvent.click(await screen.findByRole("button", { name: /liberar ranking/i }));
-
-    expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
-    // O rotulo do botao nao pode mudar como se tivesse dado certo.
-    expect(screen.getByRole("button", { name: /liberar ranking/i })).toBeInTheDocument();
   });
 
   it("secretaria tambem nao ve o botao 'Abrir evento'", async () => {

@@ -12,7 +12,6 @@ interface ModalidadeResumo {
   nome: string;
   tipo_disputa: string;
   status: string;
-  ranking_liberado: boolean;
   formato_chaveamento?: string | null;
 }
 
@@ -36,14 +35,10 @@ function classesStatusFicha(texto: string): string {
 function ModalidadeItem({
   modalidade,
   eventoId,
-  ehCoordenador,
 }: {
   modalidade: ModalidadeResumo;
   eventoId: string;
-  ehCoordenador: boolean;
 }) {
-  const queryClient = useQueryClient();
-  const [erro, setErro] = useState<string | null>(null);
   const { data: fichas } = useQuery({
     queryKey: ["fichas", modalidade.id],
     queryFn: async () => {
@@ -55,44 +50,6 @@ function ModalidadeItem({
   });
 
   const texto = statusFicha(fichas);
-
-  async function alternarRanking() {
-    setErro(null);
-    const { error } = await api.PATCH("/api/v1/modalidades/{modalidade_id}", {
-      params: { path: { modalidade_id: modalidade.id } },
-      body: { ranking_liberado: !modalidade.ranking_liberado },
-    });
-
-    if (error) {
-      setErro(extrairErro(error).mensagem);
-      return;
-    }
-
-    await queryClient.invalidateQueries({ queryKey: ["modalidades", eventoId] });
-  }
-
-  async function baixarRelatorio() {
-    setErro(null);
-    const { data, error } = await api.GET(
-      "/api/v1/ranking/modalidades/{modalidade_id}/relatorio-auditoria.pdf",
-      {
-        params: { path: { modalidade_id: modalidade.id } },
-        parseAs: "blob",
-      },
-    );
-
-    if (error || !data) {
-      setErro(extrairErro(error).mensagem);
-      return;
-    }
-
-    const url = URL.createObjectURL(data as Blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `relatorio-${modalidade.nome}.pdf`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
 
   return (
     <li className="rounded border border-slate-200 bg-white px-4 py-3 hover:border-slate-400">
@@ -128,27 +85,8 @@ function ModalidadeItem({
           >
             Rodadas
           </Link>
-          {ehCoordenador && (
-            <button
-              type="button"
-              onClick={alternarRanking}
-              className="text-sm font-medium text-slate-700 underline"
-            >
-              {modalidade.ranking_liberado ? "Ocultar ranking" : "Liberar ranking"}
-            </button>
-          )}
-          {ehCoordenador && (
-            <button
-              type="button"
-              onClick={baixarRelatorio}
-              className="text-sm font-medium text-slate-700 underline"
-            >
-              Baixar relatório (PDF)
-            </button>
-          )}
         </div>
       </div>
-      {erro && <p className="mt-2 text-sm text-red-600">{erro}</p>}
     </li>
   );
 }
@@ -158,7 +96,31 @@ export function ModalidadeListPage() {
   const definirEventoAtual = useEventoStore((state) => state.definirEventoAtual);
   const queryClient = useQueryClient();
   const [mostrarAbrirEvento, setMostrarAbrirEvento] = useState(false);
+  const [erroRelatorio, setErroRelatorio] = useState<string | null>(null);
   const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
+
+  async function baixarRelatorioGeral() {
+    setErroRelatorio(null);
+    const { data, error } = await api.GET(
+      "/api/v1/ranking/eventos/{evento_id}/relatorio-auditoria.pdf",
+      {
+        params: { path: { evento_id: eventoId! } },
+        parseAs: "blob",
+      },
+    );
+
+    if (error || !data) {
+      setErroRelatorio(extrairErro(error).mensagem);
+      return;
+    }
+
+    const url = URL.createObjectURL(data as Blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "relatorio-geral.pdf";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   useEffect(() => {
     if (eventoId) definirEventoAtual(eventoId);
@@ -197,6 +159,15 @@ export function ModalidadeListPage() {
               Abrir evento
             </button>
           )}
+          {ehCoordenador && !!modalidades?.length && (
+            <button
+              type="button"
+              onClick={baixarRelatorioGeral}
+              className="rounded border border-slate-300 px-4 py-2 font-medium text-slate-700"
+            >
+              Baixar relatório geral (PDF)
+            </button>
+          )}
           {ehCoordenador && (
             <Link
               to={`/eventos/${eventoId}/modalidades/novo`}
@@ -208,6 +179,8 @@ export function ModalidadeListPage() {
         </div>
       </div>
 
+      {erroRelatorio && <p className="mb-4 text-sm text-red-600">{erroRelatorio}</p>}
+
       {isLoading && <p className="text-slate-500">Carregando...</p>}
       {!isLoading && modalidades?.length === 0 && (
         <p className="text-slate-500">Nenhuma modalidade cadastrada ainda.</p>
@@ -215,12 +188,7 @@ export function ModalidadeListPage() {
 
       <ul className="space-y-2">
         {modalidades?.map((modalidade) => (
-          <ModalidadeItem
-            key={modalidade.id}
-            modalidade={modalidade}
-            eventoId={eventoId!}
-            ehCoordenador={ehCoordenador}
-          />
+          <ModalidadeItem key={modalidade.id} modalidade={modalidade} eventoId={eventoId!} />
         ))}
       </ul>
 

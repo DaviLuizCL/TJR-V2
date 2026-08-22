@@ -11,6 +11,7 @@ from app.models.evento import Evento, EventoStatus
 from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
 from app.models.modalidade import Consolidacao, Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
@@ -306,3 +307,53 @@ async def test_listar_auditoria_pagina_resultados(db_session):
     assert total == 3
     assert len(pagina1) == 2
     assert len(pagina2) == 1
+
+
+async def test_listar_auditoria_inclui_partida_id_quando_e_lancamento_de_confronto(db_session):
+    evento = await _criar_evento(db_session)
+    modalidade, ficha, rodada, equipe_a, criterio_p, _pen = await _cenario(db_session, evento)
+    equipe_b = Equipe(nome="Equipe Adversaria", nivel=equipe_a.nivel)
+    db_session.add(equipe_b)
+    await db_session.flush()
+    partida = Partida(
+        rodada_id=rodada.id,
+        equipe_a_id=equipe_a.id,
+        equipe_b_id=equipe_b.id,
+        nivel=equipe_a.nivel,
+        status=PartidaStatus.AGENDADA,
+    )
+    db_session.add(partida)
+    await db_session.flush()
+    arbitro = await _criar_arbitro(db_session, email="arbitro-partida-auditoria@tjr.app")
+
+    payload = LancamentoCreate(
+        ficha_id=ficha.id,
+        rodada_id=rodada.id,
+        tentativa=1,
+        equipe_id=equipe_a.id,
+        partida_id=partida.id,
+        client_operation_id=uuid.uuid4(),
+        itens=[ItemLancamentoInput(criterio_id=criterio_p.id, ocorrencias=1)],
+    )
+    lancamento = await criar_lancamento(db_session, payload, arbitro_id=arbitro.id)
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+
+    resultados, _total = await listar_lancamentos_auditoria(
+        db_session, evento_id=evento.id, page=1, size=50
+    )
+
+    assert resultados[0].partida_id == partida.id
+
+
+async def test_listar_auditoria_partida_id_e_none_para_lancamento_individual(db_session):
+    evento = await _criar_evento(db_session)
+    modalidade, ficha, rodada, equipe, criterio_p, _pen = await _cenario(db_session, evento)
+    arbitro = await _criar_arbitro(db_session, email="arbitro-sem-partida@tjr.app")
+
+    await _lancar_confirmado(db_session, ficha, rodada, equipe, arbitro, {criterio_p: 1})
+
+    resultados, _total = await listar_lancamentos_auditoria(
+        db_session, evento_id=evento.id, page=1, size=50
+    )
+
+    assert resultados[0].partida_id is None

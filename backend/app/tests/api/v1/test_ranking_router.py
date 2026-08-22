@@ -345,3 +345,31 @@ async def test_relatorio_auditoria_pdf_sem_token_recebe_401(client, db_session):
     )
 
     assert resposta.status_code == 401
+
+
+async def test_relatorio_auditoria_evento_pdf_staff_baixa_relatorio_geral(client, db_session):
+    coordenador = await _criar_usuario(
+        db_session, email="coord-relatorio-evento-1@tjr.app", papel=Papel.COORDENADOR
+    )
+    evento = await _criar_evento(db_session)
+    await _criar_modalidade_com_classificacao(db_session, evento, coordenador)
+    headers_secretaria = await _auth_header(
+        client, db_session, Papel.SECRETARIA, "secretaria-relatorio-evento-1@tjr.app"
+    )
+
+    resposta = await client.get(
+        f"/api/v1/ranking/eventos/{evento.id}/relatorio-auditoria.pdf",
+        headers=headers_secretaria,
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.headers["content-type"] == "application/pdf"
+    assert resposta.content.startswith(b"%PDF")
+
+
+async def test_relatorio_auditoria_evento_pdf_sem_token_recebe_401(client, db_session):
+    evento = await _criar_evento(db_session)
+
+    resposta = await client.get(f"/api/v1/ranking/eventos/{evento.id}/relatorio-auditoria.pdf")
+
+    assert resposta.status_code == 401
