@@ -95,7 +95,14 @@ Critério de aceite (como eu sei que ficou pronto):
 
 ## 5. <título MODALIDADES INDIVIDUAIS - Resgate no Plano, Resgate de Alto Risco, Dança e Viagem ao Centro da Terra>
 
-**Status:** Pendente
+**Status:** Feito — fichas das 4 modalidades já batiam com os PDFs oficiais (conferido
+critério a critério, nada precisou mudar) e o relatório de auditoria em PDF já era genérico
+por `tipo_disputa` (funciona pra individual sem trabalho extra). O que faltava de verdade era
+a estimativa de horário: `services/agendamento.py::estimar_horarios` + rota
+`GET /agendamentos/estimativa?modalidade_id=`, consumida pela aba Horários
+(`HorarioPage.tsx`), que substitui silenciosamente o horário planejado de cada bateria ainda
+não pontuada pelo horário reprojetado (sem badge de atraso, só o valor mostrado muda) — ver
+seção 12 pra detalhe do algoritmo.
 
 **Como** <juiz>
 **Quero** <Escolher Visualizar os combates separados em rodadas, de forma bem visual>

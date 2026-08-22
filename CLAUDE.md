@@ -687,6 +687,444 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
    seedadas com a ficha genérica antiga (`"Venceu o combate"`) e rodadas/partidas/lançamentos de
    teste em cima — resolvido com reset completo (opção b).
 
+   **Estimativa de horário previsto (história 5 do `HISTORIAS.md`)** (22/08/2026). Antes de
+   implementar, conferiu-se as 4 fichas de modalidade individual (Dança, Resgate no Plano,
+   Resgate de Alto Risco, Viagem ao Centro da Terra) contra os PDFs oficiais em
+   `FICHAS-DE-PONTUAÇÃO/Individuais/` — já batiam 100%, nada pra corrigir (ficaram certas desde
+   que foram escritas, mesmo sem terem passado pela sessão de conferência que pegou os 3 erros
+   de combate). O relatório de auditoria em PDF também já era genérico por `tipo_disputa`, sem
+   trabalho extra pra individual. Sobrou só o critério de aceite de horário, que era ambíguo e
+   foi fechado com o usuário antes de codar: gatilho = confirmação de lançamento (não relógio),
+   exibição = só o horário previsto recalculado, **sem** badge/aviso de atraso, e o efeito
+   **cascateia** pras próximas rodadas da modalidade (não fica preso só na rodada em andamento).
+
+   `services/agendamento.py::estimar_horarios` (nova função, sem migration — tudo calculado on
+   the fly, não persiste em `Agendamento.horario_inicio`, que continua sendo o horário
+   oficialmente gerado): por modalidade, percorre as rodadas com agendamento em ordem de
+   `numero`; por arena, anda a fila (`ordem_na_arena`) mantendo um "horário corrente" e um
+   "ritmo" (`pace_por_arena`, em segundos, começa em `duracao_maxima_rodada_seg` e é
+   **substituído** pelo intervalo real observado assim que duas confirmações consecutivas
+   existirem naquela arena — não é média histórica, é o último intervalo real observado, reage
+   rápido a arena acelerando/atrasando). Pra cada agendamento da fila: se a equipe já tem
+   `lancamento` `CONFIRMADO` naquela rodada (usa `max(atualizado_em)` entre os confirmados —
+   cobre o caso de mais de uma tentativa por rodada, tipo "1º cubo"/"2º cubo" da Viagem, sem
+   precisar saber quantas tentativas a modalidade espera), o horário corrente vira esse horário
+   real e **não entra no resultado** (já aconteceu, não há "previsto" a mostrar — só bateria
+   pendente aparece na resposta). Se não tem confirmação, previsto = horário corrente + ritmo da
+   arena, e isso vira o novo horário corrente pra próxima da fila. Fim de rodada = maior horário
+   corrente entre as arenas + `pausa_entre_rodadas_seg`, que vira o início estimado da próxima
+   rodada — mesma fórmula de `gerar_agendamentos`, só que alimentada por dado real em vez do
+   grid uniforme teórico. Sem nenhuma confirmação ainda, a função devolve exatamente o mesmo
+   grid que `gerar_agendamentos` gerou (sanity check coberto por teste). Rota
+   `GET /agendamentos/estimativa?modalidade_id=`, mesmo grupo de leitura de
+   `GET /agendamentos` (`COORDENADOR`/`ARBITRO`/`SECRETARIA`).
+
+   Front: `HorarioPage.tsx` busca a estimativa em paralelo (`refetchInterval: 30_000`, pra
+   atualizar sozinha enquanto a tela fica aberta no dia da competição) e troca o valor exibido
+   pelo previsto quando existe entrada pra aquele `agendamento.id`, caindo de volta pro
+   `horario_inicio` original quando não existe (bateria já confirmada, ou estimativa ainda não
+   carregou) — nenhum texto/cor de atraso em lugar nenhum, só o número muda, exatamente como
+   pedido. Verificado ao vivo (não só suíte automatizada): confirmado um lançamento de teste via
+   API pra "Resgate no Plano" no ambiente de dev, e a aba Horários no navegador mostrou a equipe
+   confirmada mantendo o horário original enquanto as próximas da fila reprojetaram pro horário
+   real de confirmação + 3min (duração da rodada daquela modalidade no seed) — sem nenhum aviso
+   de atraso na tela.
+
+   **Sessão de redução de escopo pro dia real da competição** (22/08/2026) — cinco pedidos
+   independentes do coordenador, todos implementados em TDD e verificados ao vivo no navegador:
+
+   - **Evento único** — `services/evento.py::criar_evento` recusa com `422
+     EVENTO_UNICO_JA_EXISTE` se já existir qualquer `Evento` no banco (checagem simples de
+     `count()`, sem flag nem config — o sistema nunca vai precisar rodar dois eventos ao mesmo
+     tempo). Front: `EventoSelectPage.tsx` perdeu o formulário "Criar novo evento" inteiro (react-
+     hook-form + zod + mutation), pra todo mundo, não só pra quem não é coordenador — a tela virou
+     puramente uma lista com link pro evento existente. Testes que criavam 2+ eventos via
+     `POST /eventos`/`criar_evento` num mesmo teste (pagination, filtro de modalidade por
+     `evento_id`) precisaram trocar pra inserção direta via model (`db.add(Evento(...))`), já que
+     o segundo `POST` real passou a ser rejeitado — documentado inline em cada teste.
+   - **Relatório de auditoria em PDF, geral por evento** — `relatorio.py` foi refatorado sem mudar
+     o output do relatório por modalidade existente: extraiu `_carregar_dados_modalidade` (busca
+     crua) e `_montar_secao_modalidade` (monta os flowables de classificação+lançamentos de uma
+     modalidade) do meio de `gerar_relatorio_auditoria_pdf`, e a nova
+     `gerar_relatorio_auditoria_evento_pdf` chama as duas por modalidade do evento (ordenadas por
+     nome), separadas por `PageBreak()`. Rota nova `GET
+     /ranking/eventos/{evento_id}/relatorio-auditoria.pdf`, mesmo grupo de papéis
+     (`COORDENADOR`/`ARBITRO`/`SECRETARIA`) da rota por modalidade — que continua existindo (não
+     foi removida, só parou de ter botão no front). `ModalidadeListPage.tsx`: botão "Baixar
+     relatório (PDF)" por linha de modalidade virou um único "Baixar relatório geral (PDF)" no
+     cabeçalho da página (ao lado de "Nova modalidade"), usando `evento_id` da URL.
+   - **Rodadas da Dança: 2, somando as duas** — `db/seed.py` mudou `Dança` de `qtd_rodadas=3` +
+     `Consolidacao.IGNORA_MENOR_NOTA` pra `qtd_rodadas=2` + `Consolidacao.SOMA_RODADAS` (decisão
+     tomada via pergunta direta ao usuário, porque o pedido original leu de um jeito
+     autocontraditório — "3 rodadas, exceção a Dança que tem 2... pode deixar só com 1"). As
+     outras 3 modalidades individuais (Resgate no Plano, Resgate de Alto Risco, Viagem) já
+     estavam em `qtd_rodadas=3`, sem mudança. Nenhum teste quebrou porque as asserções de
+     `test_seed.py` já liam `modalidade.qtd_rodadas` dinamicamente, nunca hard-codado.
+   - **Ranking fica em segredo — botão de liberar removido** — `ModalidadeListPage.tsx` perdeu o
+     botão "Liberar/Ocultar ranking" (e a função `alternarRanking`) de vez, não só escondido; o
+     campo `ranking_liberado` nem é mais buscado pelo componente. Backend intocado de propósito
+     (endpoint `PATCH /modalidades/{id}` com `ranking_liberado` continua existindo, só sem UI pra
+     acioná-lo) — reversível se for reaberto depois, mesmo padrão já usado quando a aba Ranking
+     saiu do Painel numa sessão anterior. Nenhuma modalidade do seed nasce com
+     `ranking_liberado=true`, então a remoção do botão já é suficiente pra "manter em segredo" —
+     não precisou mexer na rota pública de ranking.
+   - **Cards de combate no Painel viraram "quem jogou contra quem, quem ganhou"** — antes, cada
+     lançamento (uma ficha = um lado de um combate) tinha seu próprio card genérico com a grade
+     "Pontuados/Não pontuados/Penalidades/Modificadores" (`CardSubmissao`, pensado pra modalidade
+     individual, onde 1 lançamento = 1 apresentação inteira). Pra confronto, isso mostrava dois
+     cards separados, cada um só com o critério cru daquele lado — ruim de ler quem venceu.
+     `LancamentoAuditoriaOut` (schema) e `listar_lancamentos_auditoria` (service) ganharam o campo
+     `partida_id` (só preenchido pra lançamento de modalidade `CONFRONTO`, `None` pra
+     `INDIVIDUAL`). Front: `ListaSubmissoes.tsx` ganhou `agruparPorCombate` — separa a lista crua
+     da API em lançamentos individuais (seguem indo pro `CardSubmissao` de sempre) e grupos por
+     `partida_id + tentativa` (até 2 lançamentos, os dois lados do mesmo combate), renderizados
+     pelo novo `CardCombate`: nome da modalidade/nível/rodada/tentativa, e cada lado num bloco
+     lado a lado mostrando só a equipe e o total — o lado com total maior ganha um "Vencedor" em
+     verde, iguais viram "Empate", e falta um lado ainda mostra "Aguardando a equipe adversária"
+     em vez de travar esperando os dois. Decisão de design: "vencedor" aqui é sempre por
+     comparação direta de `total` entre os dois lançamentos daquele combate específico — não
+     reaproveita `Modalidade.decisao_partida` (`COMBATES_VENCIDOS`/`SOMA_PONTOS`) porque esse
+     campo decide quem vence a *partida inteira* (view de `PartidaScorerPage`/`chaveamento.py`),
+     enquanto aqui a granularidade é *um combate* (uma tentativa) — comparar total bate com os
+     dois modos na prática (`SOMA_PONTOS` soma o total do combate diretamente; `COMBATES_VENCIDOS`
+     não tem uma pontuação "errada" pra inverter numa ficha de 1 critério ESCALA/BOOLEANO só).
+
+   **Sessão seguinte, dois ajustes rápidos no que acabou de sair** (22/08/2026):
+
+   - **PDF de auditoria: confronto explícito** — `relatorio.py` ganhou `agrupar_lancamentos_por_combate`
+     (mesma ideia do `agruparPorCombate` do front, mas do lado do PDF: agrupa as linhas
+     `(Lancamento, Rodada, Equipe, Usuario)` por `partida_id + tentativa`, item individual fica
+     sozinho no próprio grupo) e `descrever_resultado_combate` (placar + "Vencedor: X" ou
+     "Empate"). A seção "Lançamentos" do relatório passou a imprimir, antes dos dois lados de um
+     combate, uma linha em negrito tipo `Confronto — Rodada 1 · Tentativa 1: Equipe A 0 x 1
+     Equipe D — Vencedor: Equipe D`, com o detalhe de critério por critério de cada lado embaixo,
+     inalterado — ao contrário da simplificação da sessão anterior no Painel, aqui o pedido foi só
+     **acrescentar** explicitação, não remover detalhe (PDF de auditoria continua precisando do
+     critério a critério pra contestação). Verificado extraindo texto de verdade do PDF gerado
+     (`pdftotext -layout`, já que o conteúdo dos streams do reportlab vem comprimido/glyph-index e
+     não dá pra conferir com `grep`/`strings` cru) contra um cenário real do Cabo de Guerra.
+   - **Navegação: "Individual" e "Combates" viraram abas dentro de uma `CompeticoesPage` só**
+     (`/eventos/:eventoId/competicoes`, substituindo as duas rotas separadas `/individual` e
+     `/combates`). Mesmo padrão de tablist raiz (`?aba=individual|combate`) usado em
+     `PainelPage`/`IndividualHubPage`/`ConfrontoHubPage`. `IndividualHubPage` e `ConfrontoHubPage`
+     continuam existindo como componentes — mesmo tratamento já dado antes a
+     `PontuarDashboardPage`/`RodadaDashboardPage`/etc: perderam o `<main>`/`<h1>` próprio, agora só
+     renderizam como conteúdo da aba dentro do hub novo. Isso criou uma colisão de nome: as duas
+     hub pages já liam sua **própria** aba interna (Pontuar/Rodadas/Horários e
+     Modalidades/Chaveamento) do parâmetro `?aba=`, que agora também é usado pela aba **externa**
+     (Individual/Combate) na mesma URL — resolvido renomeando o parâmetro interno das duas hub
+     pages pra `?sub=` (`aba` = nível de cima, `sub` = nível de baixo). Todo link que apontava pra
+     `/individual?aba=X` ou `/combates` direto (botão "Voltar" de `PontuarPage`/`HorarioPage`,
+     `PontuarCombatePage`, `Header`, redirecionamento de árbitro em `EventoSelectPage`) foi
+     atualizado pra `/competicoes?aba=individual&sub=X` ou `/competicoes?aba=combate`. Header
+     perdeu os dois links soltos "Individual"/"Combates" e ganhou um só "Competições". Decisão
+     consciente de manter o redirecionamento do coordenador ao clicar num evento como estava (vai
+     pra `/modalidades`, área administrativa) — só o destino do **árbitro** (que já ia direto pro
+     fluxo operacional) trocou de `/individual` pra `/competicoes`, porque foi o único caso citado
+     no pedido. Verificado ao vivo no navegador: header mostra só "Competições", clicar leva pra
+     `/competicoes` com aba Individual selecionada por padrão (Pontuar/Rodadas/Horários das 4
+     modalidades individuais do seed, cada uma com link "Pontuar" direto), aba Combate mostra as
+     3 modalidades de confronto com "Pontuar"/"Ver rodadas" cada.
+
+     **Correção na mesma sessão**: o usuário pediu que clicar no evento também mandasse o
+     coordenador pra `/competicoes` (não só o árbitro) — `destinoDoEvento` em
+     `EventoSelectPage.tsx` perdeu de vez a bifurcação por papel, agora é sempre
+     `/eventos/:id/competicoes` pra qualquer usuário logado. Área administrativa
+     (Modalidades/Fichas/Equipes) continua alcançável, só que agora exclusivamente pelo Header,
+     não mais como destino padrão do clique no evento.
+
+   **Sessão de deploy "como se fosse prod"** (22/08/2026, motivada por o usuário querer testar
+   pelo celular e pedir pra "organizar já como se fosse pra produção, já que estamos
+   finalizando"). `docker-compose.yml` original só tinha modo dev: `front` rodando `vite dev`
+   direto no container, com `VITE_API_URL` fixo em `http://localhost:8000` — funciona no navegador
+   da própria máquina, mas quebra de qualquer outro dispositivo na rede (o valor fixo não existe
+   fora dela). Resolvido implementando de vez o `front/nginx` que a seção 2 (Stack) já citava
+   como arquitetura pretendida, mas nunca tinha sido feito:
+
+   - **`frontend/Dockerfile` virou multi-stage**: `dev` (o que já existia, `npm run dev`, usado
+     pelo `docker-compose.yml` normal via `build.target: dev`), `build` (`npm run build`, estágio
+     intermediário só pra gerar o bundle) e `prod` (`nginx:alpine` servindo o bundle +
+     `frontend/nginx.conf` fazendo proxy reverso de `/api/` pro container `api` — client e API na
+     **mesma origem**, então não existe mais `VITE_API_URL` fixo em lugar nenhum. Funciona em
+     qualquer IP/host sem configuração alguma, porque não tem host nenhum hardcoded).
+   - **`docker-compose.prod.yml`** — override (não arquivo standalone) rodado junto com o
+     `docker-compose.yml` normal (`docker compose -f docker-compose.yml -f
+     docker-compose.prod.yml up -d --build`, ou `make up-prod`): mesmo projeto/volume de banco
+     (não duplica dado ao alternar entre dev e prod na mesma máquina). Usa as tags de merge
+     `!reset`/`!override` do Compose Specification (suportado desde Docker Compose 2.24, versão
+     instalada aqui é 5.5.0) — necessário porque `ports`/`volumes` fazem merge por concatenação
+     entre arquivos por padrão, não substituição; sem a tag, a porta antiga continuava vazando
+     junto com a nova. `db`/`api` perdem porta publicada pro host (só alcançáveis um pelo outro,
+     dentro da rede docker); `api` roda sem `--reload` e sem bind mount do código do host (só o
+     que foi buildado na imagem); `front` fica com a única porta pública (80).
+   - **Achado ao rodar de verdade** (só apareceu testando, não em code review): com
+     `VITE_API_URL` ausente, o fallback óbvio "`?? \"\"`" (string vazia = caminho relativo) quebra
+     o `openapi-fetch` em qualquer chamada que precise montar um `new URL(...)` internamente (ex.:
+     serialização de query string) — `new URL()` de uma string relativa sem base lança
+     `TypeError: Invalid URL`. Sintoma enganoso: chamada sem query string (o POST de login, sem
+     parâmetro nenhum) funcionava normal, escondendo o problema até testar uma tela com paginação
+     de verdade. Corrigido usando `window.location.origin` como fallback em vez de string vazia
+     em `frontend/src/api/client.ts` — sempre uma URL absoluta válida, mesmo efeito de "mesma
+     origem da página" sem o caminho relativo cru. Pego pelos testes automatizados
+     (`client.test.ts`), não só pela verificação manual.
+   - **`JWT_SECRET_KEY` do `.env`** trocado de `troque-esta-chave-em-producao` (literalmente um
+     placeholder pedindo pra ser trocado) pra uma chave aleatória de 32 bytes
+     (`secrets.token_hex(32)`). Efeito colateral esperado e aceito: invalida qualquer sessão
+     logada antes da troca (precisa logar de novo). **Decisão consciente de não mexer** na senha
+     do coordenador seed (`SEED_COORDENADOR_SENHA`) nem na senha do Postgres
+     (`POSTGRES_PASSWORD`, hoje `tjr` fixo em `docker-compose.yml`) — ao contrário da chave JWT
+     (troca invisível, só desloga sessão), essas são credenciais que o time já está usando
+     ativamente pra logar/conectar; trocar sem avisar quebraria acesso em uso. Documentado no
+     README como pendência pra antes de expor numa rede que não seja só o time de confiança.
+   - Verificado de ponta a ponta simulando acesso de celular de verdade: Chromium headless
+     batendo em `http://192.168.1.11` (IP da rede local, não `localhost`) — login, clique no
+     evento, navegação até Competições e até uma tela com paginação (`/equipes`, que exercita o
+     código de query string que achou o bug acima) sem nenhum erro de console nem request
+     falhando. Suíte completa (backend 450 + frontend 329) verde depois da correção do
+     `client.ts`; a suíte frontend rodou via uma imagem `dev`-target avulsa, já que o container
+     `front` rodando em modo prod é `nginx:alpine` (sem node, não dá pra rodar vitest nele
+     diretamente).
+
+   **Dois achados do primeiro uso real em campo** (mesmo dia, usuário testando pelo celular de
+   verdade contra o `http://192.168.1.11` que a sessão anterior deixou no ar):
+
+   - **Colisão de tag de imagem Docker entre dev e prod** — `docker-compose.yml` e
+     `docker-compose.prod.yml` deixavam o `front` sem `image:` explícito, então os dois caíam no
+     mesmo nome derivado por padrão (`tjr-front`), mesmo apontando pra estágios diferentes do
+     Dockerfile (`dev` = node/vite, `prod` = nginx). Sintoma real: em algum momento entre uma
+     mensagem e outra, alguém/algo rodou um `docker compose up` sem `-f docker-compose.prod.yml`
+     (provavelmente sem querer) — isso recriou os containers com a config de **portas** de dev
+     (5173) só que reaproveitando a imagem `tjr-front` que por acaso era a de **prod** (nginx,
+     buildada por último) porque não tinha `--build`; resultado: `front-1` de pé mas mudo (nginx
+     não escuta em 5173, e a porta 80 não estava mais publicada) — daí o "this site can't be
+     reached" do celular. Corrigido dando nome de imagem próprio pra cada um
+     (`image: tjr-front-dev` / `image: tjr-front-prod`), então de agora em diante um rebuild de
+     um nunca mais pisa na tag do outro. **Não resolvido** (decisão consciente, não bug): os dois
+     ainda usam o mesmo nome de *serviço* (`front`) no mesmo projeto compose, então rodar
+     `docker compose up`/`make up` (dev) enquanto o prod está no ar ainda **substitui** o
+     container de produção pelo de dev — a alternativa (projeto/nome separado pra prod) faria
+     dev e prod terem bancos diferentes, o que é pior. Recado prático: não rodar `make up` /
+     `docker compose up` sem o `-f docker-compose.prod.yml` enquanto o ambiente publicado
+     estiver valendo pra alguém de verdade.
+   - **`crypto.randomUUID()` não existe fora de contexto seguro** — bug real, achado só ao
+     tentar lançar ponto de verdade pelo celular contra `http://192.168.1.11` (HTTP puro, IP, sem
+     HTTPS): a função trava o app inteiro nessa condição, porque `crypto.randomUUID()` (usada em
+     `lib/outbox.ts` pra gerar `client_operation_id`/`lancamentoLocalId`, e em
+     `PartidaScorerPage.tsx` pro `client_operation_id` do lançamento de combate) só existe em
+     "contexto seguro" (HTTPS ou `localhost`) — o spec do Web Crypto restringe especificamente
+     essa função, não o `crypto` inteiro. Em qualquer outro host por HTTP simples (exatamente o
+     caso do ginásio, celular batendo no IP da máquina que roda o sistema), `crypto.randomUUID`
+     não existe no objeto `crypto`, e a chamada lança, caindo direto no `catch` genérico que
+     mostra "Não foi possível registrar/confirmar o lançamento neste dispositivo" — mensagem
+     _correta_ no sentido literal (era mesmo aquele dispositivo/contexto), mas sem pista nenhuma
+     da causa raiz. **Por que nenhum teste pegou isso antes**: os testes automatizados rodam em
+     jsdom (via vitest), que não simula a restrição de contexto seguro do navegador de verdade —
+     `crypto.randomUUID()` funciona liso em jsdom independente de HTTP/HTTPS/host, então a suíte
+     inteira passava mesmo com o bug presente. Só apareceu batendo com um dispositivo real contra
+     o IP real. **Corrigido** com `frontend/src/lib/uuid.ts` (`randomUUID()` implementado na mão
+     via `crypto.getRandomValues()` — essa função *não* tem a restrição de contexto seguro, é
+     anterior a essa exigência do spec e segue disponível em qualquer origem) — usada agora nos
+     4 pontos que antes chamavam `crypto.randomUUID()` direto. Testado com um teste de formato
+     puro (`uuid.test.ts`, regex de UUID v4 + verificação de unicidade) e, mais importante,
+     verificado **de verdade**: fluxo completo de registrar + confirmar lançamento via Chromium
+     headless batendo em `http://192.168.1.11`, mesma condição exata do celular do usuário, sem
+     nenhum erro. Lição value pro projeto inteiro: **qualquer `crypto.randomUUID()` novo que
+     apareça no código daqui pra frente deve usar `lib/uuid.ts::randomUUID()` em vez da API
+     nativa** — nada nesse app pode assumir HTTPS, é o oposto do contrato real (celular no
+     ginásio, rede local, sem certificado).
+
+   Efeito colateral chato dessas verificações: cada rodada de teste real (essa sessão e a
+   anterior) deixou lançamentos de teste reais no banco de produção que está no ar agora (equipe
+   fictícia tipo "Nível 1 - Equipe A" com total 0 em Viagem ao Centro da Terra, e outros
+   acumulados antes). **Resolvido ainda na mesma sessão** (ver bloco seguinte) — o reset virou
+   necessário mesmo pra aplicar a correção da ficha da Viagem, então aproveitou pra limpar tudo
+   de uma vez.
+
+   **Ranking interno de volta no Painel + dois bugs achados testando com o coordenador de
+   verdade** (mesmo dia):
+
+   - **Aba Ranking reconectada** — pedido explícito do coordenador: "preciso ter, como
+     coordenador, quem tá ganhando ou perdendo, até pra eu conseguir ver aqui nos testes se tá
+     certo". A aba e o componente `RankingClassificacao` nunca tinham sido apagados (só
+     desconectados numa sessão anterior por falta de tempo) — restaurado o `PainelPage.tsx`
+     exatamente como era antes (`git show` do commit inicial), tablist Ranking/Submissões com
+     Ranking selecionado por padrão. Uso continua só interno (só quem vê o link "Painel" no
+     Header — coordenador/secretaria), sem tocar em `ranking_liberado` nem na exposição pública:
+     `RankingClassificacao` já buscava o ranking por modalidade independente dessa flag (rota
+     `/ranking/modalidades/{id}` já é liberada pra staff mesmo sem `ranking_liberado`), então
+     "religar a aba" e "expor pro público" sempre foram coisas independentes.
+   - **Achado no caminho: só `ModalidadeListPage` gravava o "evento atual"** — desde a sessão
+     anterior, clicar num evento passou a levar direto pra `/competicoes` (não mais
+     `/modalidades` primeiro), mas só `ModalidadeListPage` chamava
+     `useEventoStore().definirEventoAtual(eventoId)`. Resultado: pra quem chegava via
+     Competições sem nunca ter passado por Modalidades, os outros links do Header (Painel,
+     Modalidades, Fichas) caíam de volta pra `/eventos` porque `eventoAtualId` continuava nulo —
+     bug que já existia antes (nem `/individual` nem `/combates` setavam isso), só ficou visível
+     agora que Competições virou o destino padrão do clique no evento. Corrigido adicionando o
+     mesmo `useEffect` em `CompeticoesPage.tsx`.
+   - **Modelo errado de "tentativa" pra Viagem ao Centro da Terra** — achado pelo usuário
+     testando pontuação de verdade. Os "1º cubo"/"2º cubo" da ficha oficial **não são duas
+     tentativas separadas** (duas pontuações/lançamentos independentes) — são as duas metades de
+     **uma corrida só**, dentro da mesma rodada: ida até o centro, pega o 1º cubo, volta,
+     entrega, vai de novo, pega o 2º cubo. O sistema estava com `tentativas_por_rodada=2` pra
+     essa modalidade, o que fazia `PontuarPage.tsx` (lógica 100% genérica, dirigida por
+     `modalidade.tentativas_por_rodada`, sem nenhuma mudança de código necessária ali) abrir 2
+     cards de pendência por equipe por rodada — errado, porque cada card vira um `lancamento`
+     independente com confirmação própria, e na prática é uma corrida contínua. "Saída da arena"
+     durante a corrida já era coberto pelo critério de penalidade "Atravessar a borda"
+     (-5/ocorrência) — tentativa não entra nessa conta, o robô reinicia mas continua na mesma
+     rodada. Corrigido em `db/seed.py`: `tentativas_por_rodada` da Viagem virou `1`, e
+     `_ficha_viagem` foi reestruturada de 1 grupo único ("Percurso") pra 2 grupos ("1º Cubo",
+     "2º Cubo"), cada um com os mesmos 6 critérios de pontuação + "Atravessar a borda" — o
+     próprio PDF oficial diz que atravessar a borda zera os pontos "daquele cubo" especificamente
+     (jurisprudência que já era simplificada antes pra um desconto fixo por ocorrência, mantido
+     assim, só duplicado por cubo pra dar rastro de qual lado falhou). "Reinício entre as
+     rodadas" (níveis 3-4) continua num grupo à parte ("Modificadores"), porque esse é por
+     rodada, não por cubo. Testado via `test_seed.py` (estrutura de grupos/critérios + 1
+     tentativa por rodada) e verificado ao vivo: fluxo Pontuar mostra 1 card por equipe/rodada
+     agora, e a ficha abre com as duas seções "1º Cubo"/"2º Cubo" dentro do MESMO formulário, um
+     só "Registrar lançamento" no fim. **Exigiu reset completo do banco** (mesma sessão, mesmo
+     motivo do bloco anterior) porque já existia lançamento real em cima da ficha antiga de
+     Viagem — seed é idempotente, não sobrescreve ficha/config de modalidade já existente.
+
+   **Correção rápida na sequência, mesma sessão**: usuário testando de verdade achou o rótulo
+   "Atingir os 6 Cn..." confuso (jargão da ficha oficial, não óbvio pra árbitro de campo) —
+   confirmou que a regra em si (pontuar por vértice individual, `CriterioTipo.CONTADOR`) estava
+   certa, só o texto precisava melhorar. Renomeado pra "Atingir vértice sem/com o alvo, na
+   ida/volta" nos dois critérios de `_grupo_cubo_viagem` (`db/seed.py`) + `test_seed.py`
+   atualizado (TDD: teste vermelho com o nome novo antes de mudar o seed).
+
+   **Gotcha operacional achado ao vivo, vale registrar**: com o ambiente publicado em modo
+   produção (`docker-compose.prod.yml`, sem bind mount de código), `docker compose exec api
+   pytest` roda contra o código **baked na imagem**, não contra edição nenhuma feita depois do
+   último `--build` — parece rodar normal (não dá erro nenhum), só que silenciosamente ignora
+   qualquer mudança de arquivo, dando falso-verde ou, pior, "not found" pra teste novo que nem
+   existe na imagem antiga. Pra fazer TDD de verdade com o ambiente de prod no ar, é preciso
+   `docker compose up -d api` (sem `-f docker-compose.prod.yml`, volta o bind mount) antes de
+   editar/rodar teste, e só depois `docker compose -f docker-compose.yml -f
+   docker-compose.prod.yml up -d` de novo pra devolver o hardening (sem porta publicada, sem
+   bind mount) quando terminar. Aplicar uma correção de `seed.py` num banco de prod já rodando,
+   sem lançamento em cima da ficha afetada, não precisa do reset completo (`DROP
+   DATABASE`/`CREATE DATABASE`) — só apagar `criterio`/`grupo`/`ficha` daquela modalidade
+   (nessa ordem) e rodar `python -m app.db.seed` de novo, que já documentado na seção 12 mas
+   fácil de esquecer no calor de uma sessão com o ambiente ativo.
+
+   **QA cego com agente sem contexto do projeto** (mesmo dia, a pedido do usuário: "dá uma testada
+   100%... coloca um agente que não tem contexto do projeto, dá uma conta de juiz pra ele").
+   Criada conta dedicada `agente-teste@tjr.app` (ARBITRO) só pra isso — não reaproveitar
+   `juiz@tjr.app`, que é a conta que o usuário usa manualmente, pra não misturar rastro. Agente
+   `general-purpose` sem nenhum contexto desta conversa, testou via Chromium real (mesmo truque
+   de `docker run node:20-slim` + Playwright já usado nesta sessão) contra `http://192.168.1.11`,
+   cobrindo as 4 modalidades individuais e as 3 de confronto.
+
+   **Achou 1 bug crítico real**: depois de clicar "Registrar lançamento" (que cria o lançamento
+   `PENDENTE` na fila local), os campos de critério continuavam clicáveis e o "Preview" no rodapé
+   atualizava ao vivo — mas nenhuma dessas edições chegava no lançamento de verdade.
+   "Confirmar lançamento" confirmava os itens de quando foi registrado, não os editados depois —
+   o árbitro via um número diferente do que ia ser persistido, **sem aviso nenhum**. Reproduzido,
+   confirmado com teste (`LancamentoFormPage.test.tsx`) e corrigido: `CriterioPreview`
+   (`features/ficha/FichaPreviewPage.tsx`) ganhou uma prop `disabled`, e
+   `LancamentoFormPage.tsx` passa `disabled={!!lancamentoAtivo}` — assim que existe um
+   lançamento ativo (`PENDENTE` ou `CONFIRMADO`), os campos travam de vez (sem mecanismo de
+   "editar antes de confirmar" — se precisar corrigir algo depois de registrado, é o fluxo de
+   correção do coordenador, não reabrir os campos). A linha "Preview: X" também some nesse
+   estado, já que não tem mais nada a pré-visualizar.
+
+   **Achou 1 dúvida que virou bug pequeno confirmado**: abrir a ficha direto (link salvo, botão
+   voltar do navegador, card desatualizado) pra uma equipe que já tinha lançamento `CONFIRMADO`
+   nessa rodada+tentativa mostrava o formulário **em branco**, como se nada tivesse sido lançado
+   — o backend já recusava duplicata (`409 LANCAMENTO_JA_EXISTE`, sem risco de dado duplicado),
+   mas a tela enganava antes disso. Causa: a lógica que decide "existe lançamento pra essa
+   equipe/rodada/tentativa" só olhava status `PENDENTE`, ignorando `CONFIRMADO` de propósito (pra
+   voltar direto pra confirmação em vez de deixar tentar registrar de novo) — só que também
+   deixava passar batido o caso já confirmado. Corrigido incluindo `CONFIRMADO` no mesmo filtro
+   (`lancamentoExistente` em `LancamentoFormPage.tsx`).
+
+   Os widgets de pontuação em si (contador +/-, booleano toggle, escala, o scorer rápido de 1
+   clique de combate, o multi-critério da Corrida de Carros) e o cálculo de total bateram certo
+   em todos os testes do agente — nenhum problema achado ali. Os dois bugs foram testados (TDD)
+   e verificados batendo o cenário exato do relatório contra o ambiente de produção publicado.
+
+   **Bug estrutural real no seed pra MATA_MATA, achado o usuário perguntando "por que o Sumô já
+   tem as rodadas prontas? Não depende de quem ganhou antes?"** — pergunta certeira, revelou que
+   `seed_rodadas` (`db/seed.py`) chamava `rodada_service.gerar_rodadas` pra **toda** modalidade
+   `CONFRONTO` igual, sem checar `formato_chaveamento`. Essa função usa pareamento round-robin
+   ("método do círculo" — o próprio docstring dela diz "mata-mata (chaveamento de fato) fica pra
+   Fase 4", comentário nunca atualizado depois que a Fase 4 implementou o bracket de verdade em
+   `chaveamento.py`) — certo pra `TODOS_CONTRA_TODOS` (Cabo de Guerra, Corrida de Carros), **errado
+   pra `MATA_MATA`** (Sumô): pré-gerava as 5 `qtd_rodadas` inteiras com confrontos decididos de
+   antemão, sem nenhuma depender de quem vencia a rodada anterior — o oposto do que a seção 6 já
+   documentava. Pior: isso também deixava `gerar_chaveamento_inicial` (o gerador de bracket
+   correto) inacessível depois, porque ele recusa com `409 CHAVEAMENTO_JA_INICIADO` assim que
+   existe qualquer rodada pra aquela modalidade.
+
+   **A UI do coordenador nunca teve esse bug** — `RodadaListPage.tsx` já mostra "Gerar
+   chaveamento" (não "Gerar rodadas") pra modalidade `MATA_MATA`, chamando o serviço certo
+   (`chaveamento.gerar_chaveamento_inicial`). O problema era só no seed, que contornava essa
+   distinção. Corrigido: `seed_rodadas` agora bifurca por `formato_chaveamento` — `MATA_MATA`
+   chama `_obter_ou_gerar_chaveamento_inicial` (só a Rodada 1, idempotente por checar
+   `Rodada.numero == 1` direto em vez de depender da exceção do serviço); todo o resto continua
+   no `gerar_rodadas` de sempre. Testado (TDD): `test_seed_rodadas_mata_mata_nao_pre_gera_rodadas_futuras`
+   prova que só existe Rodada 1 pro Sumô depois do seed; os testes que somavam
+   `qtd_rodadas` pra todo mundo (`test_seed_rodadas_cria_qtd_rodadas_para_cada_modalidade`,
+   `test_seed_rodadas_e_idempotente`) ganharam uma exceção pra `MATA_MATA` (`_qtd_rodadas_esperada_no_seed`).
+
+   **Aplicado no ambiente publicado, com aprovação explícita do usuário** — a chamada de
+   `POST /modalidades/{id}/chaveamento/reset` tinha sido bloqueada pelo classificador do modo
+   automático (ação destrutiva batendo numa API já publicada); parei e expliquei em vez de
+   contornar, usuário respondeu "pode rodar". Sequência executada: `POST
+   /modalidades/{sumo_id}/chaveamento/reset` com justificativa (apaga rodada/partida/lançamento
+   antigos do Sumô, grava snapshot em `audit_log`) → `POST /api/v1/chaveamento/gerar` (rota real,
+   não aninhada em `/modalidades/{id}/...` — cuidado, é `/api/v1/chaveamento/gerar` com
+   `modalidade_id` no body). Resultado verificado: só existe Rodada 1 pro Sumô agora, com 4
+   equipes por nível → 2 partidas por nível (bracket real, não round-robin) — conferido tanto
+   via API quanto visualmente na aba Chaveamento (mostra só "Rodada 1", sem inventar rodadas
+   futuras, e o botão vira "Resetar chaveamento" assim que o bracket existe).
+
+   **Bug real seguinte, achado pelo usuário pontuando o próprio Sumô que acabara de ser
+   corrigido acima**: "pontuei o sumô e não apareceu a final aqui". `avancar_se_rodada_completa`
+   (`services/chaveamento.py`) checava se **todas as partidas da rodada inteira** (todos os
+   níveis juntos) estavam `ENCERRADA` antes de gerar a próxima rodada — contradizendo o próprio
+   docstring da função, que já dizia "cada nível corre seu próprio chaveamento, independente dos
+   outros". Como o avanço é automático (chamado de dentro de `registrar_resultado_lancamento`
+   assim que uma partida fecha, sem clique de coordenador nenhum), o nível 1 fechava suas 2
+   partidas mas a final dele só apareceria quando TODOS os outros níveis também fechassem — o
+   inverso da regra inviolável 9. Achado real de teste também revelado no caminho: os testes
+   existentes de independência por nível (`test_mata_mata_avanca_niveis_de_tamanhos_diferentes_independente`
+   e `test_mata_mata_avanca_pareando_vencedores_em_ordem`) fechavam TODAS as partidas de TODOS os
+   níveis num loop e só depois chamavam `avancar_se_rodada_completa` manualmente uma vez no final —
+   nunca exercitando o gatilho automático no meio do caminho, com outro nível ainda aberto. Pior:
+   como a função não tinha nenhuma checagem de idempotência (sempre criava
+   `Rodada(numero=rodada.numero+1)` sem olhar se já existia uma), essas chamadas manuais no fim do
+   teste criavam uma **segunda rodada duplicada** com o mesmo `numero` por trás do pano — mascarado
+   porque o teste só validava o objeto retornado pela própria chamada, nunca o estado real do
+   banco.
+
+   Corrigido: o gate de "fechou tudo" e a decisão de gerar passaram a ser por nível (agrupa
+   partidas por `partida.nivel`, cada grupo decide sozinho se está pronto), e a função agora
+   procura uma `Rodada` já existente com `numero = rodada.numero + 1` antes de criar uma nova —
+   se já existe (porque outro nível avançou primeiro), só adiciona a partida do nível que acabou
+   de fechar nela, sem duplicar. Teste novo
+   (`test_mata_mata_gera_proxima_rodada_de_um_nivel_sem_esperar_outro_nivel_fechar`) fecha só o
+   nível 1 de uma modalidade com 2 níveis, via `confirmar_lancamento` real (não chama
+   `avancar_se_rodada_completa` manualmente em nenhum momento — só o gatilho automático), e
+   consulta o banco direto pela `Rodada numero=2`. Os dois testes antigos que mascaravam o bug de
+   duplicação foram ajustados pra não fazer mais a chamada manual redundante — em vez disso
+   consultam o banco direto pra confirmar o que o gatilho automático já gerou sozinho, e a chamada
+   manual extra que sobrou em cada um agora é asserted como no-op (`is None`), provando a
+   idempotência.
+
+   **Aplicado ao ambiente publicado**: como o Sumô já tinha partidas reais pontuadas contra o
+   código antigo, corrigir o código sozinho não gera retroativamente a final que já devia ter
+   sido criada — o evento de fechamento do nível 1 já tinha disparado e sido bloqueado silenciosamente
+   uma vez. Resolvido chamando `avancar_se_rodada_completa` diretamente por script (`docker compose
+   exec -T api python3`, sessão via `app.db.session.AsyncSessionLocal`, usando o `usuario_id` do
+   coordenador seedado) contra o banco `tjr` real, uma única vez pra `rodada_id` da Rodada 1 do
+   Sumô — gerou a Rodada 2 (nível 1: Equipe A × Equipe B) sem tocar nas partidas já fechadas.
+   Confirmado visualmente na aba Chaveamento (`/competicoes` → Combate → Chaveamento → selecionar
+   "Sumô") depois de restaurar o stack pra modo produção
+   (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`).
+
 ---
 
 ## 13. O que não fazer
