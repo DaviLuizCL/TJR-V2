@@ -204,6 +204,52 @@ describe("LancamentoFormPage", () => {
     expect(within(blocoTotal).getByText("30")).toBeInTheDocument();
   });
 
+  it("depois de registrar, os criterios ficam desabilitados (editar nao muda o que sera confirmado)", async () => {
+    // Bug achado testando de verdade: depois de "Registrar lancamento", os
+    // campos de criterio continuavam clicaveis e atualizavam o "Preview" na
+    // tela, mas isso nunca chegava no lancamento que o "Confirmar" de fato
+    // envia (o servidor confirma os itens de quando foi registrado, nao os
+    // editados depois) - o arbitro via um numero diferente do que ia ser
+    // confirmado, sem aviso nenhum.
+    mockGet();
+    vi.mocked(api.POST).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/fichas/{ficha_id}/simular") {
+        return { data: { total: 10 }, error: undefined } as never;
+      }
+      if (path === "/api/v1/lancamentos") {
+        return {
+          data: {
+            id: "lanc-1",
+            ficha_id: "ficha-1",
+            rodada_id: "rod-1",
+            equipe_id: "eq-1",
+            tentativa: 1,
+            revision: 1,
+            status: "PENDENTE",
+            total: 10,
+            itens: [],
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await userEvent.selectOptions(await screen.findByLabelText(/equipe/i), "eq-1");
+    await screen.findByText("Lombada");
+    await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+
+    await screen.findByText(/total persistido/i);
+
+    const botaoAumentar = screen.getByRole("button", { name: /aumentar lombada/i });
+    expect(botaoAumentar).toBeDisabled();
+    const botaoDiminuir = screen.getByRole("button", { name: /diminuir lombada/i });
+    expect(botaoDiminuir).toBeDisabled();
+  });
+
   it("confirma o lancamento depois de criado", async () => {
     mockGet();
     vi.mocked(api.POST).mockImplementation(async (path: string) => {
@@ -871,6 +917,79 @@ describe("LancamentoFormPage", () => {
       expect(screen.queryByLabelText(/^equipe$/i)).not.toBeInTheDocument();
       expect(screen.queryByLabelText(/filtrar por nivel/i)).not.toBeInTheDocument();
       expect(screen.getByText(/equipe x/i)).toBeInTheDocument();
+    });
+
+    it("equipe que ja tem lancamento CONFIRMADO nessa rodada+tentativa mostra o resultado, nao o formulario em branco", async () => {
+      // Dúvida levantada testando de verdade: abrir a ficha direto (link
+      // salvo, voltar no navegador) pra uma equipe ja confirmada mostrava
+      // tudo zerado, como se nada tivesse sido lancado - o backend recusa
+      // duplicata (409 LANCAMENTO_JA_EXISTE), mas a tela era enganosa antes
+      // disso.
+      vi.mocked(api.GET).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/lancamentos") {
+          return {
+            data: {
+              itens: [
+                { id: "lanc-confirmado", equipe_id: "eq-1", tentativa: 1, status: "CONFIRMADO", total: 42 },
+              ],
+              total: 1,
+              page: 1,
+              size: 200,
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/rodadas/{rodada_id}") {
+          return { data: { id: "rod-1", modalidade_id: "mod-1", numero: 1 }, error: undefined } as never;
+        }
+        if (path === "/api/v1/modalidades/{modalidade_id}") {
+          return {
+            data: {
+              id: "mod-1",
+              nome: "Sumo",
+              ficha_unica_entre_niveis: true,
+              tentativas_por_rodada: 1,
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/inscricoes") {
+          return {
+            data: {
+              itens: [{ id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1" }],
+              total: 1,
+              page: 1,
+              size: 100,
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/equipes") {
+          return {
+            data: { itens: [{ id: "eq-1", nome: "Equipe X", nivel: 1, ativo: true }], total: 1, page: 1, size: 200 },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/fichas") {
+          return {
+            data: { itens: [{ id: "ficha-1", nivel: null, versao: 1, status: "PUBLICADA" }], total: 1, page: 1, size: 100 },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/fichas/{ficha_id}") {
+          return { data: FICHA_COMPLETA, error: undefined } as never;
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+
+      renderPage(
+        "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1",
+      );
+
+      const bloco = (await screen.findByText(/pontuação enviada e confirmada/i)).closest("div")!;
+      expect(within(bloco).getByText("42")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /registrar lancamento/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /aumentar lombada/i })).toBeDisabled();
     });
 
     it("o link de voltar aponta pra tela de Pontuar, nao pra lista de rodadas", async () => {

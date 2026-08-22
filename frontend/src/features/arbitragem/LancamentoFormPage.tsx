@@ -254,17 +254,26 @@ export function LancamentoFormPage() {
   // em outro momento/dispositivo, ou reabriu o app depois de sincronizar),
   // retoma direto pra confirmacao em vez de deixar tentar "Registrar
   // lancamento" de novo, que o backend recusaria (LANCAMENTO_JA_EXISTE).
-  const lancamentoPendenteExistente = (lancamentosDaRodada ?? []).find(
-    (l) => l.equipe_id === equipeId && l.tentativa === tentativa && l.status === "PENDENTE",
+  // Cobre tanto PENDENTE quanto CONFIRMADO: sem isso, abrir a ficha direto
+  // (link salvo, voltar no navegador, card desatualizado) pra uma equipe que
+  // ja tem lancamento confirmado nessa rodada+tentativa mostrava o
+  // formulario em branco como se nada tivesse sido lancado ainda - o
+  // backend recusa duplicata (409 LANCAMENTO_JA_EXISTE), mas o arbitro via
+  // uma tela enganosa antes disso.
+  const lancamentoExistente = (lancamentosDaRodada ?? []).find(
+    (l) =>
+      l.equipe_id === equipeId &&
+      l.tentativa === tentativa &&
+      (l.status === "PENDENTE" || l.status === "CONFIRMADO"),
   );
   const lancamentoAtivo: LancamentoAtivoView | null =
     derivarLancamentoAtivo({ itensDaFila }) ??
-    (lancamentoPendenteExistente
+    (lancamentoExistente
       ? {
-          id: lancamentoPendenteExistente.id,
-          lancamentoLocalId: lancamentoPendenteExistente.id,
-          status: lancamentoPendenteExistente.status as "PENDENTE" | "CONFIRMADO",
-          total: lancamentoPendenteExistente.total ?? 0,
+          id: lancamentoExistente.id,
+          lancamentoLocalId: lancamentoExistente.id,
+          status: lancamentoExistente.status as "PENDENTE" | "CONFIRMADO",
+          total: lancamentoExistente.total ?? 0,
           estadoSincronizacao: "sincronizado",
         }
       : null);
@@ -561,15 +570,18 @@ export function LancamentoFormPage() {
                       alternarModificador(criterio.id, aplicado)
                     }
                     onAlternarBooleano={(marcado) => alternarBooleano(criterio.id, marcado)}
+                    disabled={!!lancamentoAtivo}
                   />
                 ))}
               </div>
             </section>
           ))}
 
-          <p className="text-sm text-slate-500">
-            Preview: <span className="font-semibold text-slate-800">{totalPreview ?? 0}</span>
-          </p>
+          {!lancamentoAtivo && (
+            <p className="text-sm text-slate-500">
+              Preview: <span className="font-semibold text-slate-800">{totalPreview ?? 0}</span>
+            </p>
+          )}
 
           {erro && (
             <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 p-3">

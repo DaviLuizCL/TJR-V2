@@ -61,6 +61,7 @@ export function CriterioPreview({
   onSelecionarEscala,
   onAlternarModificador,
   onAlternarBooleano,
+  disabled = false,
 }: {
   criterio: CriterioItem;
   valor: ValorEstado | undefined;
@@ -69,6 +70,7 @@ export function CriterioPreview({
   onSelecionarEscala: (valor: number) => void;
   onAlternarModificador: (aplicado: boolean) => void;
   onAlternarBooleano: (marcado: boolean) => void;
+  disabled?: boolean;
 }) {
   if (criterio.tipo === "MODIFICADOR") {
     const aplicado = valor?.aplicado ?? false;
@@ -82,6 +84,7 @@ export function CriterioPreview({
           type="checkbox"
           className="h-6 w-6"
           checked={aplicado}
+          disabled={disabled}
           onChange={(evento) => onAlternarModificador(evento.target.checked)}
         />
       </label>
@@ -107,6 +110,7 @@ export function CriterioPreview({
           type="checkbox"
           className="h-6 w-6"
           checked={marcado}
+          disabled={disabled}
           onChange={(evento) => onAlternarBooleano(evento.target.checked)}
         />
       </label>
@@ -132,7 +136,8 @@ export function CriterioPreview({
                 key={opcao}
                 type="button"
                 onClick={() => onSelecionarEscala(opcao)}
-                className={`flex min-h-12 min-w-12 items-center justify-center rounded border px-3 font-semibold ${
+                disabled={disabled}
+                className={`flex min-h-12 min-w-12 items-center justify-center rounded border px-3 font-semibold disabled:opacity-50 ${
                   selecionado ? corSelecionado : "border-slate-300 text-slate-700"
                 }`}
               >
@@ -163,7 +168,8 @@ export function CriterioPreview({
           type="button"
           onClick={onDecrementar}
           aria-label={`Diminuir ${criterio.nome}`}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl font-bold text-slate-700"
+          disabled={disabled}
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl font-bold text-slate-700 disabled:opacity-50"
         >
           −
         </button>
@@ -174,7 +180,8 @@ export function CriterioPreview({
           type="button"
           onClick={onIncrementar}
           aria-label={`Aumentar ${criterio.nome}`}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-800 text-2xl font-bold text-white"
+          disabled={disabled}
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-800 text-2xl font-bold text-white disabled:opacity-50"
         >
           +
         </button>
