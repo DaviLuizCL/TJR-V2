@@ -25,7 +25,13 @@ from app.models.evento import Evento
 from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
 from app.models.inscricao import Inscricao
-from app.models.modalidade import DecisaoPartida, Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import (
+    DecisaoPartida,
+    FormatoChaveamento,
+    Modalidade,
+    ModalidadeStatus,
+    TipoDisputa,
+)
 from app.models.partida import Partida
 from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
@@ -196,6 +202,98 @@ async def test_seed_fichas_cria_uma_ficha_por_nivel_para_viagem_ao_centro_da_ter
     assert set(fichas_por_nivel) == set(FICHA_VIAGEM_POR_NIVEL)
     for ficha in fichas_por_nivel.values():
         assert ficha.status == FichaStatus.PUBLICADA
+
+
+async def test_seed_viagem_ao_centro_da_terra_tem_1_tentativa_por_rodada(db_session):
+    # Os "1o cubo"/"2o cubo" da ficha oficial sao as duas metades de UMA
+    # corrida so dentro da mesma rodada (ida, pega o 1o cubo, volta, entrega,
+    # vai de novo, pega o 2o) - nao duas tentativas/lancamentos separados.
+    # "Atravessar a borda" ja cobre o robo saindo da arena e reiniciando
+    # dentro da mesma rodada; tentativa nao entra nesse quesito.
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    viagem = next(m for m in modalidades if m.nome == "Viagem ao Centro da Terra")
+
+    assert viagem.tentativas_por_rodada == 1
+
+
+async def test_seed_fichas_viagem_tem_grupos_1o_e_2o_cubo_com_os_mesmos_criterios(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    viagem = next(m for m in modalidades if m.nome == "Viagem ao Centro da Terra")
+    resultado = await db_session.execute(
+        select(Ficha).where(Ficha.modalidade_id == viagem.id, Ficha.nivel == 1)
+    )
+    ficha_nivel_1 = resultado.scalar_one()
+
+    resultado_grupos = await db_session.execute(
+        select(Grupo).where(Grupo.ficha_id == ficha_nivel_1.id).order_by(Grupo.ordem)
+    )
+    grupos = resultado_grupos.scalars().all()
+    assert [g.nome for g in grupos] == ["1º Cubo", "2º Cubo"]
+
+    criterios_esperados = {
+        "Atingir vértice sem o alvo, na ida",
+        "Atingir o centro do cubo sem o alvo, na ida",
+        "Capturar o alvo A, no centro do cubo",
+        "Atingir vértice com o alvo, na volta",
+        "Atingir o início da arena com o alvo, na volta",
+        "Soltar o alvo A, no início da arena",
+        "Atravessar a borda",
+    }
+    for grupo in grupos:
+        resultado_criterios = await db_session.execute(
+            select(Criterio).where(Criterio.grupo_id == grupo.id)
+        )
+        nomes = {c.nome for c in resultado_criterios.scalars().all()}
+        assert nomes == criterios_esperados
+
+
+async def test_seed_fichas_viagem_nivel_3_e_4_tem_grupo_extra_de_reinicio(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    viagem = next(m for m in modalidades if m.nome == "Viagem ao Centro da Terra")
+    resultado = await db_session.execute(
+        select(Ficha).where(Ficha.modalidade_id == viagem.id, Ficha.nivel == 3)
+    )
+    ficha_nivel_3 = resultado.scalar_one()
+
+    resultado_grupos = await db_session.execute(
+        select(Grupo).where(Grupo.ficha_id == ficha_nivel_3.id).order_by(Grupo.ordem)
+    )
+    grupos = resultado_grupos.scalars().all()
+    nomes_grupos = [g.nome for g in grupos]
+    assert nomes_grupos[:2] == ["1º Cubo", "2º Cubo"]
+
+    grupo_extra = grupos[2]
+    resultado_criterios = await db_session.execute(
+        select(Criterio).where(Criterio.grupo_id == grupo_extra.id)
+    )
+    criterios = resultado_criterios.scalars().all()
+    assert [c.nome for c in criterios] == ["Reinício entre as rodadas"]
+
+
+async def test_seed_fichas_viagem_nivel_1_e_2_nao_tem_grupo_de_reinicio(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    viagem = next(m for m in modalidades if m.nome == "Viagem ao Centro da Terra")
+    resultado = await db_session.execute(
+        select(Ficha).where(Ficha.modalidade_id == viagem.id, Ficha.nivel == 1)
+    )
+    ficha_nivel_1 = resultado.scalar_one()
+
+    resultado_grupos = await db_session.execute(
+        select(Grupo).where(Grupo.ficha_id == ficha_nivel_1.id)
+    )
+    grupos = resultado_grupos.scalars().all()
+    assert len(grupos) == 2
 
 
 async def test_seed_fichas_cria_grupos_e_criterios_da_especificacao(db_session):
@@ -418,6 +516,20 @@ async def test_seed_arenas_e_idempotente(db_session):
     assert len(resultado.scalars().all()) == len(individuais)
 
 
+def _qtd_rodadas_esperada_no_seed(modalidade: Modalidade) -> int:
+    # MATA_MATA so pode ter a Rodada 1 pre-gerada: as proximas dependem de
+    # quem vence cada partida (avancar_se_rodada_completa gera dinamicamente
+    # conforme o chaveamento avanca) - nao da pra saber os confrontos de
+    # antemao, entao pre-criar as `qtd_rodadas` (usada so como profundidade
+    # maxima do bracket) estaria inventando pareamento que nao existe ainda.
+    if (
+        modalidade.tipo_disputa == TipoDisputa.CONFRONTO
+        and modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA
+    ):
+        return 1
+    return modalidade.qtd_rodadas
+
+
 async def test_seed_rodadas_cria_qtd_rodadas_para_cada_modalidade(db_session):
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
@@ -427,7 +539,7 @@ async def test_seed_rodadas_cria_qtd_rodadas_para_cada_modalidade(db_session):
 
     rodadas = await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
 
-    assert len(rodadas) == sum(m.qtd_rodadas for m in modalidades)
+    assert len(rodadas) == sum(_qtd_rodadas_esperada_no_seed(m) for m in modalidades)
 
 
 async def test_seed_rodadas_confronto_ja_vem_com_partidas(db_session):
@@ -448,6 +560,33 @@ async def test_seed_rodadas_confronto_ja_vem_com_partidas(db_session):
     assert len(resultado_partidas.scalars().all()) > 0
 
 
+async def test_seed_rodadas_mata_mata_nao_pre_gera_rodadas_futuras(db_session):
+    # Bug real: seed_rodadas chamava o pareamento generico (round-robin,
+    # "metodo do circulo") pra toda modalidade de CONFRONTO, sumo incluso -
+    # isso pre-criava as 5 rodadas inteiras de Sumo com confrontos que nao
+    # dependiam de quem venceria a rodada anterior (errado pra MATA_MATA) e
+    # ainda deixava `gerar_chaveamento_inicial` inacessivel depois (recusa
+    # com 409 CHAVEAMENTO_JA_INICIADO pq ja existia rodada). Sumo (e
+    # qualquer outra MATA_MATA) so pode ter a Rodada 1 pronta no seed; as
+    # seguintes vem de `avancar_se_rodada_completa`, so depois que as
+    # partidas da rodada atual fecharem de verdade.
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    equipes = await seed_equipes_credenciadas(db_session)
+    await seed_inscricoes(db_session, modalidades, equipes)
+    coordenador = await seed_coordenador(
+        db_session, email="rodadas-mata-mata@tjr.app", senha="senha-123"
+    )
+
+    await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+
+    sumo = next(m for m in modalidades if m.nome == "Sumô")
+    assert sumo.formato_chaveamento == FormatoChaveamento.MATA_MATA
+    resultado = await db_session.execute(select(Rodada).where(Rodada.modalidade_id == sumo.id))
+    numeros = sorted(r.numero for r in resultado.scalars().all())
+    assert numeros == [1]
+
+
 async def test_seed_rodadas_e_idempotente(db_session):
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
@@ -461,7 +600,9 @@ async def test_seed_rodadas_e_idempotente(db_session):
     await db_session.flush()
 
     resultado = await db_session.execute(select(Rodada))
-    assert len(resultado.scalars().all()) == sum(m.qtd_rodadas for m in modalidades)
+    assert len(resultado.scalars().all()) == sum(
+        _qtd_rodadas_esperada_no_seed(m) for m in modalidades
+    )
 
 
 async def test_seed_agendamentos_cobre_toda_equipe_inscrita_em_modalidade_individual(db_session):

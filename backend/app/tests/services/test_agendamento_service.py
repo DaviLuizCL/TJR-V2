@@ -11,11 +11,13 @@ from app.models.arena import Arena
 from app.models.audit_log import AuditLog
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
+from app.models.ficha import Ficha, FichaStatus
+from app.models.lancamento import Lancamento, LancamentoStatus
 from app.models.modalidade import Consolidacao, Modalidade, ModalidadeStatus, TipoDisputa
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.inscricao import InscricaoCreate
-from app.services.agendamento import gerar_agendamentos
+from app.services.agendamento import estimar_horarios, gerar_agendamentos
 from app.services.inscricao import criar_inscricao
 
 
@@ -118,6 +120,47 @@ async def _agendamentos_da_rodada(db_session, rodada_id):
         .order_by(Agendamento.ordem_na_arena)
     )
     return list(resultado.scalars().all())
+
+
+async def _criar_arbitro(db_session, email="arbitro-estimativa@tjr.app") -> Usuario:
+    usuario = Usuario(
+        nome="Arbitro", email=email, senha_hash=hash_senha("senha-123"), papel=Papel.ARBITRO
+    )
+    db_session.add(usuario)
+    await db_session.flush()
+    return usuario
+
+
+async def _criar_ficha_minima(db_session, modalidade) -> Ficha:
+    ficha = Ficha(modalidade_id=modalidade.id, nivel=None, versao=1, status=FichaStatus.PUBLICADA)
+    db_session.add(ficha)
+    await db_session.flush()
+    return ficha
+
+
+async def _confirmar_lancamento_direto(
+    db_session, *, ficha, rodada, equipe, arbitro, tentativa=1, momento
+) -> Lancamento:
+    """Cria um lancamento ja CONFIRMADO com atualizado_em controlado, pra
+    simular o marco real de conclusao de uma bateria sem passar pelo fluxo
+    completo de criar_lancamento/confirmar_lancamento (que usa datetime.now
+    internamente e nao deixa controlar o horario)."""
+    lancamento = Lancamento(
+        ficha_id=ficha.id,
+        rodada_id=rodada.id,
+        tentativa=tentativa,
+        equipe_id=equipe.id,
+        arbitro_id=arbitro.id,
+        client_operation_id=uuid.uuid4(),
+        revision=1,
+        status=LancamentoStatus.CONFIRMADO,
+        total=0,
+        criado_em=momento,
+        atualizado_em=momento,
+    )
+    db_session.add(lancamento)
+    await db_session.flush()
+    return lancamento
 
 
 async def test_gerar_agendamentos_calcula_ordem_e_horario_corretamente(db_session):
@@ -497,3 +540,219 @@ async def test_gerar_agendamentos_balanceia_carga_entre_arenas(db_session):
 
     assert len(resultado) == 10
     assert max(contagem.values()) - min(contagem.values()) <= 1
+
+
+async def test_estimar_horarios_sem_confirmacao_repete_o_horario_planejado(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    modalidade = await _criar_modalidade(
+        db_session, niveis_aplicaveis=[1], duracao_maxima_rodada_seg=300
+    )
+    rodada = await _criar_rodada(db_session, modalidade, 1)
+    await _criar_arena(db_session, modalidade, nome="Arena A")
+    for i in range(3):
+        await _criar_equipe_inscrita(
+            db_session, modalidade, coordenador, nome=f"Equipe {i}", nivel=1
+        )
+
+    inicio = datetime(2026, 8, 10, 8, 0, tzinfo=UTC)
+    agendamentos = await gerar_agendamentos(
+        db_session, modalidade.id, [rodada.id], inicio, usuario_id=coordenador.id
+    )
+
+    estimativa = await estimar_horarios(db_session, modalidade.id)
+
+    assert len(estimativa) == 3
+    for agendamento in agendamentos:
+        assert estimativa[agendamento.id] == agendamento.horario_inicio
+
+
+async def test_estimar_horarios_reprojeta_fila_da_mesma_arena_apos_atraso(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    arbitro = await _criar_arbitro(db_session)
+    modalidade = await _criar_modalidade(
+        db_session, niveis_aplicaveis=[1], duracao_maxima_rodada_seg=300
+    )
+    rodada = await _criar_rodada(db_session, modalidade, 1)
+    await _criar_arena(db_session, modalidade, nome="Arena A")
+    ficha = await _criar_ficha_minima(db_session, modalidade)
+    equipes = [
+        await _criar_equipe_inscrita(
+            db_session,
+            modalidade,
+            coordenador,
+            nome=f"Equipe {i}",
+            nivel=1,
+            equipe_id=uuid.UUID(int=i),
+        )
+        for i in range(3)
+    ]
+
+    inicio = datetime(2026, 8, 10, 8, 0, tzinfo=UTC)
+    await gerar_agendamentos(
+        db_session, modalidade.id, [rodada.id], inicio, usuario_id=coordenador.id
+    )
+
+    # Equipe 0 (ordem 0) so confirma 500s depois do inicio, 200s alem do
+    # planejado (300s) -- sem uma segunda confirmacao ainda, nao ha dado
+    # real de ritmo, entao a bateria seguinte usa a duracao planejada.
+    conclusao_real = inicio + timedelta(seconds=500)
+    await _confirmar_lancamento_direto(
+        db_session,
+        ficha=ficha,
+        rodada=rodada,
+        equipe=equipes[0],
+        arbitro=arbitro,
+        momento=conclusao_real,
+    )
+
+    estimativa = await estimar_horarios(db_session, modalidade.id)
+
+    agendamentos = {a.equipe_id: a for a in await _agendamentos_da_rodada(db_session, rodada.id)}
+    assert equipes[0].id not in {eq_id for eq_id, ag in agendamentos.items() if ag.id in estimativa}
+    assert estimativa[agendamentos[equipes[1].id].id] == conclusao_real + timedelta(seconds=300)
+    assert estimativa[agendamentos[equipes[2].id].id] == conclusao_real + timedelta(seconds=600)
+
+
+async def test_estimar_horarios_usa_intervalo_real_entre_confirmacoes_como_novo_ritmo(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    arbitro = await _criar_arbitro(db_session)
+    modalidade = await _criar_modalidade(
+        db_session, niveis_aplicaveis=[1], duracao_maxima_rodada_seg=300
+    )
+    rodada = await _criar_rodada(db_session, modalidade, 1)
+    await _criar_arena(db_session, modalidade, nome="Arena A")
+    ficha = await _criar_ficha_minima(db_session, modalidade)
+    equipes = [
+        await _criar_equipe_inscrita(
+            db_session,
+            modalidade,
+            coordenador,
+            nome=f"Equipe {i}",
+            nivel=1,
+            equipe_id=uuid.UUID(int=i),
+        )
+        for i in range(3)
+    ]
+
+    inicio = datetime(2026, 8, 10, 8, 0, tzinfo=UTC)
+    await gerar_agendamentos(
+        db_session, modalidade.id, [rodada.id], inicio, usuario_id=coordenador.id
+    )
+
+    # Equipe 0 confirma no horario planejado, Equipe 1 confirma 400s depois
+    # dela (ritmo real de 400s, acima dos 300s planejados) -- a Equipe 2
+    # (ainda pendente) deve herdar esse ritmo real, nao o planejado.
+    conclusao_0 = inicio
+    conclusao_1 = conclusao_0 + timedelta(seconds=400)
+    await _confirmar_lancamento_direto(
+        db_session,
+        ficha=ficha,
+        rodada=rodada,
+        equipe=equipes[0],
+        arbitro=arbitro,
+        momento=conclusao_0,
+    )
+    await _confirmar_lancamento_direto(
+        db_session,
+        ficha=ficha,
+        rodada=rodada,
+        equipe=equipes[1],
+        arbitro=arbitro,
+        momento=conclusao_1,
+    )
+
+    estimativa = await estimar_horarios(db_session, modalidade.id)
+
+    agendamentos = {a.equipe_id: a for a in await _agendamentos_da_rodada(db_session, rodada.id)}
+    assert estimativa[agendamentos[equipes[2].id].id] == conclusao_1 + timedelta(seconds=400)
+
+
+async def test_estimar_horarios_pace_e_independente_por_arena(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    arbitro = await _criar_arbitro(db_session)
+    modalidade = await _criar_modalidade(
+        db_session, niveis_aplicaveis=[1], duracao_maxima_rodada_seg=300
+    )
+    rodada = await _criar_rodada(db_session, modalidade, 1)
+    await _criar_arena(db_session, modalidade, nome="Arena A", arena_id=uuid.UUID(int=200))
+    await _criar_arena(db_session, modalidade, nome="Arena B", arena_id=uuid.UUID(int=201))
+    ficha = await _criar_ficha_minima(db_session, modalidade)
+    equipes = [
+        await _criar_equipe_inscrita(
+            db_session,
+            modalidade,
+            coordenador,
+            nome=f"Equipe {i}",
+            nivel=1,
+            equipe_id=uuid.UUID(int=i),
+        )
+        for i in range(4)
+    ]
+
+    inicio = datetime(2026, 8, 10, 8, 0, tzinfo=UTC)
+    await gerar_agendamentos(
+        db_session, modalidade.id, [rodada.id], inicio, usuario_id=coordenador.id
+    )
+    agendamentos = {a.equipe_id: a for a in await _agendamentos_da_rodada(db_session, rodada.id)}
+
+    # Equipes 0 e 2 caem na Arena A (ordem 0 e 1); Equipes 1 e 3 na Arena B,
+    # pelo mesmo balanceamento round-robin por id usado em gerar_agendamentos.
+    assert agendamentos[equipes[0].id].arena_id == agendamentos[equipes[2].id].arena_id
+    assert agendamentos[equipes[1].id].arena_id == agendamentos[equipes[3].id].arena_id
+
+    # So a Arena A atrasa (equipe 0 confirma 200s depois do planejado).
+    conclusao_atrasada = inicio + timedelta(seconds=500)
+    await _confirmar_lancamento_direto(
+        db_session,
+        ficha=ficha,
+        rodada=rodada,
+        equipe=equipes[0],
+        arbitro=arbitro,
+        momento=conclusao_atrasada,
+    )
+
+    estimativa = await estimar_horarios(db_session, modalidade.id)
+
+    # Equipe 2 (mesma arena atrasada) reprojeta; Equipe 3 (Arena B, sem
+    # nenhuma confirmacao) mantem o horario planejado original.
+    assert estimativa[agendamentos[equipes[2].id].id] == conclusao_atrasada + timedelta(seconds=300)
+    assert estimativa[agendamentos[equipes[3].id].id] == agendamentos[equipes[3].id].horario_inicio
+
+
+async def test_estimar_horarios_atraso_cascateia_pro_inicio_da_proxima_rodada(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    arbitro = await _criar_arbitro(db_session)
+    modalidade = await _criar_modalidade(
+        db_session,
+        niveis_aplicaveis=[1],
+        duracao_maxima_rodada_seg=300,
+        pausa_entre_rodadas_seg=60,
+        qtd_rodadas=2,
+    )
+    rodada1 = await _criar_rodada(db_session, modalidade, 1)
+    rodada2 = await _criar_rodada(db_session, modalidade, 2)
+    await _criar_arena(db_session, modalidade, nome="Arena A")
+    ficha = await _criar_ficha_minima(db_session, modalidade)
+    equipe = await _criar_equipe_inscrita(
+        db_session, modalidade, coordenador, nome="Equipe Solo", nivel=1
+    )
+
+    inicio = datetime(2026, 8, 10, 8, 0, tzinfo=UTC)
+    await gerar_agendamentos(
+        db_session, modalidade.id, [rodada1.id, rodada2.id], inicio, usuario_id=coordenador.id
+    )
+
+    conclusao_real = inicio + timedelta(seconds=900)  # 600s alem do planejado
+    await _confirmar_lancamento_direto(
+        db_session,
+        ficha=ficha,
+        rodada=rodada1,
+        equipe=equipe,
+        arbitro=arbitro,
+        momento=conclusao_real,
+    )
+
+    estimativa = await estimar_horarios(db_session, modalidade.id)
+
+    agendamento_r2 = (await _agendamentos_da_rodada(db_session, rodada2.id))[0]
+    assert estimativa[agendamento_r2.id] == conclusao_real + timedelta(seconds=60)

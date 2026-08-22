@@ -33,6 +33,11 @@ interface AgendamentoItem {
   horario_inicio: string;
 }
 
+interface EstimativaItem {
+  agendamento_id: string;
+  horario_previsto: string;
+}
+
 interface EquipeItem {
   id: string;
   nome: string;
@@ -175,6 +180,21 @@ export function HorarioPage() {
     enabled: !!modalidadeId,
   });
 
+  const { data: estimativas } = useQuery({
+    queryKey: ["agendamentos-estimativa", modalidadeId],
+    queryFn: async () => {
+      const { data } = await api.GET("/api/v1/agendamentos/estimativa", {
+        params: { query: { modalidade_id: modalidadeId! } },
+      });
+      return (data ?? []) as EstimativaItem[];
+    },
+    enabled: !!modalidadeId,
+    refetchInterval: 30_000,
+  });
+  const horarioPrevistoPorAgendamento = new Map(
+    (estimativas ?? []).map((e) => [e.agendamento_id, e.horario_previsto]),
+  );
+
   const { data: equipesTodas } = useQuery({
     queryKey: ["equipes", "para-horarios"],
     queryFn: async () => {
@@ -244,7 +264,7 @@ export function HorarioPage() {
   return (
     <main className="mx-auto max-w-4xl p-8">
       <Link
-        to={`/eventos/${eventoId}/individual?aba=horarios`}
+        to={`/eventos/${eventoId}/competicoes?aba=individual&sub=horarios`}
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
       >
         ← Voltar para horários
@@ -371,7 +391,10 @@ export function HorarioPage() {
                             <li key={item.id} className="flex items-center justify-between">
                               <span>{equipePorId.get(item.equipe_id) ?? "?"}</span>
                               <span className="text-slate-500">
-                                {formatarHorario(item.horario_inicio)}
+                                {formatarHorario(
+                                  horarioPrevistoPorAgendamento.get(item.id) ??
+                                    item.horario_inicio,
+                                )}
                               </span>
                             </li>
                           ))}

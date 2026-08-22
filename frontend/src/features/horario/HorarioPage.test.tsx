@@ -86,6 +86,12 @@ function mockGetPadrao(overrides: Record<string, unknown> = {}) {
         error: undefined,
       } as never;
     }
+    if (path === "/api/v1/agendamentos/estimativa") {
+      return {
+        data: (overrides.estimativas as unknown[]) ?? [],
+        error: undefined,
+      } as never;
+    }
     if (path === "/api/v1/equipes") {
       return {
         data: {
@@ -228,6 +234,32 @@ describe("HorarioPage", () => {
     expect(await within(secaoAgenda).findByText("Arena 1")).toBeInTheDocument();
     expect(within(secaoAgenda).getByText(/equipe foguete/i)).toBeInTheDocument();
     expect(within(secaoAgenda).getByText(/rodada 1/i)).toBeInTheDocument();
+  });
+
+  it("mostra o horario previsto da estimativa no lugar do horario planejado, sem badge de atraso", async () => {
+    logarComo("COORDENADOR");
+    mockGetPadrao({
+      agendamentos: [
+        {
+          id: "ag-1",
+          rodada_id: "rod-1",
+          equipe_id: "eq-1",
+          arena_id: "are-1",
+          ordem_na_arena: 0,
+          horario_inicio: "2026-08-10T08:00:00Z",
+        },
+      ],
+      estimativas: [{ agendamento_id: "ag-1", horario_previsto: "2026-08-10T08:15:00Z" }],
+    });
+
+    renderPage();
+
+    const secaoAgenda = (await screen.findByText(/agenda gerada/i)).closest("section")!;
+    await within(secaoAgenda).findByText("Equipe Foguete");
+
+    expect(within(secaoAgenda).queryByText(/05:00/)).not.toBeInTheDocument();
+    expect(within(secaoAgenda).getByText(/05:15/)).toBeInTheDocument();
+    expect(within(secaoAgenda).queryByText(/atrasad/i)).not.toBeInTheDocument();
   });
 
   it("esconde os controles de escrita quando o usuario nao e coordenador", async () => {

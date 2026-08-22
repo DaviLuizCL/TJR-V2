@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import exigir_papel
 from app.db.session import get_db
 from app.models.usuario import Papel, Usuario
-from app.schemas.agendamento import AgendamentoOut, GerarAgendamentosRequest
+from app.schemas.agendamento import (
+    AgendamentoEstimativaOut,
+    AgendamentoOut,
+    GerarAgendamentosRequest,
+)
 from app.schemas.common import Pagina
 from app.services import agendamento as agendamento_service
 
@@ -30,6 +34,19 @@ async def gerar_agendamentos(
         usuario_id=usuario.id,
     )
     return [AgendamentoOut.model_validate(a) for a in agendamentos]
+
+
+@router.get("/agendamentos/estimativa", response_model=list[AgendamentoEstimativaOut])
+async def estimar_horarios(
+    modalidade_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    usuario: Usuario = Depends(exigir_papel(*_PAPEIS_LEITURA)),
+) -> list[AgendamentoEstimativaOut]:
+    estimativa = await agendamento_service.estimar_horarios(db, modalidade_id)
+    return [
+        AgendamentoEstimativaOut(agendamento_id=agendamento_id, horario_previsto=horario_previsto)
+        for agendamento_id, horario_previsto in estimativa.items()
+    ]
 
 
 @router.get("/agendamentos", response_model=Pagina[AgendamentoOut])

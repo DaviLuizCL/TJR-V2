@@ -10,6 +10,7 @@ from app.models.agendamento import Agendamento
 from app.models.arena import Arena
 from app.models.equipe import Equipe
 from app.models.inscricao import Inscricao
+from app.models.lancamento import Lancamento, LancamentoStatus
 from app.models.modalidade import Modalidade, TipoDisputa
 from app.models.rodada import ModoHorario, Rodada
 from app.services.audit import registrar_audit_log
@@ -212,6 +213,101 @@ async def gerar_agendamentos(
         )
 
     return todos_os_novos
+
+
+async def estimar_horarios(db: AsyncSession, modalidade_id: UUID) -> dict[UUID, datetime]:
+    """Reprojeta o horario previsto das baterias que ainda nao foram
+    pontuadas, usando a confirmacao real dos lancamentos como marco: o
+    intervalo observado entre confirmacoes consecutivas na mesma arena vira
+    o novo ritmo daquela arena (substituindo duracao_maxima_rodada_seg
+    enquanto nao houver pelo menos duas confirmacoes reais pra calcular um
+    intervalo), e o atraso/adiantamento acumulado cascateia pro inicio
+    estimado das proximas rodadas (mesma formula de pausa_entre_rodadas_seg
+    usada em gerar_agendamentos). Baterias ja confirmadas nao entram no
+    resultado -- ja aconteceram, nao ha "previsto" a mostrar.
+    """
+    modalidade = await obter_modalidade(db, modalidade_id)
+    duracao_padrao = modalidade.duracao_maxima_rodada_seg or 0
+    pausa = modalidade.pausa_entre_rodadas_seg or 0
+
+    resultado_rodadas = await db.execute(
+        select(Rodada)
+        .join(Agendamento, Agendamento.rodada_id == Rodada.id)
+        .where(Rodada.modalidade_id == modalidade_id)
+        .distinct()
+    )
+    rodadas = sorted(resultado_rodadas.scalars().all(), key=lambda r: r.numero)
+    if not rodadas:
+        return {}
+
+    rodada_ids = [r.id for r in rodadas]
+
+    resultado_agendamentos = await db.execute(
+        select(Agendamento)
+        .where(Agendamento.rodada_id.in_(rodada_ids))
+        .order_by(Agendamento.ordem_na_arena)
+    )
+    agendamentos_por_rodada_arena: dict[tuple[UUID, UUID], list[Agendamento]] = defaultdict(list)
+    for agendamento in resultado_agendamentos.scalars().all():
+        agendamentos_por_rodada_arena[(agendamento.rodada_id, agendamento.arena_id)].append(
+            agendamento
+        )
+
+    resultado_confirmados = await db.execute(
+        select(
+            Lancamento.equipe_id,
+            Lancamento.rodada_id,
+            func.max(Lancamento.atualizado_em),
+        )
+        .where(
+            Lancamento.rodada_id.in_(rodada_ids),
+            Lancamento.status == LancamentoStatus.CONFIRMADO,
+        )
+        .group_by(Lancamento.equipe_id, Lancamento.rodada_id)
+    )
+    conclusao_real: dict[tuple[UUID, UUID], datetime] = {
+        (equipe_id, rodada_id): momento for equipe_id, rodada_id, momento in resultado_confirmados
+    }
+
+    arena_ids = {arena_id for (_, arena_id) in agendamentos_por_rodada_arena}
+    pace_por_arena: dict[UUID, float] = dict.fromkeys(arena_ids, duracao_padrao)
+
+    previsto: dict[UUID, datetime] = {}
+    inicio_rodada = rodadas[0].horario_inicio
+
+    for rodada in rodadas:
+        fim_por_arena: list[datetime] = []
+
+        for arena_id in arena_ids:
+            fila = agendamentos_por_rodada_arena.get((rodada.id, arena_id))
+            if not fila:
+                continue
+
+            hora_corrente = inicio_rodada
+            primeira = True
+            for agendamento in fila:
+                anterior = hora_corrente
+                real = conclusao_real.get((agendamento.equipe_id, rodada.id))
+                if real is not None:
+                    if not primeira:
+                        gap = (real - anterior).total_seconds()
+                        if gap > 0:
+                            pace_por_arena[arena_id] = gap
+                    hora_corrente = real
+                else:
+                    if not primeira:
+                        hora_corrente = anterior + timedelta(seconds=pace_por_arena[arena_id])
+                    previsto[agendamento.id] = hora_corrente
+                primeira = False
+
+            fim_por_arena.append(hora_corrente)
+
+        if fim_por_arena:
+            inicio_rodada = max(fim_por_arena) + timedelta(seconds=pausa)
+        else:
+            inicio_rodada = inicio_rodada + timedelta(seconds=pausa)
+
+    return previsto
 
 
 async def listar_agendamentos(

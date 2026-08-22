@@ -163,3 +163,55 @@ async def test_listar_agendamentos_filtra_por_modalidade(client, db_session):
     corpo = resposta.json()
     assert corpo["total"] == 1
     assert corpo["itens"][0]["equipe_id"] == cenario["equipe_id"]
+
+
+async def test_estimar_horarios_sem_confirmacao_devolve_horario_planejado(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-agenda-5@tjr.app")
+    cenario = await _preparar_cenario(client, headers)
+    gerado = await client.post(
+        "/api/v1/agendamentos/gerar",
+        json={
+            "modalidade_id": cenario["modalidade_id"],
+            "rodada_ids": [cenario["rodada_id"]],
+            "horario_inicio": "2026-08-10T08:00:00Z",
+        },
+        headers=headers,
+    )
+    agendamento_id = gerado.json()[0]["id"]
+
+    resposta = await client.get(
+        f"/api/v1/agendamentos/estimativa?modalidade_id={cenario['modalidade_id']}",
+        headers=headers,
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert len(corpo) == 1
+    assert corpo[0]["agendamento_id"] == agendamento_id
+    assert corpo[0]["horario_previsto"] == "2026-08-10T08:00:00Z"
+
+
+async def test_estimar_horarios_com_arbitro_retorna_200(client, db_session):
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-agenda-6@tjr.app"
+    )
+    cenario = await _preparar_cenario(client, coord_headers)
+    await client.post(
+        "/api/v1/agendamentos/gerar",
+        json={
+            "modalidade_id": cenario["modalidade_id"],
+            "rodada_ids": [cenario["rodada_id"]],
+            "horario_inicio": "2026-08-10T08:00:00Z",
+        },
+        headers=coord_headers,
+    )
+    arbitro_headers = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-agenda-2@tjr.app"
+    )
+
+    resposta = await client.get(
+        f"/api/v1/agendamentos/estimativa?modalidade_id={cenario['modalidade_id']}",
+        headers=arbitro_headers,
+    )
+
+    assert resposta.status_code == 200

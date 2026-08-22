@@ -22,3 +22,8 @@ class AgendamentoOut(BaseModel):
     horario_inicio: datetime
     criado_em: datetime
     atualizado_em: datetime
+
+
+class AgendamentoEstimativaOut(BaseModel):
+    agendamento_id: UUID
+    horario_previsto: datetime

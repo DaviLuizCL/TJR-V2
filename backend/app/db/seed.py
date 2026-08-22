@@ -30,6 +30,7 @@ from app.models.usuario import Papel, Usuario
 from app.schemas.arena import ArenaCreate
 from app.services import agendamento as agendamento_service
 from app.services import arena as arena_service
+from app.services import chaveamento as chaveamento_service
 from app.services import rodada as rodada_service
 
 FUSO_FORTALEZA = ZoneInfo("America/Fortaleza")
@@ -64,9 +65,9 @@ MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
         nome="Dança",
         tipo_disputa=TipoDisputa.INDIVIDUAL,
-        qtd_rodadas=3,
+        qtd_rodadas=2,
         tentativas_por_rodada=1,
-        consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
+        consolidacao=Consolidacao.SOMA_RODADAS,
         duracao_maxima_rodada_seg=300,
         pausa_entre_rodadas_seg=60,
     ),
@@ -92,7 +93,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         nome="Viagem ao Centro da Terra",
         tipo_disputa=TipoDisputa.INDIVIDUAL,
         qtd_rodadas=3,
-        tentativas_por_rodada=2,
+        tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
         ficha_unica_entre_niveis=False,
         duracao_maxima_rodada_seg=240,
@@ -401,53 +402,79 @@ _FICHA_RESGATE_NO_PLANO: tuple[tuple[str, tuple[dict, ...]], ...] = (
 )
 
 
-def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]], ...]:
-    criterios: list[dict] = [
-        _c(
-            "Atingir os 6 Cn sem o alvo, na ida",
-            CategoriaCriterio.PONTUACAO,
-            CriterioTipo.CONTADOR,
-            pontos=6,
-            max_ocorrencias=6,
-        ),
-        _c(
-            "Atingir o Cc sem o alvo, na ida",
-            CategoriaCriterio.PONTUACAO,
-            CriterioTipo.BOOLEANO,
-            pontos=4,
-        ),
-        _c(
-            "Capturar o alvo A, em Cc",
-            CategoriaCriterio.PONTUACAO,
-            CriterioTipo.BOOLEANO,
-            pontos=10,
-        ),
-        _c(
-            "Atingir os 6 Cn com o alvo, na volta",
-            CategoriaCriterio.PONTUACAO,
-            CriterioTipo.CONTADOR,
-            pontos=12,
-            max_ocorrencias=6,
-        ),
-        _c(
-            "Atingir o Cs com o alvo, na volta",
-            CategoriaCriterio.PONTUACAO,
-            CriterioTipo.BOOLEANO,
-            pontos=8,
-        ),
-        _c("Soltar o alvo A, em Cs", CategoriaCriterio.PONTUACAO, CriterioTipo.BOOLEANO, pontos=10),
-        _c("Atravessar a borda", CategoriaCriterio.PENALIDADE, CriterioTipo.CONTADOR, pontos=5),
-    ]
-    if inclui_reinicio:
-        criterios.append(
+def _grupo_cubo_viagem(nome_grupo: str) -> tuple[str, tuple[dict, ...]]:
+    # Os dois cubos sao pegos numa unica corrida, dentro da mesma rodada
+    # (ida ate o centro, pega o 1o cubo, volta, entrega, vai de novo, pega
+    # o 2o) - por isso os mesmos criterios se repetem em cada grupo, nao em
+    # tentativas/lancamentos separados (Modalidade.tentativas_por_rodada=1
+    # pra essa modalidade). "Atravessar a borda" e por cubo porque a
+    # jurisprudencia da ficha oficial zera os pontos so "daquele cubo" ao
+    # sair da borda, nao a corrida inteira.
+    return (
+        nome_grupo,
+        (
             _c(
-                "Reinício entre as rodadas",
-                CategoriaCriterio.PENALIDADE,
+                "Atingir vértice sem o alvo, na ida",
+                CategoriaCriterio.PONTUACAO,
                 CriterioTipo.CONTADOR,
-                pontos=20,
+                pontos=6,
+                max_ocorrencias=6,
+            ),
+            _c(
+                "Atingir o centro do cubo sem o alvo, na ida",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=4,
+            ),
+            _c(
+                "Capturar o alvo A, no centro do cubo",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=10,
+            ),
+            _c(
+                "Atingir vértice com o alvo, na volta",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.CONTADOR,
+                pontos=12,
+                max_ocorrencias=6,
+            ),
+            _c(
+                "Atingir o início da arena com o alvo, na volta",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=8,
+            ),
+            _c(
+                "Soltar o alvo A, no início da arena",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=10,
+            ),
+            _c("Atravessar a borda", CategoriaCriterio.PENALIDADE, CriterioTipo.CONTADOR, pontos=5),
+        ),
+    )
+
+
+def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]], ...]:
+    grupos = [_grupo_cubo_viagem("1º Cubo"), _grupo_cubo_viagem("2º Cubo")]
+    if inclui_reinicio:
+        # Diferente de "Atravessar a borda", reinicio e por rodada, nao por
+        # cubo - por isso fica num grupo proprio, nao duplicado.
+        grupos.append(
+            (
+                "Modificadores",
+                (
+                    _c(
+                        "Reinício entre as rodadas",
+                        CategoriaCriterio.PENALIDADE,
+                        CriterioTipo.CONTADOR,
+                        pontos=20,
+                    ),
+                ),
             )
         )
-    return (("Percurso", tuple(criterios)),)
+    return tuple(grupos)
 
 
 FICHAS_TJR: dict[str, tuple[tuple[str, tuple[dict, ...]], ...]] = {
@@ -691,12 +718,41 @@ async def seed_arenas(
     return arenas
 
 
+async def _obter_ou_gerar_chaveamento_inicial(
+    db: AsyncSession, modalidade_id: UUID, *, usuario_id: UUID
+) -> Rodada:
+    existente = await db.scalar(
+        select(Rodada).where(Rodada.modalidade_id == modalidade_id, Rodada.numero == 1)
+    )
+    if existente is not None:
+        return existente
+    return await chaveamento_service.gerar_chaveamento_inicial(
+        db, modalidade_id, usuario_id=usuario_id
+    )
+
+
 async def seed_rodadas(
     db: AsyncSession, modalidades: list[Modalidade], *, usuario_id: UUID
 ) -> list[Rodada]:
+    # MATA_MATA nao pode pre-gerar as `qtd_rodadas` inteiras como as demais
+    # (gerar_rodadas faz pareamento round-robin generico, que nao serve pra
+    # bracket de eliminacao - rodada 2+ so existe depois que a rodada
+    # anterior fecha de verdade, via avancar_se_rodada_completa). Por isso
+    # essa modalidade usa gerar_chaveamento_inicial (so a Rodada 1), nao
+    # gerar_rodadas.
     rodadas: list[Rodada] = []
     for modalidade in modalidades:
-        rodadas.extend(await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id))
+        if (
+            modalidade.tipo_disputa == TipoDisputa.CONFRONTO
+            and modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA
+        ):
+            rodadas.append(
+                await _obter_ou_gerar_chaveamento_inicial(db, modalidade.id, usuario_id=usuario_id)
+            )
+        else:
+            rodadas.extend(
+                await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id)
+            )
     return rodadas
 
 
