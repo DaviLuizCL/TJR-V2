@@ -145,11 +145,17 @@ async def avancar_se_rodada_completa(
     (preserva o formato do chaveamento).
 
     Cada nivel corre seu proprio chaveamento, independente dos outros: as
-    partidas da rodada sao agrupadas por `nivel` e o avanco e decidido
-    separadamente por grupo. Um nivel que ja chegou ao campeao simplesmente
-    nao recebe mais partida (mesmo que outro nivel, com mais equipes, ainda
-    precise de mais rodadas). So nao ha proxima rodada nenhuma quando NENHUM
-    nivel tem mais partida pra gerar.
+    partidas da rodada sao agrupadas por `nivel`, e o gate de "esta tudo
+    fechado" e avaliado por grupo, nao pela rodada inteira - um nivel cujas
+    partidas ja fecharam avanca mesmo com outro nivel (maior, ou so mais
+    lento pra ser pontuado) ainda em aberto. Como o avanco automatico e
+    chamado de dentro de cada confirmacao de lancamento (uma partida por
+    vez), a proxima rodada pode ja existir com o nivel de outra chamada
+    anterior - por isso reaproveita a rodada de `numero + 1` se ela ja foi
+    criada, em vez de sempre abrir uma nova (o que duplicaria rodadas), e
+    pula nivel que ja tenha partida la (idempotente a chamadas repetidas).
+    Um nivel que ja chegou ao campeao simplesmente nao recebe mais partida.
+    So nao ha nada novo pra gerar quando NENHUM nivel pendente fechou ainda.
     """
     rodada = await db.get(Rodada, rodada_id)
     modalidade = await db.get(Modalidade, rodada.modalidade_id)
@@ -158,16 +164,30 @@ async def avancar_se_rodada_completa(
         select(Partida).where(Partida.rodada_id == rodada_id).order_by(Partida.criado_em)
     )
     partidas = list(resultado.scalars().all())
-    if any(p.status != PartidaStatus.ENCERRADA for p in partidas):
-        return None
 
     partidas_por_nivel: dict[int | None, list[Partida]] = {}
     for partida in partidas:
         partidas_por_nivel.setdefault(partida.nivel, []).append(partida)
 
+    proxima_rodada = await db.scalar(
+        select(Rodada).where(
+            Rodada.modalidade_id == modalidade.id, Rodada.numero == rodada.numero + 1
+        )
+    )
+    niveis_ja_avancados: set[int | None] = set()
+    if proxima_rodada is not None:
+        resultado_niveis = await db.execute(
+            select(Partida.nivel).where(Partida.rodada_id == proxima_rodada.id).distinct()
+        )
+        niveis_ja_avancados = {nivel for (nivel,) in resultado_niveis.all()}
+
     pares: list[tuple[UUID, UUID | None, int | None]] = []
 
     for nivel, partidas_do_nivel in partidas_por_nivel.items():
+        if nivel in niveis_ja_avancados:
+            continue
+        if any(p.status != PartidaStatus.ENCERRADA for p in partidas_do_nivel):
+            continue
         vencedores = [p.vencedor_id for p in partidas_do_nivel]
         if len(vencedores) <= 1:
             continue
@@ -176,30 +196,31 @@ async def avancar_se_rodada_completa(
     if not pares:
         return None
 
-    nova_rodada = Rodada(
-        modalidade_id=modalidade.id,
-        numero=rodada.numero + 1,
-        modo_horario=ModoHorario.AUTOMATICO,
-        status=RodadaStatus.AGENDADA,
-    )
-    db.add(nova_rodada)
-    await db.flush()
+    if proxima_rodada is None:
+        proxima_rodada = Rodada(
+            modalidade_id=modalidade.id,
+            numero=rodada.numero + 1,
+            modo_horario=ModoHorario.AUTOMATICO,
+            status=RodadaStatus.AGENDADA,
+        )
+        db.add(proxima_rodada)
+        await db.flush()
 
     for equipe_a_id, equipe_b_id, nivel in pares:
-        db.add(_criar_partida(nova_rodada.id, equipe_a_id, equipe_b_id, nivel))
+        db.add(_criar_partida(proxima_rodada.id, equipe_a_id, equipe_b_id, nivel))
     await db.flush()
 
     await registrar_audit_log(
         db,
         usuario_id=usuario_id,
         entidade="rodada",
-        entidade_id=nova_rodada.id,
+        entidade_id=proxima_rodada.id,
         acao="AVANCAR_CHAVEAMENTO",
         antes=None,
-        depois={"numero": nova_rodada.numero},
+        depois={"numero": proxima_rodada.numero},
     )
 
-    return nova_rodada
+    return proxima_rodada
 
 
 async def registrar_resultado_lancamento(

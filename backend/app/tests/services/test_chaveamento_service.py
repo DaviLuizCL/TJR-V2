@@ -349,13 +349,22 @@ async def test_mata_mata_avanca_pareando_vencedores_em_ordem(db_session):
         )
         vencedores_esperados.append(equipe_b.id)
 
-    rodada2 = await avancar_se_rodada_completa(db_session, rodada1.id, usuario_id=coordenador.id)
-
+    # O avanco ja aconteceu sozinho, disparado de dentro de _lancar_e_confirmar
+    # (confirmar_lancamento -> registrar_resultado_lancamento) assim que a
+    # ultima partida da rodada fechou - sem clique nem chamada manual nenhuma,
+    # igual ao caminho real do arbitro. Chamar avancar_se_rodada_completa de
+    # novo aqui e um no-op idempotente (nao ha mais nada pra avancar).
+    rodada2 = await db_session.scalar(
+        select(Rodada).where(Rodada.modalidade_id == modalidade.id, Rodada.numero == 2)
+    )
     assert rodada2 is not None
-    assert rodada2.numero == 2
     partidas2 = await listar_partidas_por_rodada(db_session, rodada2.id)
     assert len(partidas2) == 1
     assert {partidas2[0].equipe_a_id, partidas2[0].equipe_b_id} == set(vencedores_esperados)
+
+    assert (
+        await avancar_se_rodada_completa(db_session, rodada1.id, usuario_id=coordenador.id) is None
+    )
 
 
 async def test_mata_mata_final_nao_gera_proxima_rodada(db_session):
@@ -544,12 +553,69 @@ async def test_mata_mata_avanca_niveis_de_tamanhos_diferentes_independente(db_se
             db_session, ficha, rodada1, equipe_b, criterio, partida, arbitro, 5
         )
 
-    rodada2 = await avancar_se_rodada_completa(db_session, rodada1.id, usuario_id=coordenador.id)
-
+    # O avanco do nivel 1 ja aconteceu sozinho, no meio do loop acima, assim
+    # que a segunda partida desse nivel fechou - sem esperar o nivel 2
+    # terminar (que so tem 1 partida = ja e a final dele, sem rodada extra).
+    rodada2 = await db_session.scalar(
+        select(Rodada).where(Rodada.modalidade_id == modalidade.id, Rodada.numero == 2)
+    )
     assert rodada2 is not None
     partidas2 = await listar_partidas_por_rodada(db_session, rodada2.id)
     # nivel 2 (2 equipes) ja tem campeao definido na rodada 1; so o nivel 1
     # (4 equipes) precisa de mais uma rodada pra decidir o campeao.
+    assert len(partidas2) == 1
+    assert partidas2[0].nivel == 1
+
+    assert (
+        await avancar_se_rodada_completa(db_session, rodada1.id, usuario_id=coordenador.id) is None
+    )
+
+
+async def test_mata_mata_gera_proxima_rodada_de_um_nivel_sem_esperar_outro_nivel_fechar(
+    db_session,
+):
+    """Bug real relatado pelo usuario: pontuou todas as partidas do nivel 1
+    (Sumo) e a final desse nivel nao apareceu, porque o nivel 2 ainda estava
+    em aberto. O avanco e automatico (disparado de dentro de
+    confirmar_lancamento, via registrar_resultado_lancamento), sem nenhuma
+    chamada manual a avancar_se_rodada_completa aqui - exatamente o caminho
+    real do arbitro em campo.
+    """
+    coordenador = await _criar_coordenador(db_session, "c30@tjr.app")
+    arbitro = await _criar_arbitro(db_session, "a30@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, niveis_aplicaveis=[1, 2])
+    equipes = await _inscrever_equipes_por_nivel(
+        db_session, modalidade, coordenador, [1, 1, 1, 1, 2, 2, 2, 2]
+    )
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+    rodada1 = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+
+    from app.services.partida import listar_partidas_por_rodada
+
+    partidas1 = await listar_partidas_por_rodada(db_session, rodada1.id)
+    partidas_nivel_1 = [p for p in partidas1 if p.nivel == 1]
+    partidas_nivel_2 = [p for p in partidas1 if p.nivel == 2]
+    assert len(partidas_nivel_1) == 2
+    assert len(partidas_nivel_2) == 2
+
+    # So fecha as partidas do nivel 1. O nivel 2 fica em aberto de proposito
+    # (nenhum lancamento), como no caso real relatado.
+    for partida in partidas_nivel_1:
+        equipe_a = next(e for e in equipes if e.id == partida.equipe_a_id)
+        equipe_b = next(e for e in equipes if e.id == partida.equipe_b_id)
+        await _lancar_e_confirmar(
+            db_session, ficha, rodada1, equipe_a, criterio, partida, arbitro, 1
+        )
+        await _lancar_e_confirmar(
+            db_session, ficha, rodada1, equipe_b, criterio, partida, arbitro, 5
+        )
+
+    rodada2 = await db_session.scalar(
+        select(Rodada).where(Rodada.modalidade_id == modalidade.id, Rodada.numero == 2)
+    )
+    assert rodada2 is not None, "nivel 1 terminou mas a proxima rodada dele nao foi gerada"
+
+    partidas2 = await listar_partidas_por_rodada(db_session, rodada2.id)
     assert len(partidas2) == 1
     assert partidas2[0].nivel == 1
 
