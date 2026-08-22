@@ -1,0 +1,28 @@
+# Override de producao -- roda em cima do docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Mesmo projeto/volume de banco do docker-compose.yml (nao duplica dado);
+# so muda o que precisa mudar pra deixar de ser um ambiente de dev:
+#   - front: build de producao (nginx servindo o bundle + proxy de /api/),
+#     unica porta publica exposta (80), sem VITE_API_URL/volume de codigo.
+#   - api: sem --reload, sem bind mount do codigo do host (roda so o que
+#     foi buildado na imagem), sem porta publicada (so alcancavel via
+#     proxy do nginx, dentro da rede docker).
+#   - db: sem porta publicada (so alcancavel pelo `api`, dentro da rede
+#     docker).
+services:
+  db:
+    ports: !reset []
+
+  api:
+    volumes: !reset []
+    ports: !reset []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  front:
+    image: tjr-front-prod
+    build:
+      target: prod
+    volumes: !reset []
+    ports: !override
+      - "80:80"

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { randomUUID } from "../../lib/uuid";
 
 interface PartidaItem {
   id: string;
@@ -431,7 +432,7 @@ export function PartidaScorerPage() {
             tentativa,
             equipe_id: lado.equipeId,
             partida_id: partida.id,
-            client_operation_id: crypto.randomUUID(),
+            client_operation_id: randomUUID(),
             itens: lado.itens,
           } as never,
         });

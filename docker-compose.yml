@@ -38,7 +38,10 @@ services:
       start_period: 10s
 
   front:
-    build: ./frontend
+    image: tjr-front-dev
+    build:
+      context: ./frontend
+      target: dev
     environment:
       VITE_API_URL: http://localhost:8000
     volumes:

@@ -3,7 +3,15 @@ import createClient from "openapi-fetch";
 import { useAuthStore } from "../lib/auth-store";
 import type { paths } from "./types";
 
-const baseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+// Sem VITE_API_URL definido (build de producao, servido atras do proxy
+// reverso do nginx), o client chama a API na mesma origem da pagina --
+// funciona em qualquer host/IP sem precisar fixar nada. Usa
+// `window.location.origin` (nao string vazia): o openapi-fetch monta um
+// `new URL(...)` internamente em alguns caminhos (ex.: serializacao de
+// query string), e um `new URL` de string relativa sem base lanca
+// `TypeError: Invalid URL` -- `location.origin` sempre resolve pra uma URL
+// absoluta valida.
+const baseUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
 
 export const api = createClient<paths>({
   baseUrl,

@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { randomUUID } from "./uuid";
 
 interface ItemLancamento {
   criterio_id: string;
@@ -32,8 +33,8 @@ interface EnfileirarConfirmarParams {
 export async function enfileirarCriarLancamento(
   params: EnfileirarCriarParams,
 ): Promise<{ lancamentoLocalId: string }> {
-  const lancamentoLocalId = crypto.randomUUID();
-  const clientOperationId = crypto.randomUUID();
+  const lancamentoLocalId = randomUUID();
+  const clientOperationId = randomUUID();
 
   await db.lancamentoOutbox.put({
     clientOperationId,
@@ -69,7 +70,7 @@ export async function enfileirarConfirmarLancamento(
     .and((item) => item.tipo === "CRIAR")
     .first();
 
-  const clientOperationId = crypto.randomUUID();
+  const clientOperationId = randomUUID();
 
   await db.lancamentoOutbox.put({
     clientOperationId,
