@@ -208,7 +208,7 @@ export function PontuarPage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
       <Link
-        to={`/eventos/${eventoId}/individual?aba=pontuar`}
+        to={`/eventos/${eventoId}/competicoes?aba=individual&sub=pontuar`}
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
       >
         ← Voltar para pontuar
@@ -249,7 +249,7 @@ export function PontuarPage() {
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
           <p>Nenhuma rodada foi criada para esta modalidade. Gere as rodadas antes de pontuar.</p>
           <Link
-            to={`/eventos/${eventoId}/individual?aba=rodadas`}
+            to={`/eventos/${eventoId}/competicoes?aba=individual&sub=rodadas`}
             className="mt-1 inline-block text-xs font-medium text-amber-900 underline"
           >
             Gerar rodadas →

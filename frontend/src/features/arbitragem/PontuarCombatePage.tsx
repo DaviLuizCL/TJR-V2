@@ -166,7 +166,7 @@ export function PontuarCombatePage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
       <Link
-        to={`/eventos/${eventoId}/combates`}
+        to={`/eventos/${eventoId}/competicoes?aba=combate`}
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
       >
         ← Voltar para combates

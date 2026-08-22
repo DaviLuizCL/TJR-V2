@@ -1,4 +1,7 @@
+from datetime import date
+
 from app.core.security import hash_senha
+from app.models.evento import Evento, EventoStatus
 from app.models.usuario import Papel, Usuario
 
 
@@ -95,7 +98,20 @@ async def test_listar_modalidades_filtra_por_evento_id(client, db_session):
         client, db_session, Papel.COORDENADOR, "coord-modalidades-4@tjr.app"
     )
     evento_a = await _criar_evento(client, headers, nome="Evento A")
-    evento_b = await _criar_evento(client, headers, nome="Evento B")
+    # Insercao direta via model, nao via POST /eventos -- o endpoint so
+    # permite um evento por vez (ver test_eventos_router.py), mas este teste
+    # precisa de dois eventos simultaneos so pra provar o filtro por
+    # evento_id, que e um caso de uso ortogonal a essa regra.
+    evento_b_model = Evento(
+        nome="Evento B",
+        ano=2026,
+        data_inicio=date(2026, 3, 10),
+        data_fim=date(2026, 3, 12),
+        status=EventoStatus.RASCUNHO,
+    )
+    db_session.add(evento_b_model)
+    await db_session.flush()
+    evento_b = str(evento_b_model.id)
     await client.post("/api/v1/modalidades", json=_payload(evento_a, nome="M1"), headers=headers)
     await client.post("/api/v1/modalidades", json=_payload(evento_b, nome="M2"), headers=headers)
 
