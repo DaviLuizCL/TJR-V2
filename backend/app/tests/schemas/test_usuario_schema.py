@@ -26,3 +26,9 @@ def test_usuario_create_tira_espaco_das_pontas_do_nome():
     dto = UsuarioCreate(**_payload(nome="  Coordenador  "))
 
     assert dto.nome == "Coordenador"
+
+
+def test_usuario_create_normaliza_email_para_minusculo():
+    dto = UsuarioCreate(**_payload(email="Nome.Sobrenome@Example.COM"))
+
+    assert dto.email == "nome.sobrenome@example.com"

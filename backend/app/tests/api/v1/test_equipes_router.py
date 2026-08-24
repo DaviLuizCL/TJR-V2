@@ -1,4 +1,8 @@
+from datetime import date
+
 from app.core.security import hash_senha
+from app.models.evento import Evento, EventoStatus
+from app.models.modalidade import Consolidacao, Modalidade, ModalidadeStatus, TipoDisputa
 from app.models.usuario import Papel, Usuario
 
 
@@ -65,6 +69,82 @@ async def test_listar_equipes_filtra_por_nivel(client, db_session):
     corpo = resposta.json()
     assert corpo["total"] == 1
     assert corpo["itens"][0]["nome"] == "E2"
+
+
+async def test_listar_equipes_aceita_size_maior_que_200(client, db_session):
+    # Achado em teste de usabilidade com evento grande (489 equipes): o teto
+    # antigo de size=200 fazia telas que buscam "todas as equipes de uma vez"
+    # (chaveamento, horario, pontuar) mostrarem "?" no lugar do nome pra
+    # qualquer equipe fora da primeira pagina.
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-equipes-8@tjr.app")
+
+    resposta = await client.get("/api/v1/equipes?size=500", headers=headers)
+
+    assert resposta.status_code == 200
+
+
+async def test_listar_equipes_filtra_por_modalidade(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-equipes-7@tjr.app")
+    resposta_a = await client.post(
+        "/api/v1/equipes", json=_payload(nome="Inscrita em A"), headers=headers
+    )
+    resposta_b = await client.post(
+        "/api/v1/equipes", json=_payload(nome="Inscrita em B"), headers=headers
+    )
+    equipe_a_id = resposta_a.json()["id"]
+    equipe_b_id = resposta_b.json()["id"]
+
+    evento = Evento(
+        nome="Evento Filtro Modalidade",
+        ano=2026,
+        data_inicio=date(2026, 3, 10),
+        data_fim=date(2026, 3, 12),
+        status=EventoStatus.RASCUNHO,
+    )
+    db_session.add(evento)
+    await db_session.flush()
+    modalidade_a = Modalidade(
+        evento_id=evento.id,
+        nome="Modalidade A",
+        tipo_disputa=TipoDisputa.INDIVIDUAL,
+        niveis_aplicaveis=[1, 2, 3, 4],
+        ficha_unica_entre_niveis=False,
+        qtd_rodadas=2,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        status=ModalidadeStatus.RASCUNHO,
+    )
+    modalidade_b = Modalidade(
+        evento_id=evento.id,
+        nome="Modalidade B",
+        tipo_disputa=TipoDisputa.INDIVIDUAL,
+        niveis_aplicaveis=[1, 2, 3, 4],
+        ficha_unica_entre_niveis=False,
+        qtd_rodadas=2,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        status=ModalidadeStatus.RASCUNHO,
+    )
+    db_session.add_all([modalidade_a, modalidade_b])
+    await db_session.flush()
+
+    await client.post(
+        "/api/v1/inscricoes",
+        json={"equipe_id": equipe_a_id, "modalidade_id": str(modalidade_a.id)},
+        headers=headers,
+    )
+    await client.post(
+        "/api/v1/inscricoes",
+        json={"equipe_id": equipe_b_id, "modalidade_id": str(modalidade_b.id)},
+        headers=headers,
+    )
+
+    resposta = await client.get(
+        f"/api/v1/equipes?modalidade_id={modalidade_a.id}", headers=headers
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["total"] == 1
+    assert corpo["itens"][0]["id"] == equipe_a_id
 
 
 async def test_listar_equipes_com_papel_arbitro_retorna_200(client, db_session):

@@ -84,18 +84,33 @@ function EquipeEditForm({
   );
 }
 
+interface ModalidadeItem {
+  id: string;
+  nome: string;
+}
+
 export function EquipeListPage() {
   const queryClient = useQueryClient();
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [filtroNivel, setFiltroNivel] = useState<string>("");
+  const [filtroModalidadeId, setFiltroModalidadeId] = useState<string>("");
   const [equipeEditandoId, setEquipeEditandoId] = useState<string | null>(null);
   const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["equipes", filtroNivel],
+  const { data: modalidades } = useQuery({
+    queryKey: ["modalidades-filtro-equipe"],
     queryFn: async () => {
-      const query: Record<string, unknown> = { size: 100 };
+      const { data } = await api.GET("/api/v1/modalidades", { params: { query: { size: 200 } } });
+      return (data?.itens ?? []) as ModalidadeItem[];
+    },
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["equipes", filtroNivel, filtroModalidadeId],
+    queryFn: async () => {
+      const query: Record<string, unknown> = { size: 1000 };
       if (filtroNivel) query.nivel = Number(filtroNivel);
+      if (filtroModalidadeId) query.modalidade_id = filtroModalidadeId;
       const { data } = await api.GET("/api/v1/equipes", { params: { query } });
       return (data?.itens ?? []) as EquipeItem[];
     },
@@ -153,23 +168,43 @@ export function EquipeListPage() {
           <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
             Equipes cadastradas
           </h2>
-          <div>
-            <label className="mr-2 text-sm text-slate-600" htmlFor="filtro-nivel">
-              Filtrar por nivel
-            </label>
-            <select
-              id="filtro-nivel"
-              value={filtroNivel}
-              onChange={(e) => setFiltroNivel(e.target.value)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm"
-            >
-              <option value="">Todos</option>
-              {NIVEIS.map((n) => (
-                <option key={n} value={n}>
-                  Nivel {n}
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="mr-2 text-sm text-slate-600" htmlFor="filtro-nivel">
+                Filtrar por nivel
+              </label>
+              <select
+                id="filtro-nivel"
+                value={filtroNivel}
+                onChange={(e) => setFiltroNivel(e.target.value)}
+                className="rounded border border-slate-300 px-2 py-1 text-sm"
+              >
+                <option value="">Todos</option>
+                {NIVEIS.map((n) => (
+                  <option key={n} value={n}>
+                    Nivel {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mr-2 text-sm text-slate-600" htmlFor="filtro-modalidade">
+                Filtrar por modalidade
+              </label>
+              <select
+                id="filtro-modalidade"
+                value={filtroModalidadeId}
+                onChange={(e) => setFiltroModalidadeId(e.target.value)}
+                className="rounded border border-slate-300 px-2 py-1 text-sm"
+              >
+                <option value="">Todas</option>
+                {modalidades?.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

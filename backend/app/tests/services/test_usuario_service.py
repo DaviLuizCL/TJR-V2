@@ -46,6 +46,31 @@ async def test_criar_usuario_com_email_duplicado_lanca_erro(db_session):
     assert exc_info.value.status_code == 409
 
 
+async def test_criar_usuario_com_email_duplicado_ignorando_case_lanca_erro(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    await criar_usuario(
+        db_session,
+        UsuarioCreate(
+            nome="Arbitro Um", email="case-dup@tjr.app", senha="senha-forte", papel=Papel.ARBITRO
+        ),
+        usuario_id=coordenador.id,
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_usuario(
+            db_session,
+            UsuarioCreate(
+                nome="Arbitro Dois",
+                email="Case-Dup@Tjr.App",
+                senha="senha-forte",
+                papel=Papel.ARBITRO,
+            ),
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "EMAIL_JA_CADASTRADO"
+
+
 async def test_criar_usuario_grava_audit_log_sem_expor_a_senha(db_session):
     coordenador = await _criar_coordenador(db_session)
     dto = UsuarioCreate(

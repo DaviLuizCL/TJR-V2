@@ -29,13 +29,14 @@ async def criar_equipe(
 async def listar_equipes(
     nivel: int | None = None,
     ativo: bool | None = None,
+    modalidade_id: UUID | None = None,
     page: int = Query(default=1, ge=1),
-    size: int = Query(default=50, ge=1, le=200),
+    size: int = Query(default=50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     usuario: Usuario = Depends(exigir_papel(*_PAPEIS_LEITURA)),
 ) -> Pagina[EquipeOut]:
     itens, total = await equipe_service.listar_equipes(
-        db, nivel=nivel, ativo=ativo, page=page, size=size
+        db, nivel=nivel, ativo=ativo, modalidade_id=modalidade_id, page=page, size=size
     )
     return Pagina(
         itens=[EquipeOut.model_validate(item) for item in itens], total=total, page=page, size=size

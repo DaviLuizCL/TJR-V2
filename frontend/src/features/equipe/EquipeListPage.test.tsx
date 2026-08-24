@@ -32,6 +32,26 @@ function logarComo(papel: string) {
   });
 }
 
+// Mocka o GET generico do client (usado tanto pra /equipes quanto pra
+// /modalidades, que alimenta o filtro) roteando pelo path -- sem isso os dois
+// hooks de useQuery da pagina recebiam o mesmo payload de equipes, duplicando
+// nomes na tela (equipe vira tambem opcao do <select> de modalidade) e
+// quebrando os testes que buscam por texto unico.
+function mockGetEquipes(
+  equipesPayload: unknown,
+  modalidadesPayload: unknown = { itens: [], total: 0, page: 1, size: 200 },
+) {
+  vi.mocked(api.GET).mockImplementation(async (path: unknown) => {
+    if (path === "/api/v1/modalidades") {
+      return { data: modalidadesPayload, error: undefined } as never;
+    }
+    if (path === "/api/v1/equipes") {
+      return { data: equipesPayload, error: undefined } as never;
+    }
+    return { data: undefined, error: undefined } as never;
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   logarComo("COORDENADOR");
@@ -39,18 +59,15 @@ beforeEach(() => {
 
 describe("EquipeListPage", () => {
   it("lista as equipes cadastradas com nivel e status", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: {
-        itens: [
-          { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true },
-          { id: "eq2", nome: "Equipe Beta", nivel: 3, ativo: false },
-        ],
-        total: 2,
-        page: 1,
-        size: 50,
-      },
-      error: undefined,
-    } as never);
+    mockGetEquipes({
+      itens: [
+        { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true },
+        { id: "eq2", nome: "Equipe Beta", nivel: 3, ativo: false },
+      ],
+      total: 2,
+      page: 1,
+      size: 50,
+    });
 
     renderPage();
 
@@ -61,16 +78,70 @@ describe("EquipeListPage", () => {
     expect(within(linhaBeta).getByText(/inativa/i)).toBeInTheDocument();
   });
 
+  it("filtra equipes por modalidade", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: unknown, options?: unknown) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [
+              { id: "mod-1", nome: "Sumo" },
+              { id: "mod-2", nome: "Danca" },
+            ],
+            total: 2,
+            page: 1,
+            size: 200,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/equipes") {
+        const query = (options as { params?: { query?: Record<string, unknown> } })?.params
+          ?.query;
+        if (query?.modalidade_id === "mod-1") {
+          return {
+            data: {
+              itens: [{ id: "eq1", nome: "Equipe Sumo", nivel: 1, ativo: true }],
+              total: 1,
+              page: 1,
+              size: 100,
+            },
+            error: undefined,
+          } as never;
+        }
+        return {
+          data: {
+            itens: [
+              { id: "eq1", nome: "Equipe Sumo", nivel: 1, ativo: true },
+              { id: "eq2", nome: "Equipe Danca", nivel: 1, ativo: true },
+            ],
+            total: 2,
+            page: 1,
+            size: 100,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await screen.findByText("Equipe Sumo");
+    expect(screen.getByText("Equipe Danca")).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por modalidade/i), "mod-1");
+
+    await waitFor(() => expect(screen.queryByText("Equipe Danca")).not.toBeInTheDocument());
+    expect(screen.getByText("Equipe Sumo")).toBeInTheDocument();
+  });
+
   it("linka para a tela de submissoes da equipe", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: {
-        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
-        total: 1,
-        page: 1,
-        size: 50,
-      },
-      error: undefined,
-    } as never);
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
 
     renderPage();
 
@@ -80,10 +151,7 @@ describe("EquipeListPage", () => {
   });
 
   it("cria uma equipe pelo formulario", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: { itens: [], total: 0, page: 1, size: 50 },
-      error: undefined,
-    } as never);
+    mockGetEquipes({ itens: [], total: 0, page: 1, size: 50 });
     vi.mocked(api.POST).mockResolvedValue({
       data: { id: "nova-equipe", nome: "Equipe Nova", nivel: 1, ativo: true },
       error: undefined,
@@ -105,10 +173,7 @@ describe("EquipeListPage", () => {
   });
 
   it("BUG-07: nao envia o formulario quando o nome tem so espacos", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: { itens: [], total: 0, page: 1, size: 50 },
-      error: undefined,
-    } as never);
+    mockGetEquipes({ itens: [], total: 0, page: 1, size: 50 });
 
     renderPage();
 
@@ -122,10 +187,7 @@ describe("EquipeListPage", () => {
   });
 
   it("BUG-07: tira espaco das pontas do nome antes de enviar", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: { itens: [], total: 0, page: 1, size: 50 },
-      error: undefined,
-    } as never);
+    mockGetEquipes({ itens: [], total: 0, page: 1, size: 50 });
     vi.mocked(api.POST).mockResolvedValue({
       data: { id: "nova-equipe", nome: "Equipe Nova", nivel: 1, ativo: true },
       error: undefined,
@@ -147,15 +209,12 @@ describe("EquipeListPage", () => {
   });
 
   it("desativa uma equipe ativa", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: {
-        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
-        total: 1,
-        page: 1,
-        size: 50,
-      },
-      error: undefined,
-    } as never);
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
     vi.mocked(api.PATCH).mockResolvedValue({
       data: { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: false },
       error: undefined,
@@ -179,15 +238,12 @@ describe("EquipeListPage", () => {
 
   it("arbitro nao ve o formulario de criar equipe nem os botoes de editar/ativar", async () => {
     logarComo("ARBITRO");
-    vi.mocked(api.GET).mockResolvedValue({
-      data: {
-        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
-        total: 1,
-        page: 1,
-        size: 50,
-      },
-      error: undefined,
-    } as never);
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
 
     renderPage();
 
@@ -202,15 +258,12 @@ describe("EquipeListPage", () => {
 
   it("secretaria tambem nao ve criar/editar/ativar, so leitura", async () => {
     logarComo("SECRETARIA");
-    vi.mocked(api.GET).mockResolvedValue({
-      data: {
-        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
-        total: 1,
-        page: 1,
-        size: 50,
-      },
-      error: undefined,
-    } as never);
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
 
     renderPage();
 
@@ -221,15 +274,12 @@ describe("EquipeListPage", () => {
   });
 
   it("coordenador continua vendo criar/editar/ativar", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: {
-        itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
-        total: 1,
-        page: 1,
-        size: 50,
-      },
-      error: undefined,
-    } as never);
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
 
     renderPage();
 

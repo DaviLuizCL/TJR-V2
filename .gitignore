@@ -12,3 +12,9 @@ frontend/.vite/
 .DS_Store
 *.log
 *.tsbuildinfo
+
+backend/scripts/credenciamento/entrada.csv
+backend/scripts/credenciamento/saida_credenciais.csv
+backend/scripts/dados_teste/*.pdf
+/pessoas.csv
+/saida_credenciais.csv

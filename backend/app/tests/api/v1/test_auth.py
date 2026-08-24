@@ -42,6 +42,17 @@ async def test_login_com_senha_errada_retorna_401_com_erro_padronizado(client, d
     assert response.json()["erro"]["codigo"] == "CREDENCIAIS_INVALIDAS"
 
 
+async def test_login_ignora_diferenca_de_maiusculas_minusculas_no_email(client, db_session):
+    await _criar_usuario(db_session, email="case@tjr.app", senha="senha-123")
+
+    response = await client.post(
+        "/api/v1/auth/login", json={"email": "CasE@Tjr.App", "senha": "senha-123"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["access_token"]
+
+
 async def test_login_com_email_inexistente_retorna_401(client, db_session):
     response = await client.post(
         "/api/v1/auth/login", json={"email": "ninguem@tjr.app", "senha": "qualquer"}

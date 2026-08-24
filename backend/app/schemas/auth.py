@@ -1,8 +1,10 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+
+from app.schemas.common import EmailNormalizado
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: EmailNormalizado
     senha: str
 
 

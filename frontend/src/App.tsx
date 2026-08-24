@@ -17,6 +17,7 @@ import { HorarioPage } from "./features/horario/HorarioPage";
 import { PontuarRoutePage } from "./features/arbitragem/PontuarRoutePage";
 import { CompeticoesPage } from "./features/modalidade/CompeticoesPage";
 import { InscricaoPage } from "./features/modalidade/InscricaoPage";
+import { LancamentoCorrecaoPage } from "./features/painel/LancamentoCorrecaoPage";
 import { PainelPage } from "./features/painel/PainelPage";
 import { ModalidadeListPage } from "./features/modalidade/ModalidadeListPage";
 import { ModalidadeWizardPage } from "./features/modalidade/ModalidadeWizardPage";
@@ -54,6 +55,14 @@ export default function App() {
         />
         <Route path="/equipes" element={<EquipeListPage />} />
         <Route path="/equipes/:equipeId/submissoes" element={<EquipeSubmissoesPage />} />
+        <Route
+          path="/lancamentos/:lancamentoId/corrigir"
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+              <LancamentoCorrecaoPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/eventos/:eventoId/modalidades" element={<ModalidadeListPage />} />
         <Route path="/eventos/:eventoId/modalidades/novo" element={<ModalidadeWizardPage />} />
         <Route

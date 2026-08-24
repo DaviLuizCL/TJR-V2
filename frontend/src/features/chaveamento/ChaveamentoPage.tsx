@@ -202,7 +202,7 @@ export function ChaveamentoPage() {
   const { data: equipesTodas } = useQuery({
     queryKey: ["equipes", "para-chaveamento"],
     queryFn: async () => {
-      const { data } = await api.GET("/api/v1/equipes", { params: { query: { size: 200 } } });
+      const { data } = await api.GET("/api/v1/equipes", { params: { query: { size: 1000 } } });
       return (data?.itens ?? []) as { id: string; nome: string }[];
     },
     enabled: !!modalidadeAtivaId,

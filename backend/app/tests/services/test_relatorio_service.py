@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -27,8 +27,8 @@ from app.services.ficha import publicar_ficha
 from app.services.inscricao import criar_inscricao
 from app.services.lancamento import confirmar_lancamento, criar_lancamento
 from app.services.relatorio import (
-    agrupar_lancamentos_por_combate,
-    descrever_resultado_combate,
+    _calcular_gerado_em,
+    _montar_secao_modalidade,
     gerar_relatorio_auditoria_evento_pdf,
     gerar_relatorio_auditoria_pdf,
 )
@@ -123,6 +123,20 @@ async def _criar_ficha_com_criterio(db_session, modalidade, coordenador) -> tupl
     await db_session.flush()
     await publicar_ficha(db_session, ficha.id, usuario_id=coordenador.id)
     return ficha, criterio
+
+
+def test_calcular_gerado_em_retorna_horario_atual_nao_data_fixa():
+    # Achado em teste de usabilidade: o "Gerado em" do relatorio estava preso
+    # em evento.criado_em (quando o evento foi cadastrado), nao no horario
+    # real do download -- dois downloads em dias diferentes mostravam a
+    # mesma data antiga, minando a credibilidade do documento pra
+    # contestacao (secao 1 do CLAUDE.md).
+    antes = datetime.now(UTC)
+
+    resultado = _calcular_gerado_em()
+
+    depois = datetime.now(UTC)
+    assert antes <= resultado.astimezone(UTC) <= depois
 
 
 async def test_gerar_relatorio_auditoria_pdf_retorna_pdf_valido_com_lancamento(db_session):
@@ -240,66 +254,56 @@ async def test_gerar_relatorio_auditoria_evento_pdf_sem_modalidade_nenhuma_nao_q
     assert pdf_bytes.startswith(b"%PDF")
 
 
-def _linha(*, partida_id=None, tentativa=1):
-    lancamento = SimpleNamespace(partida_id=partida_id, tentativa=tentativa)
-    return (lancamento, None, None, None)
+def test_montar_secao_modalidade_nao_inclui_secao_de_lancamentos():
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    modalidade = SimpleNamespace(tipo_disputa=TipoDisputa.INDIVIDUAL, formato_chaveamento=None)
+    equipe_id = uuid.uuid4()
+    classificacao = [{"equipe_id": equipe_id, "nota_final": 10, "posicao": 1}]
+    equipes_por_id = {equipe_id: SimpleNamespace(nome="Equipe A", nivel=1)}
+
+    elementos = _montar_secao_modalidade(
+        getSampleStyleSheet(), modalidade, classificacao, equipes_por_id
+    )
+
+    textos = [getattr(e, "text", "") for e in elementos]
+    assert any("Classifica" in t for t in textos)
+    assert not any("Lancamento" in t or "Lançamento" in t for t in textos)
 
 
-def test_agrupar_lancamentos_por_combate_agrupa_mesma_partida_e_tentativa():
-    partida_id = uuid.uuid4()
-    linha_a = _linha(partida_id=partida_id, tentativa=1)
-    linha_b = _linha(partida_id=partida_id, tentativa=1)
+def test_montar_secao_modalidade_separa_cada_nivel_em_secao_propria():
+    from reportlab.lib.styles import getSampleStyleSheet
 
-    grupos = agrupar_lancamentos_por_combate([linha_a, linha_b])
+    modalidade = SimpleNamespace(tipo_disputa=TipoDisputa.INDIVIDUAL, formato_chaveamento=None)
+    equipe_n1 = uuid.uuid4()
+    equipe_n2 = uuid.uuid4()
+    # calcular_classificacao ja devolve os resultados agrupados por nivel
+    # (services/consolidacao.py::_atribuir_posicoes_por_nivel) -- aqui simula
+    # exatamente esse formato de entrada.
+    classificacao = [
+        {"equipe_id": equipe_n1, "nota_final": 10, "posicao": 1},
+        {"equipe_id": equipe_n2, "nota_final": 20, "posicao": 1},
+    ]
+    equipes_por_id = {
+        equipe_n1: SimpleNamespace(nome="Equipe Nivel 1", nivel=1),
+        equipe_n2: SimpleNamespace(nome="Equipe Nivel 2", nivel=2),
+    }
 
-    assert grupos == [[linha_a, linha_b]]
+    elementos = _montar_secao_modalidade(
+        getSampleStyleSheet(), modalidade, classificacao, equipes_por_id
+    )
 
+    textos = [getattr(e, "text", None) for e in elementos]
+    indice_nivel_1 = textos.index("Nivel 1")
+    indice_nivel_2 = textos.index("Nivel 2")
+    assert indice_nivel_1 < indice_nivel_2
 
-def test_agrupar_lancamentos_por_combate_nao_agrupa_tentativas_diferentes_da_mesma_partida():
-    partida_id = uuid.uuid4()
-    linha_1 = _linha(partida_id=partida_id, tentativa=1)
-    linha_2 = _linha(partida_id=partida_id, tentativa=2)
+    tabela_nivel_1 = elementos[indice_nivel_1 + 1]
+    linhas_nivel_1 = tabela_nivel_1._cellvalues
+    assert any("Equipe Nivel 1" in str(celula) for linha in linhas_nivel_1 for celula in linha)
+    assert not any("Equipe Nivel 2" in str(celula) for linha in linhas_nivel_1 for celula in linha)
 
-    grupos = agrupar_lancamentos_por_combate([linha_1, linha_2])
-
-    assert grupos == [[linha_1], [linha_2]]
-
-
-def test_agrupar_lancamentos_por_combate_mantem_lancamento_individual_sozinho():
-    linha = _linha(partida_id=None, tentativa=1)
-
-    grupos = agrupar_lancamentos_por_combate([linha])
-
-    assert grupos == [[linha]]
-
-
-def test_agrupar_lancamentos_por_combate_preserva_ordem_de_chegada():
-    partida_a = uuid.uuid4()
-    partida_b = uuid.uuid4()
-    linha_individual = _linha(partida_id=None)
-    linha_a1 = _linha(partida_id=partida_a, tentativa=1)
-    linha_b1 = _linha(partida_id=partida_b, tentativa=1)
-    linha_a2 = _linha(partida_id=partida_a, tentativa=1)
-
-    grupos = agrupar_lancamentos_por_combate([linha_individual, linha_a1, linha_b1, linha_a2])
-
-    assert grupos == [[linha_individual], [linha_a1, linha_a2], [linha_b1]]
-
-
-def test_descrever_resultado_combate_indica_vencedor_pelo_maior_total():
-    descricao = descrever_resultado_combate("Equipe A", 10, "Equipe B", 4)
-
-    assert descricao == "Equipe A 10 x 4 Equipe B — Vencedor: Equipe A"
-
-
-def test_descrever_resultado_combate_indica_vencedor_do_outro_lado():
-    descricao = descrever_resultado_combate("Equipe A", 2, "Equipe B", 9)
-
-    assert "Vencedor: Equipe B" in descricao
-
-
-def test_descrever_resultado_combate_indica_empate():
-    descricao = descrever_resultado_combate("Equipe A", 5, "Equipe B", 5)
-
-    assert "Empate" in descricao
-    assert "Vencedor" not in descricao
+    tabela_nivel_2 = elementos[indice_nivel_2 + 1]
+    linhas_nivel_2 = tabela_nivel_2._cellvalues
+    assert any("Equipe Nivel 2" in str(celula) for linha in linhas_nivel_2 for celula in linha)
+    assert not any("Equipe Nivel 1" in str(celula) for linha in linhas_nivel_2 for celula in linha)

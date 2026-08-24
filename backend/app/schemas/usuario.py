@@ -1,14 +1,14 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.usuario import Papel
-from app.schemas.common import NomeObrigatorio
+from app.schemas.common import EmailNormalizado, NomeObrigatorio
 
 
 class UsuarioCreate(BaseModel):
     nome: NomeObrigatorio
-    email: EmailStr
+    email: EmailNormalizado
     senha: str = Field(min_length=6)
     papel: Papel
 

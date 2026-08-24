@@ -198,7 +198,7 @@ export function HorarioPage() {
   const { data: equipesTodas } = useQuery({
     queryKey: ["equipes", "para-horarios"],
     queryFn: async () => {
-      const { data } = await api.GET("/api/v1/equipes", { params: { query: { size: 200 } } });
+      const { data } = await api.GET("/api/v1/equipes", { params: { query: { size: 1000 } } });
       return (data?.itens ?? []) as EquipeItem[];
     },
   });

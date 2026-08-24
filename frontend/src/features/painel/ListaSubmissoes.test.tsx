@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { ListaSubmissoes } from "./ListaSubmissoes";
 
 vi.mock("../../api/client", () => ({
@@ -10,11 +12,21 @@ vi.mock("../../api/client", () => ({
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
 
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
+
 function renderLista() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <ListaSubmissoes modalidadeId="mod-1" />
+      <MemoryRouter>
+        <ListaSubmissoes modalidadeId="mod-1" />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -46,6 +58,7 @@ function baseLancamento(overrides: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  logarComo("COORDENADOR");
 });
 
 describe("ListaSubmissoes - identificacao do lancamento", () => {
@@ -328,5 +341,66 @@ describe("ListaSubmissoes - modalidades de combate", () => {
 
     await screen.findByText("Equipe A");
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+});
+
+describe("ListaSubmissoes - correcao pelo coordenador", () => {
+  it("coordenador ve link Editar num lancamento individual confirmado", async () => {
+    mockGet([baseLancamento({ id: "lanc-1", status: "CONFIRMADO" })]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Joana Arbitra")).closest("li")!;
+    const link = within(card).getByRole("link", { name: /editar/i });
+    expect(link).toHaveAttribute("href", "/lancamentos/lanc-1/corrigir");
+  });
+
+  it("nao mostra Editar num lancamento PENDENTE", async () => {
+    mockGet([baseLancamento({ id: "lanc-1", status: "PENDENTE" })]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Joana Arbitra")).closest("li")!;
+    expect(within(card).queryByRole("link", { name: /editar/i })).not.toBeInTheDocument();
+  });
+
+  it("arbitro nao ve link Editar", async () => {
+    logarComo("ARBITRO");
+    mockGet([baseLancamento({ id: "lanc-1", status: "CONFIRMADO" })]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Joana Arbitra")).closest("li")!;
+    expect(within(card).queryByRole("link", { name: /editar/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador ve Editar nos dois lados de um combate confirmado", async () => {
+    mockGet([
+      baseLancamento({
+        id: "lanc-a",
+        equipe_nome: "Equipe A",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 10,
+        status: "CONFIRMADO",
+      }),
+      baseLancamento({
+        id: "lanc-b",
+        equipe_nome: "Equipe B",
+        partida_id: "partida-1",
+        tentativa: 1,
+        total: 4,
+        status: "CONFIRMADO",
+      }),
+    ]);
+
+    renderLista();
+
+    const card = (await screen.findByText("Equipe A")).closest("li")!;
+    const links = within(card).getAllByRole("link", { name: /editar/i });
+    expect(links.map((l) => l.getAttribute("href"))).toEqual([
+      "/lancamentos/lanc-a/corrigir",
+      "/lancamentos/lanc-b/corrigir",
+    ]);
   });
 });

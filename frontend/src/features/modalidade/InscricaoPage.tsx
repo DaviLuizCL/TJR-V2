@@ -46,7 +46,7 @@ export function InscricaoPage() {
     queryKey: ["equipes", "ativas"],
     queryFn: async () => {
       const { data } = await api.GET("/api/v1/equipes", {
-        params: { query: { ativo: true, size: 200 } },
+        params: { query: { ativo: true, size: 1000 } },
       });
       return (data?.itens ?? []) as EquipeItem[];
     },

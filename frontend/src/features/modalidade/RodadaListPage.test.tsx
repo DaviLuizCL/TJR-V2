@@ -172,6 +172,20 @@ describe("RodadaListPage", () => {
     );
   });
 
+  it("nao envia rodada manual sem horario, mostra erro antes de chamar a API", async () => {
+    mockGet([]);
+
+    renderPage();
+
+    const linha = (await screen.findByText(/rodada 1/i)).closest("li")!;
+    await userEvent.click(within(linha).getByRole("button", { name: /criar rodada/i }));
+    // modo_horario ja comeca em MANUAL por padrao; nao preenche o horario.
+    await userEvent.click(within(linha).getByRole("button", { name: /salvar/i }));
+
+    expect(await within(linha).findByText(/informe o hor[aá]rio/i)).toBeInTheDocument();
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
   it("gera todas as rodadas faltantes de uma vez", async () => {
     mockGet([]);
     vi.mocked(api.POST).mockResolvedValue({

@@ -60,6 +60,10 @@ function CriarRodadaForm({
 
   async function salvar() {
     setErro(null);
+    if (modoHorario === "MANUAL" && !horarioInicio) {
+      setErro("Informe o horario de inicio (obrigatorio no modo manual).");
+      return;
+    }
     const { error } = await api.POST("/api/v1/rodadas", {
       body: {
         modalidade_id: modalidadeId,
@@ -437,7 +441,7 @@ export function RodadaListPage() {
   const { data: equipesTodas } = useQuery({
     queryKey: ["equipes", "para-bracket"],
     queryFn: async () => {
-      const { data } = await api.GET("/api/v1/equipes", { params: { query: { size: 200 } } });
+      const { data } = await api.GET("/api/v1/equipes", { params: { query: { size: 1000 } } });
       return (data?.itens ?? []) as { id: string; nome: string }[];
     },
     enabled: isCombate,

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
 from app.models.equipe import Equipe
+from app.models.inscricao import Inscricao
 from app.schemas.equipe import EquipeCreate, EquipeUpdate
 from app.services.audit import registrar_audit_log
 
@@ -40,7 +41,13 @@ async def obter_equipe(db: AsyncSession, equipe_id: UUID) -> Equipe:
 
 
 async def listar_equipes(
-    db: AsyncSession, *, nivel: int | None, ativo: bool | None, page: int, size: int
+    db: AsyncSession,
+    *,
+    nivel: int | None,
+    ativo: bool | None,
+    modalidade_id: UUID | None = None,
+    page: int,
+    size: int,
 ) -> tuple[list[Equipe], int]:
     stmt = select(Equipe)
     count_stmt = select(func.count()).select_from(Equipe)
@@ -50,6 +57,10 @@ async def listar_equipes(
     if ativo is not None:
         stmt = stmt.where(Equipe.ativo == ativo)
         count_stmt = count_stmt.where(Equipe.ativo == ativo)
+    if modalidade_id is not None:
+        subquery = select(Inscricao.equipe_id).where(Inscricao.modalidade_id == modalidade_id)
+        stmt = stmt.where(Equipe.id.in_(subquery))
+        count_stmt = count_stmt.where(Equipe.id.in_(subquery))
 
     total = await db.scalar(count_stmt)
     resultado = await db.execute(stmt.order_by(Equipe.nome).offset((page - 1) * size).limit(size))

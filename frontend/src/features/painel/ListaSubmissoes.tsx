@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 
 interface ItemAuditoria {
   criterio_snapshot: {
@@ -57,7 +59,18 @@ function efeitoModificador(i: ItemAuditoria): string {
   return `${sinal}${i.criterio_snapshot.modificador_valor}%`;
 }
 
-function CardSubmissao({ item }: { item: LancamentoAuditoria }) {
+function LinkEditar({ lancamentoId }: { lancamentoId: string }) {
+  return (
+    <Link
+      to={`/lancamentos/${lancamentoId}/corrigir`}
+      className="text-sm font-medium text-slate-700 underline"
+    >
+      Editar
+    </Link>
+  );
+}
+
+function CardSubmissao({ item, ehCoordenador }: { item: LancamentoAuditoria; ehCoordenador: boolean }) {
   const pontuados = item.itens.filter(
     (i) => i.criterio_snapshot.categoria === "PONTUACAO" && i.pontos !== 0 && !ehModificador(i),
   );
@@ -86,8 +99,11 @@ function CardSubmissao({ item }: { item: LancamentoAuditoria }) {
         </div>
       </div>
 
-      <p className="mt-2 text-sm text-slate-600">
-        Lancado por <span className="font-medium">{item.responsavel_nome}</span> · {item.status}
+      <p className="mt-2 flex items-center justify-between text-sm text-slate-600">
+        <span>
+          Lancado por <span className="font-medium">{item.responsavel_nome}</span> · {item.status}
+        </span>
+        {ehCoordenador && item.status === "CONFIRMADO" && <LinkEditar lancamentoId={item.id} />}
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -193,10 +209,12 @@ function LadoCombate({
   lancamento,
   vencedor,
   empate,
+  ehCoordenador,
 }: {
   lancamento: LancamentoAuditoria;
   vencedor: boolean;
   empate: boolean;
+  ehCoordenador: boolean;
 }) {
   return (
     <div
@@ -208,11 +226,14 @@ function LadoCombate({
       <p className="text-2xl font-bold text-slate-900">{lancamento.total}</p>
       {vencedor && <p className="text-xs font-medium text-green-700">Vencedor</p>}
       {empate && <p className="text-xs font-medium text-slate-500">Empate</p>}
+      {ehCoordenador && lancamento.status === "CONFIRMADO" && (
+        <LinkEditar lancamentoId={lancamento.id} />
+      )}
     </div>
   );
 }
 
-function CardCombate({ grupo }: { grupo: GrupoCombate }) {
+function CardCombate({ grupo, ehCoordenador }: { grupo: GrupoCombate; ehCoordenador: boolean }) {
   const [ladoA, ladoB] = grupo.lados;
   const decidido = grupo.lados.length === 2;
   const empate = decidido && ladoA.total === ladoB.total;
@@ -229,9 +250,19 @@ function CardCombate({ grupo }: { grupo: GrupoCombate }) {
         Rodada {grupo.rodada_numero} · Tentativa {grupo.tentativa}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <LadoCombate lancamento={ladoA} vencedor={ladoAVenceu} empate={empate} />
+        <LadoCombate
+          lancamento={ladoA}
+          vencedor={ladoAVenceu}
+          empate={empate}
+          ehCoordenador={ehCoordenador}
+        />
         {ladoB ? (
-          <LadoCombate lancamento={ladoB} vencedor={ladoBVenceu} empate={empate} />
+          <LadoCombate
+            lancamento={ladoB}
+            vencedor={ladoBVenceu}
+            empate={empate}
+            ehCoordenador={ehCoordenador}
+          />
         ) : (
           <div className="flex items-center rounded border border-dashed border-slate-300 p-3 text-sm text-slate-400">
             Aguardando a equipe adversária
@@ -255,6 +286,7 @@ export function ListaSubmissoes({
   equipeId?: string;
   mensagemVazia?: string;
 }) {
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
   const { data } = useQuery({
     queryKey: ["submissoes-auditoria", eventoId, modalidadeId, rodadaId, equipeId],
     queryFn: async () => {
@@ -280,9 +312,9 @@ export function ListaSubmissoes({
     <ul className="space-y-3">
       {agruparPorCombate(data).map((item) =>
         ehGrupoCombate(item) ? (
-          <CardCombate key={item.chave} grupo={item} />
+          <CardCombate key={item.chave} grupo={item} ehCoordenador={ehCoordenador} />
         ) : (
-          <CardSubmissao key={item.id} item={item} />
+          <CardSubmissao key={item.id} item={item} ehCoordenador={ehCoordenador} />
         ),
       )}
     </ul>
