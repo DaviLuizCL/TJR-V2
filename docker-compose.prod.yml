@@ -23,6 +23,15 @@ services:
     image: tjr-front-prod
     build:
       target: prod
-    volumes: !reset []
+    # certbot/conf: certificados emitidos pelo Let's Encrypt (fullchain.pem/
+    # privkey.pem), gerados no host via `certbot certonly --webroot`.
+    # certbot/www: pasta de desafio HTTP-01, compartilhada entre o nginx
+    # (serve em /.well-known/acme-challenge/) e o certbot rodando no host.
+    # Nenhum dos dois vai pro git (dado gerado em runtime, especifico da
+    # instancia).
+    volumes: !override
+      - ./certbot/conf:/etc/nginx/certs:ro
+      - ./certbot/www:/var/www/certbot:ro
     ports: !override
       - "80:80"
+      - "443:443"
