@@ -366,6 +366,13 @@ describe("PontuarPage", () => {
     // sem rodada, nao existe "completou" nem "pendente" possivel ainda.
     expect(screen.queryByText(/equipe.*completa/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
+    // A aba Rodadas do hub Individual foi removida (rodadas sao fixas por
+    // modalidade) -- o jeito de resolver "sem rodada" agora e pela aba
+    // Horarios, que ja gera rodada+arena juntos.
+    expect(screen.getByRole("link", { name: /gerar hor[aá]rio/i })).toHaveAttribute(
+      "href",
+      "/eventos/evt-1/modalidades/mod-1/horarios",
+    );
   });
 
   it("BUG-03: sem rodada nenhuma criada mas tambem sem equipe inscrita, mantem a mensagem de sem equipe (nao a de sem rodada)", async () => {
@@ -416,6 +423,112 @@ describe("PontuarPage", () => {
     expect(card).toHaveAttribute(
       "href",
       "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1&nivel=1",
+    );
+  });
+
+  it("mostra o filtro de rodada quando a modalidade tem mais de uma rodada", async () => {
+    mockGet();
+
+    renderPage();
+
+    expect(await screen.findByLabelText(/filtrar por rodada/i)).toBeInTheDocument();
+  });
+
+  it("nao mostra o filtro de rodada quando so existe uma rodada", async () => {
+    mockGet({ rodadas: [{ id: "rod-1", modalidade_id: "mod-1", numero: 1 }] });
+
+    renderPage();
+
+    await screen.findByText("Equipe X");
+    expect(screen.queryByLabelText(/filtrar por rodada/i)).not.toBeInTheDocument();
+  });
+
+  it("filtra os cards pendentes pela rodada selecionada", async () => {
+    mockGet({
+      lancamentosPorRodada: {
+        "rod-1": [{ id: "l1", equipe_id: "eq-2", tentativa: 1, status: "CONFIRMADO" }],
+      },
+    });
+
+    renderPage();
+    await screen.findByText("Equipe X");
+
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por rodada/i), "1");
+    expect(screen.getByText("Equipe X")).toBeInTheDocument();
+    expect(screen.queryByText("Equipe Y")).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por rodada/i), "2");
+    expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
+    expect(screen.getByText("Equipe Y")).toBeInTheDocument();
+  });
+
+  it("filtro de nivel e de rodada funcionam juntos, sem um resetar o outro", async () => {
+    mockGet({
+      equipes: [
+        { id: "eq-1", nome: "Equipe X", nivel: 1, ativo: true },
+        { id: "eq-2", nome: "Equipe Y", nivel: 2, ativo: true },
+      ],
+    });
+
+    renderPage();
+    await screen.findByText("Equipe X");
+
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nivel/i), "1");
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por rodada/i), "1");
+
+    expect((screen.getByLabelText(/filtrar por nivel/i) as HTMLSelectElement).value).toBe("1");
+    expect((screen.getByLabelText(/filtrar por rodada/i) as HTMLSelectElement).value).toBe("1");
+    expect(screen.getByText("Equipe X")).toBeInTheDocument();
+    expect(screen.queryByText("Equipe Y")).not.toBeInTheDocument();
+  });
+
+  it("abrir a pagina com ?rodada= na url ja vem com essa rodada selecionada no filtro", async () => {
+    mockGet({
+      lancamentosPorRodada: {
+        "rod-1": [{ id: "l1", equipe_id: "eq-2", tentativa: 1, status: "CONFIRMADO" }],
+      },
+    });
+
+    renderPage("/eventos/evt-1/modalidades/mod-1/pontuar?rodada=2");
+
+    const select = (await screen.findByLabelText(/filtrar por rodada/i)) as HTMLSelectElement;
+    expect(select.value).toBe("2");
+    expect(await screen.findByText("Equipe Y")).toBeInTheDocument();
+    expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
+  });
+
+  it("mostra mensagem quando o filtro de rodada nao bate com nenhuma equipe pendente", async () => {
+    mockGet({
+      lancamentosPorRodada: {
+        "rod-1": [
+          { id: "l1", equipe_id: "eq-1", tentativa: 1, status: "CONFIRMADO" },
+          { id: "l2", equipe_id: "eq-2", tentativa: 1, status: "CONFIRMADO" },
+        ],
+      },
+    });
+
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por rodada/i), "1");
+
+    expect(
+      await screen.findByText(/nenhuma equipe pendente na rodada selecionada/i),
+    ).toBeInTheDocument();
+  });
+
+  it("escolher uma rodada no filtro atualiza a url e o card da equipe carrega a rodada junto", async () => {
+    mockGet({
+      lancamentosPorRodada: {
+        "rod-1": [{ id: "l1", equipe_id: "eq-2", tentativa: 1, status: "CONFIRMADO" }],
+      },
+    });
+
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por rodada/i), "1");
+
+    const card = (await screen.findByText("Equipe X")).closest("a")!;
+    expect(card).toHaveAttribute(
+      "href",
+      "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1&rodada=1",
     );
   });
 });

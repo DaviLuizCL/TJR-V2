@@ -49,13 +49,11 @@ describe("IndividualHubPage", () => {
     expect(link).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/pontuar");
   });
 
-  it("troca pra aba Rodadas ao clicar", async () => {
+  it("nao mostra mais a aba Rodadas (rodadas sao fixas por modalidade individual)", async () => {
     renderPage();
 
-    await userEvent.click(await screen.findByRole("tab", { name: /^rodadas$/i }));
-
-    const link = await screen.findByRole("link", { name: /ver rodadas/i });
-    expect(link).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/rodadas");
+    await screen.findByRole("tab", { name: /pontuar/i });
+    expect(screen.queryByRole("tab", { name: /^rodadas$/i })).not.toBeInTheDocument();
   });
 
   it("troca pra aba Horarios ao clicar", async () => {

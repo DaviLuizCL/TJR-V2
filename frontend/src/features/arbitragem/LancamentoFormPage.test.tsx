@@ -1307,6 +1307,60 @@ describe("LancamentoFormPage", () => {
 
       expect(await screen.findByText("TELA DE PONTUAR?nivel=2")).toBeInTheDocument();
     });
+
+    it("preserva o filtro de rodada (?rodada=) junto com o de nivel ao voltar pra tela de Pontuar", async () => {
+      mockGet();
+      vi.mocked(api.POST).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/fichas/{ficha_id}/simular") {
+          return { data: { total: 10 }, error: undefined } as never;
+        }
+        if (path === "/api/v1/lancamentos") {
+          return {
+            data: {
+              id: "lanc-1",
+              ficha_id: "ficha-1",
+              rodada_id: "rod-1",
+              equipe_id: "eq-1",
+              tentativa: 1,
+              revision: 1,
+              status: "PENDENTE",
+              total: 10,
+              itens: [],
+            },
+            error: undefined,
+          } as never;
+        }
+        if (path === "/api/v1/lancamentos/{lancamento_id}/confirmar") {
+          return {
+            data: {
+              id: "lanc-1",
+              ficha_id: "ficha-1",
+              rodada_id: "rod-1",
+              equipe_id: "eq-1",
+              tentativa: 1,
+              revision: 1,
+              status: "CONFIRMADO",
+              total: 10,
+              itens: [],
+            },
+            error: undefined,
+          } as never;
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+
+      renderPage(
+        "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1&nivel=2&rodada=1",
+      );
+
+      await screen.findByText("Lombada");
+      await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+      await screen.findByText(/total persistido/i);
+      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+
+      expect(await screen.findByText("TELA DE PONTUAR?nivel=2&rodada=1")).toBeInTheDocument();
+    });
   });
 
   describe("vindo de um card de partida da tela de Pontuar de combate (partidaId na url)", () => {

@@ -24,7 +24,10 @@ class LancamentoCreate(BaseModel):
 
 
 class LancamentoCorrigir(BaseModel):
-    justificativa: str
+    # Opcional de proposito (pedido explicito do cliente, 2026-08-25) -- o
+    # audit_log continua registrando o que for preenchido, mas nao bloqueia
+    # mais a correcao quando vem em branco.
+    justificativa: str = ""
     revision: int
     itens: list[ItemLancamentoInput]
 

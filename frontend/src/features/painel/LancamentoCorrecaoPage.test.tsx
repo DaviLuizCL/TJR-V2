@@ -91,18 +91,35 @@ describe("LancamentoCorrecaoPage", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
   });
 
-  it("bloqueia o envio sem justificativa", async () => {
+  it("permite salvar a correcao sem preencher justificativa (campo opcional)", async () => {
+    // Justificativa e opcional de proposito (pedido explicito do cliente,
+    // 2026-08-25) -- continua existindo no formulario pra quem quiser
+    // preencher, mas nao bloqueia mais o envio quando fica em branco.
     mockGet();
+    vi.mocked(api.POST).mockImplementation(async (path: unknown) => {
+      if (path === "/api/v1/fichas/{ficha_id}/simular") {
+        return { data: { total: 30 }, error: undefined } as never;
+      }
+      if (path === "/api/v1/lancamentos/{lancamento_id}/corrigir") {
+        return { data: { ...LANCAMENTO_CONFIRMADO, total: 30 }, error: undefined } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
     renderPage();
 
     await screen.findByTestId("criterio-crit-1");
     await userEvent.click(screen.getByRole("button", { name: /salvar corre/i }));
 
-    expect(await screen.findByText(/informe uma justificativa/i)).toBeInTheDocument();
-    expect(api.POST).not.toHaveBeenCalledWith(
-      "/api/v1/lancamentos/{lancamento_id}/corrigir",
-      expect.anything(),
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith(
+        "/api/v1/lancamentos/{lancamento_id}/corrigir",
+        expect.objectContaining({
+          body: expect.objectContaining({ justificativa: "" }),
+        }),
+      ),
     );
+    expect(screen.queryByText(/informe uma justificativa/i)).not.toBeInTheDocument();
   });
 
   it("envia a correcao com justificativa, revision e itens atualizados", async () => {

@@ -103,6 +103,14 @@ export function PontuarPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const nivelFiltro = searchParams.get("nivel") ?? "";
+  const rodadaFiltro = searchParams.get("rodada") ?? "";
+
+  function atualizarFiltro(chave: "nivel" | "rodada", valor: string) {
+    const novo = new URLSearchParams(searchParams);
+    if (valor) novo.set(chave, valor);
+    else novo.delete(chave);
+    setSearchParams(novo);
+  }
 
   const idsInscritos = new Set((inscricoes ?? []).map((i) => i.equipe_id));
   const equipesInscritas = (equipesTodas ?? []).filter((e) => idsInscritos.has(e.id));
@@ -194,6 +202,10 @@ export function PontuarPage() {
     return a.equipe.nome.localeCompare(b.equipe.nome);
   });
 
+  const pendenciasExibidas = pendencias.filter(
+    (p) => rodadaFiltro === "" || p.rodada.numero === Number(rodadaFiltro),
+  );
+
   const carregando =
     !modalidade || !rodadas || !inscricoes || !equipesTodas || lancamentosQueries.some((q) => q.isLoading);
 
@@ -215,27 +227,55 @@ export function PontuarPage() {
       </Link>
       <h1 className="mb-6 text-2xl font-semibold text-slate-800">Pontuar {modalidade.nome}</h1>
 
-      {niveisDisponiveis.length > 1 && (
-        <div className="mb-4">
-          <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="filtro-nivel">
-            Filtrar por nivel
-          </label>
-          <select
-            id="filtro-nivel"
-            value={nivelFiltro}
-            onChange={(e) => {
-              const valor = e.target.value;
-              setSearchParams(valor ? { nivel: valor } : {});
-            }}
-            className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
-          >
-            <option value="">Todos os niveis</option>
-            {niveisDisponiveis.map((nivel) => (
-              <option key={nivel} value={nivel}>
-                Nivel {nivel}
-              </option>
-            ))}
-          </select>
+      {(niveisDisponiveis.length > 1 || rodadasOrdenadas.length > 1) && (
+        <div className="mb-4 flex flex-wrap gap-4">
+          {niveisDisponiveis.length > 1 && (
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="filtro-nivel"
+              >
+                Filtrar por nivel
+              </label>
+              <select
+                id="filtro-nivel"
+                value={nivelFiltro}
+                onChange={(e) => atualizarFiltro("nivel", e.target.value)}
+                className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
+              >
+                <option value="">Todos os niveis</option>
+                {niveisDisponiveis.map((nivel) => (
+                  <option key={nivel} value={nivel}>
+                    Nivel {nivel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {rodadasOrdenadas.length > 1 && (
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="filtro-rodada"
+              >
+                Filtrar por rodada
+              </label>
+              <select
+                id="filtro-rodada"
+                value={rodadaFiltro}
+                onChange={(e) => atualizarFiltro("rodada", e.target.value)}
+                className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
+              >
+                <option value="">Todas as rodadas</option>
+                {rodadasOrdenadas.map((rodada) => (
+                  <option key={rodada.id} value={rodada.numero}>
+                    Rodada {rodada.numero}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
 
@@ -249,10 +289,10 @@ export function PontuarPage() {
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
           <p>Nenhuma rodada foi criada para esta modalidade. Gere as rodadas antes de pontuar.</p>
           <Link
-            to={`/eventos/${eventoId}/competicoes?aba=individual&sub=rodadas`}
+            to={`/eventos/${eventoId}/modalidades/${modalidadeId}/horarios`}
             className="mt-1 inline-block text-xs font-medium text-amber-900 underline"
           >
-            Gerar rodadas →
+            Gerar horário →
           </Link>
         </div>
       )}
@@ -263,8 +303,12 @@ export function PontuarPage() {
         </div>
       )}
 
+      {pendencias.length > 0 && pendenciasExibidas.length === 0 && (
+        <p className="text-slate-500">Nenhuma equipe pendente na rodada selecionada.</p>
+      )}
+
       <ul className="grid gap-3 sm:grid-cols-2">
-        {pendencias.map(({ equipe, rodada, tentativa }) => {
+        {pendenciasExibidas.map(({ equipe, rodada, tentativa }) => {
           const agendamento = agendamentoPorRodadaEquipe.get(`${rodada.id}:${equipe.id}`);
 
           const cabecalho = (
@@ -310,7 +354,7 @@ export function PontuarPage() {
           return (
             <li key={equipe.id}>
               <Link
-                to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodada.id}/lancamentos/novo?equipeId=${equipe.id}&tentativa=${tentativa}${nivelFiltro ? `&nivel=${nivelFiltro}` : ""}`}
+                to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodada.id}/lancamentos/novo?equipeId=${equipe.id}&tentativa=${tentativa}${nivelFiltro ? `&nivel=${nivelFiltro}` : ""}${rodadaFiltro ? `&rodada=${rodadaFiltro}` : ""}`}
                 className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
               >
                 {cabecalho}

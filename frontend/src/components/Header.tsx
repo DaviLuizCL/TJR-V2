@@ -29,9 +29,6 @@ export function Header() {
     <header className="border-b border-slate-200 bg-white px-6 py-3">
       <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2">
         <span className="text-sm font-semibold uppercase tracking-wide text-slate-400">TJR</span>
-        <Link to="/eventos" className="text-sm font-medium text-slate-700 hover:text-slate-900">
-          Eventos
-        </Link>
         {!ehArbitro && (
           <Link to="/equipes" className="text-sm font-medium text-slate-700 hover:text-slate-900">
             Equipes

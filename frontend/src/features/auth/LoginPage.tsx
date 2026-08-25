@@ -45,7 +45,14 @@ export function LoginPage() {
       usuario: me.data ?? { id: "", nome: "", email: dados.email, papel: "" },
     });
 
-    navigate("/eventos");
+    // O sistema so suporta um evento (TJR 2026, ver EVENTO_UNICO_JA_EXISTE) --
+    // pula a tela de selecao e vai direto pro fluxo operacional, como se o
+    // usuario ja tivesse clicado no evento. Sem evento cadastrado ainda
+    // (banco recem-criado, antes do seed), cai de volta pra /eventos.
+    const eventos = await api.GET("/api/v1/eventos", { params: { query: { size: 1 } } });
+    const evento = eventos.data?.itens?.[0];
+
+    navigate(evento ? `/eventos/${evento.id}/competicoes` : "/eventos");
   }
 
   return (

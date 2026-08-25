@@ -345,13 +345,6 @@ async def confirmar_lancamento(
 async def corrigir_lancamento(
     db: AsyncSession, lancamento_id: UUID, dto: LancamentoCorrigir, *, usuario_id: UUID
 ) -> Lancamento:
-    if not dto.justificativa.strip():
-        raise AppError(
-            codigo="JUSTIFICATIVA_OBRIGATORIA",
-            mensagem="Toda correcao de lancamento exige justificativa.",
-            status_code=422,
-        )
-
     lancamento = await obter_lancamento(db, lancamento_id)
     if lancamento.status != LancamentoStatus.CONFIRMADO:
         raise AppError(

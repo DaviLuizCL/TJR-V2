@@ -19,7 +19,7 @@ from app.db.seed import (
 )
 from app.models.agendamento import Agendamento
 from app.models.arena import Arena
-from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo
+from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo, ModificadorTipo
 from app.models.equipe import Equipe
 from app.models.evento import Evento
 from app.models.ficha import Ficha, FichaStatus
@@ -315,6 +315,75 @@ async def test_seed_fichas_cria_grupos_e_criterios_da_especificacao(db_session):
     criterios = resultado_criterios.scalars().all()
     total_esperado = sum(len(criterios_spec) for _, criterios_spec in FICHAS_TJR["Dança"])
     assert len(criterios) == total_esperado
+
+
+async def test_seed_fichas_danca_penalidades_nao_tem_efeito_no_calculo(db_session):
+    # Pedido do cliente (2026-08-25): tirar a retirada de pontos das
+    # penalidades em geral (excecao: Corrida de Carros Autonomos, que
+    # precisa da penalidade pra decidir quem vence o combate). Os dois
+    # criterios da Danca sao MODIFICADOR, nao tem campo "pontos" simples --
+    # "Paralisacao" virou PERCENTUAL 0% (era ZERA_TOTAL) e "Ultrapassou 5
+    # minutos" ficou PERCENTUAL 0% (era 10%). Critérios continuam existindo
+    # (o arbitro ainda registra a ocorrencia), so sem efeito no total.
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    criterios = await _criterios_da_modalidade(db_session, modalidades, "Dança")
+    por_nome = {c.nome: c for c in criterios}
+
+    paralisacao = por_nome["Paralisação durante o desempenho"]
+    assert paralisacao.modificador_tipo == ModificadorTipo.PERCENTUAL
+    assert float(paralisacao.modificador_valor) == 0.0
+
+    ultrapassou = por_nome["Ultrapassou 5 minutos de apresentação"]
+    assert ultrapassou.modificador_tipo == ModificadorTipo.PERCENTUAL
+    assert float(ultrapassou.modificador_valor) == 0.0
+
+
+async def test_seed_fichas_viagem_penalidades_nao_descontam_pontos(db_session):
+    # Mesmo pedido acima, aplicado aos criterios CONTADOR/PENALIDADE
+    # simples da Viagem ao Centro da Terra: mantem o criterio, zera pontos.
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    viagem = next(m for m in modalidades if m.nome == "Viagem ao Centro da Terra")
+
+    resultado_nivel_1 = await db_session.execute(
+        select(Ficha).where(Ficha.modalidade_id == viagem.id, Ficha.nivel == 1)
+    )
+    ficha_nivel_1 = resultado_nivel_1.scalar_one()
+    resultado_grupos_1 = await db_session.execute(
+        select(Grupo).where(Grupo.ficha_id == ficha_nivel_1.id)
+    )
+    grupos_1 = resultado_grupos_1.scalars().all()
+    resultado_criterios_1 = await db_session.execute(
+        select(Criterio).where(Criterio.grupo_id.in_([g.id for g in grupos_1]))
+    )
+    atravessar_borda = [
+        c for c in resultado_criterios_1.scalars().all() if c.nome == "Atravessar a borda"
+    ]
+    assert len(atravessar_borda) == 2  # 1o Cubo e 2o Cubo
+    assert all(float(c.pontos) == 0.0 for c in atravessar_borda)
+
+    resultado_nivel_3 = await db_session.execute(
+        select(Ficha).where(Ficha.modalidade_id == viagem.id, Ficha.nivel == 3)
+    )
+    ficha_nivel_3 = resultado_nivel_3.scalar_one()
+    resultado_grupos_3 = await db_session.execute(
+        select(Grupo).where(Grupo.ficha_id == ficha_nivel_3.id)
+    )
+    grupos_3 = resultado_grupos_3.scalars().all()
+    resultado_criterios_3 = await db_session.execute(
+        select(Criterio).where(Criterio.grupo_id.in_([g.id for g in grupos_3]))
+    )
+    reinicio = next(
+        c
+        for c in resultado_criterios_3.scalars().all()
+        if c.nome == "Reinício entre as rodadas"
+    )
+    assert float(reinicio.pontos) == 0.0
 
 
 async def test_seed_fichas_e_idempotente(db_session):
@@ -656,6 +725,34 @@ async def test_seed_modalidades_cabo_de_guerra_e_sumo_usam_soma_pontos(db_sessio
     por_nome = {m.nome: m for m in modalidades}
     assert por_nome["Cabo de Guerra"].decisao_partida == DecisaoPartida.SOMA_PONTOS
     assert por_nome["Sumô"].decisao_partida == DecisaoPartida.SOMA_PONTOS
+
+
+async def test_seed_modalidades_sumo_controlado_tem_as_mesmas_regras_do_sumo(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    por_nome = {m.nome: m for m in modalidades}
+    sumo = por_nome["Sumô"]
+    sumo_controlado = por_nome["Sumô Controlado"]
+
+    assert sumo_controlado.tipo_disputa == sumo.tipo_disputa == TipoDisputa.CONFRONTO
+    assert (
+        sumo_controlado.formato_chaveamento == sumo.formato_chaveamento == FormatoChaveamento.MATA_MATA
+    )
+    assert sumo_controlado.tentativas_por_rodada == sumo.tentativas_por_rodada == 2
+    assert sumo_controlado.decisao_partida == sumo.decisao_partida == DecisaoPartida.SOMA_PONTOS
+
+
+async def test_seed_fichas_sumo_controlado_tem_criterio_escala_resultado_do_combate(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    criterio = await _criterio_unico_da_modalidade(db_session, modalidades, "Sumô Controlado")
+
+    assert criterio.nome == "Resultado do combate"
+    assert criterio.tipo == CriterioTipo.ESCALA
+    assert criterio.valores_permitidos == [0, 1, 2]
 
 
 async def test_seed_modalidades_corrida_de_carros_usa_combates_vencidos(db_session):

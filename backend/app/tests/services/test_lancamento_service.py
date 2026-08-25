@@ -492,7 +492,10 @@ async def test_confirmar_lancamento_ja_confirmado_lanca_erro(db_session):
     assert exc_info.value.codigo == "LANCAMENTO_NAO_PENDENTE"
 
 
-async def test_corrigir_lancamento_exige_justificativa(db_session):
+async def test_corrigir_lancamento_aceita_justificativa_vazia(db_session):
+    # Justificativa e opcional de proposito (pedido explicito do cliente,
+    # 2026-08-25) -- continua existindo no audit_log pra quem quiser
+    # preencher, mas nao bloqueia mais a correcao quando vem em branco.
     _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
     coordenador = await _criar_coordenador(db_session)
     lancamento = await criar_lancamento(
@@ -500,19 +503,18 @@ async def test_corrigir_lancamento_exige_justificativa(db_session):
     )
     await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
 
-    with pytest.raises(AppError) as exc_info:
-        await corrigir_lancamento(
-            db_session,
-            lancamento.id,
-            LancamentoCorrigir(
-                justificativa="",
-                revision=1,
-                itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=5)],
-            ),
-            usuario_id=coordenador.id,
-        )
+    corrigido = await corrigir_lancamento(
+        db_session,
+        lancamento.id,
+        LancamentoCorrigir(
+            justificativa="",
+            revision=1,
+            itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=5)],
+        ),
+        usuario_id=coordenador.id,
+    )
 
-    assert exc_info.value.codigo == "JUSTIFICATIVA_OBRIGATORIA"
+    assert corrigido.revision == 2
 
 
 async def test_corrigir_lancamento_incrementa_revision_e_recalcula_total(db_session):

@@ -52,15 +52,55 @@ describe("LoginPage", () => {
     expect(await screen.findByText(/informe um e-mail valido/i)).toBeInTheDocument();
   });
 
-  it("loga com sucesso, guarda a sessao e navega para /eventos", async () => {
+  it("loga com sucesso, guarda a sessao e navega direto pro evento (competicoes)", async () => {
     vi.mocked(api.POST).mockResolvedValue({
       data: { access_token: "access-123", refresh_token: "refresh-123", token_type: "bearer" },
       error: undefined,
     } as never);
-    vi.mocked(api.GET).mockResolvedValue({
-      data: { id: "u1", nome: "Coord", email: "coord@tjr.app", papel: "COORDENADOR" },
+    vi.mocked(api.GET).mockImplementation(((url: string) => {
+      if (url === "/api/v1/auth/me") {
+        return Promise.resolve({
+          data: { id: "u1", nome: "Coord", email: "coord@tjr.app", papel: "COORDENADOR" },
+          error: undefined,
+        });
+      }
+      if (url === "/api/v1/eventos") {
+        return Promise.resolve({
+          data: { itens: [{ id: "evt-1", nome: "TJR 2026", ano: 2026, status: "EM_ANDAMENTO" }] },
+          error: undefined,
+        });
+      }
+      throw new Error(`GET inesperado: ${url}`);
+    }) as never);
+
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/e-mail/i), "coord@tjr.app");
+    await userEvent.type(screen.getByLabelText(/senha/i), "senha-123");
+    await userEvent.click(screen.getByRole("button", { name: /entrar/i }));
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/eventos/evt-1/competicoes"));
+    expect(useAuthStore.getState().accessToken).toBe("access-123");
+    expect(useAuthStore.getState().usuario?.papel).toBe("COORDENADOR");
+  });
+
+  it("loga com sucesso mas sem evento cadastrado ainda, navega para /eventos", async () => {
+    vi.mocked(api.POST).mockResolvedValue({
+      data: { access_token: "access-123", refresh_token: "refresh-123", token_type: "bearer" },
       error: undefined,
     } as never);
+    vi.mocked(api.GET).mockImplementation(((url: string) => {
+      if (url === "/api/v1/auth/me") {
+        return Promise.resolve({
+          data: { id: "u1", nome: "Coord", email: "coord@tjr.app", papel: "COORDENADOR" },
+          error: undefined,
+        });
+      }
+      if (url === "/api/v1/eventos") {
+        return Promise.resolve({ data: { itens: [] }, error: undefined });
+      }
+      throw new Error(`GET inesperado: ${url}`);
+    }) as never);
 
     renderPage();
 
@@ -69,8 +109,6 @@ describe("LoginPage", () => {
     await userEvent.click(screen.getByRole("button", { name: /entrar/i }));
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/eventos"));
-    expect(useAuthStore.getState().accessToken).toBe("access-123");
-    expect(useAuthStore.getState().usuario?.papel).toBe("COORDENADOR");
   });
 
   it("permite mostrar e ocultar a senha digitada", async () => {

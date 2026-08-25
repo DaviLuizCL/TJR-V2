@@ -3,11 +3,10 @@ import { useSearchParams } from "react-router-dom";
 
 import { HorarioDashboardPage } from "../horario/HorarioDashboardPage";
 import { PontuarDashboardPage } from "../arbitragem/PontuarDashboardPage";
-import { RodadaDashboardPage } from "./RodadaDashboardPage";
 
-type Aba = "pontuar" | "rodadas" | "horarios";
+type Aba = "pontuar" | "horarios";
 
-const ABAS: Aba[] = ["pontuar", "rodadas", "horarios"];
+const ABAS: Aba[] = ["pontuar", "horarios"];
 
 function abaValida(valor: string | null): Aba {
   return ABAS.includes(valor as Aba) ? (valor as Aba) : "pontuar";
@@ -38,15 +37,6 @@ export function IndividualHubPage() {
         <button
           role="tab"
           type="button"
-          aria-selected={aba === "rodadas"}
-          onClick={() => setAba("rodadas")}
-          className={classesAba("rodadas")}
-        >
-          Rodadas
-        </button>
-        <button
-          role="tab"
-          type="button"
           aria-selected={aba === "horarios"}
           onClick={() => setAba("horarios")}
           className={classesAba("horarios")}
@@ -56,7 +46,6 @@ export function IndividualHubPage() {
       </div>
 
       {aba === "pontuar" && <PontuarDashboardPage />}
-      {aba === "rodadas" && <RodadaDashboardPage />}
       {aba === "horarios" && <HorarioDashboardPage />}
     </div>
   );

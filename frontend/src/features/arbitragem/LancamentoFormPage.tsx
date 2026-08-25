@@ -85,7 +85,11 @@ export function LancamentoFormPage() {
   const partidaVeioPreselecionada = !!partidaIdPreselecionada;
   const voltarParaPontuar = veioPreselecionado || partidaVeioPreselecionada;
   const nivelDaOrigem = searchParams.get("nivel") ?? "";
-  const destinoPontuar = `/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar${nivelDaOrigem ? `?nivel=${nivelDaOrigem}` : ""}`;
+  const rodadaDaOrigem = searchParams.get("rodada") ?? "";
+  const filtrosDaOrigem = new URLSearchParams();
+  if (nivelDaOrigem) filtrosDaOrigem.set("nivel", nivelDaOrigem);
+  if (rodadaDaOrigem) filtrosDaOrigem.set("rodada", rodadaDaOrigem);
+  const destinoPontuar = `/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar${filtrosDaOrigem.toString() ? `?${filtrosDaOrigem.toString()}` : ""}`;
 
   const [equipeId, setEquipeId] = useState(equipeIdPreselecionado ?? "");
   const [partidaId, setPartidaId] = useState(partidaIdPreselecionada ?? "");

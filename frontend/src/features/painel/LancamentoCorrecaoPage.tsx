@@ -132,10 +132,6 @@ export function LancamentoCorrecaoPage() {
 
   async function enviarCorrecao() {
     if (!lancamento || enviando) return;
-    if (!justificativa.trim()) {
-      setErro("Informe uma justificativa para a correção.");
-      return;
-    }
     setErro(null);
     setEnviando(true);
 
@@ -182,8 +178,7 @@ export function LancamentoCorrecaoPage() {
       </button>
       <h1 className="mb-2 text-2xl font-semibold text-slate-800">Corrigir lançamento</h1>
       <p className="mb-6 text-sm text-slate-500">
-        Alterar um lançamento já confirmado exige justificativa e fica registrado no histórico de
-        auditoria.
+        Alterar um lançamento já confirmado fica registrado no histórico de auditoria.
       </p>
 
       <div className="space-y-4">
@@ -217,7 +212,7 @@ export function LancamentoCorrecaoPage() {
 
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="justificativa">
-            Justificativa da correção
+            Justificativa da correção (opcional)
           </label>
           <textarea
             id="justificativa"

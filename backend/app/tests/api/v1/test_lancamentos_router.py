@@ -269,7 +269,9 @@ async def test_corrigir_lancamento_com_coordenador_atualiza_total(client, db_ses
     assert corpo["revision"] == 2
 
 
-async def test_corrigir_lancamento_sem_justificativa_retorna_422(client, db_session):
+async def test_corrigir_lancamento_sem_justificativa_e_aceita(client, db_session):
+    # Justificativa e opcional (pedido explicito do cliente, 2026-08-25) --
+    # nao bloqueia mais a correcao quando vem em branco.
     arbitro_headers = await _auth_header(
         client, db_session, Papel.ARBITRO, "arbitro-lanc-7@tjr.app"
     )
@@ -293,8 +295,8 @@ async def test_corrigir_lancamento_sem_justificativa_retorna_422(client, db_sess
         headers=coord_headers,
     )
 
-    assert resposta.status_code == 422
-    assert resposta.json()["erro"]["codigo"] == "JUSTIFICATIVA_OBRIGATORIA"
+    assert resposta.status_code == 200
+    assert resposta.json()["revision"] == 2
 
 
 async def test_corrigir_lancamento_com_revision_desatualizada_retorna_409(client, db_session):

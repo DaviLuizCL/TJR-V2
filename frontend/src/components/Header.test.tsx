@@ -32,11 +32,16 @@ beforeEach(() => {
 });
 
 describe("Header", () => {
-  it("linka equipes e eventos sempre nos mesmos locais", () => {
+  it("linka equipes sempre no mesmo local", () => {
     renderHeader();
 
     expect(screen.getByRole("link", { name: /equipes/i })).toHaveAttribute("href", "/equipes");
-    expect(screen.getByRole("link", { name: /eventos/i })).toHaveAttribute("href", "/eventos");
+  });
+
+  it("nao mostra mais o link solto Eventos (evento unico, login ja leva direto pra ele)", () => {
+    renderHeader();
+
+    expect(screen.queryByRole("link", { name: /^eventos$/i })).not.toBeInTheDocument();
   });
 
   it("sem evento atual, manda modalidades/fichas/competicoes/painel para o seletor de eventos", () => {
@@ -87,12 +92,11 @@ describe("Header", () => {
     expect(screen.queryByRole("link", { name: /^combates$/i })).not.toBeInTheDocument();
   });
 
-  it("arbitro so ve Eventos e Competicoes - sem acesso as ferramentas de coordenacao", () => {
+  it("arbitro so ve Competicoes - sem acesso as ferramentas de coordenacao", () => {
     logarComo("ARBITRO");
 
     renderHeader();
 
-    expect(screen.getByRole("link", { name: /eventos/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /competi[cç][oõ]es/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /equipes/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^modalidades$/i })).not.toBeInTheDocument();
@@ -135,7 +139,7 @@ describe("Header", () => {
     // linha esta presente e nao foi removida por engano numa mudanca futura.
     renderHeader();
 
-    const nav = screen.getByRole("link", { name: /eventos/i }).closest("nav")!;
+    const nav = screen.getByRole("link", { name: /competi[cç][oõ]es/i }).closest("nav")!;
     expect(nav.className).toMatch(/flex-wrap/);
   });
 

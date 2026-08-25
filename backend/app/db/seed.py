@@ -46,6 +46,18 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         decisao_partida=DecisaoPartida.SOMA_PONTOS,
     ),
     dict(
+        # Mesmas regras do Sumô normal (mesmo formato, mesma ficha) -- a
+        # diferenca e so a categoria do robo (controlado por radio em vez de
+        # autonomo), que nao afeta nenhuma regra de pontuacao/chaveamento.
+        nome="Sumô Controlado",
+        tipo_disputa=TipoDisputa.CONFRONTO,
+        formato_chaveamento=FormatoChaveamento.MATA_MATA,
+        qtd_rodadas=5,
+        tentativas_por_rodada=2,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        decisao_partida=DecisaoPartida.SOMA_PONTOS,
+    ),
+    dict(
         nome="Cabo de Guerra",
         tipo_disputa=TipoDisputa.CONFRONTO,
         formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
@@ -286,18 +298,27 @@ _FICHA_DANCA: tuple[tuple[str, tuple[dict, ...]], ...] = (
     (
         "Modificadores",
         (
+            # Penalidades sem efeito no calculo de proposito (pedido do
+            # cliente, 2026-08-25: tirar a retirada de pontos das
+            # penalidades em geral, excecao so pra Corrida de Carros
+            # Autonomos). Criterio continua existindo pro arbitro registrar
+            # a ocorrencia, so nao desconta mais nada -- por isso
+            # "Paralisação" trocou de ZERA_TOTAL pra PERCENTUAL 0% (nao da
+            # pra "zerar" um ZERA_TOTAL de outro jeito, ele e um gatilho
+            # tudo-ou-nada, sem campo de valor).
             _c(
                 "Paralisação durante o desempenho",
                 CategoriaCriterio.PENALIDADE,
                 CriterioTipo.MODIFICADOR,
-                modificador_tipo=ModificadorTipo.ZERA_TOTAL,
+                modificador_tipo=ModificadorTipo.PERCENTUAL,
+                modificador_valor=0,
             ),
             _c(
                 "Ultrapassou 5 minutos de apresentação",
                 CategoriaCriterio.PENALIDADE,
                 CriterioTipo.MODIFICADOR,
                 modificador_tipo=ModificadorTipo.PERCENTUAL,
-                modificador_valor=10,
+                modificador_valor=0,
             ),
         ),
     ),
@@ -451,7 +472,10 @@ def _grupo_cubo_viagem(nome_grupo: str) -> tuple[str, tuple[dict, ...]]:
                 CriterioTipo.BOOLEANO,
                 pontos=10,
             ),
-            _c("Atravessar a borda", CategoriaCriterio.PENALIDADE, CriterioTipo.CONTADOR, pontos=5),
+            # Sem efeito no calculo de proposito (pedido do cliente,
+            # 2026-08-25) -- criterio continua existindo pro arbitro
+            # registrar a ocorrencia, so nao desconta mais pontos.
+            _c("Atravessar a borda", CategoriaCriterio.PENALIDADE, CriterioTipo.CONTADOR, pontos=0),
         ),
     )
 
@@ -465,11 +489,14 @@ def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]
             (
                 "Modificadores",
                 (
+                    # Sem efeito no calculo de proposito (pedido do cliente,
+                    # 2026-08-25) -- criterio continua existindo pro arbitro
+                    # registrar a ocorrencia, so nao desconta mais pontos.
                     _c(
                         "Reinício entre as rodadas",
                         CategoriaCriterio.PENALIDADE,
                         CriterioTipo.CONTADOR,
-                        pontos=20,
+                        pontos=0,
                     ),
                 ),
             )
@@ -479,6 +506,7 @@ def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]
 
 FICHAS_TJR: dict[str, tuple[tuple[str, tuple[dict, ...]], ...]] = {
     "Sumô": _FICHA_SUMO,
+    "Sumô Controlado": _FICHA_SUMO,
     "Cabo de Guerra": _FICHA_CABO_DE_GUERRA,
     "Corrida de Carros Autônomos": _FICHA_CORRIDA_DE_CARROS,
     "Dança": _FICHA_DANCA,
