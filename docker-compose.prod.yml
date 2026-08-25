@@ -10,16 +10,23 @@
 #     proxy do nginx, dentro da rede docker).
 #   - db: sem porta publicada (so alcancavel pelo `api`, dentro da rede
 #     docker).
+#   - todos os tres com `restart: unless-stopped` -- se a instancia EC2 for
+#     parada (Stop) a noite pra economizar e ligada de novo no dia seguinte,
+#     os containers sobem sozinhos quando o Docker inicia, sem precisar
+#     ninguem entrar por SSH e rodar `up -d` de novo manualmente.
 services:
   db:
+    restart: unless-stopped
     ports: !reset []
 
   api:
+    restart: unless-stopped
     volumes: !reset []
     ports: !reset []
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   front:
+    restart: unless-stopped
     image: tjr-front-prod
     build:
       target: prod
