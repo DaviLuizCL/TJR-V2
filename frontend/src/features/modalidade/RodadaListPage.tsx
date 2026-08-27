@@ -7,6 +7,7 @@ const MODOS_HORARIO = ["MANUAL", "AUTOMATICO"] as const;
 import { api, extrairErro } from "../../api/client";
 import { calcularTotalRodadasPorNivel, nomeFase } from "../../lib/fase-chaveamento";
 import { rotuloNivel } from "../../lib/nivel";
+import { ChaveamentoManualBuilder } from "./ChaveamentoManualBuilder";
 
 interface ModalidadeInfo {
   id: string;
@@ -421,6 +422,7 @@ export function RodadaListPage() {
   }
 
   const [erroChaveamento, setErroChaveamento] = useState<string | null>(null);
+  const [mostrarChaveamentoManual, setMostrarChaveamentoManual] = useState(false);
 
   function onMudou() {
     void queryClient.invalidateQueries({ queryKey: ["rodadas", modalidadeId] });
@@ -460,7 +462,7 @@ export function RodadaListPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-800">Rodadas de {modalidade.nome}</h1>
         {isCombate ? (
-          rodadas.length === 0 && (
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={gerarChaveamento}
@@ -468,7 +470,16 @@ export function RodadaListPage() {
             >
               Gerar chaveamento
             </button>
-          )
+            {modalidade.formato_chaveamento !== "TODOS_CONTRA_TODOS" && (
+              <button
+                type="button"
+                onClick={() => setMostrarChaveamentoManual(true)}
+                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Montar chaveamento manual
+              </button>
+            )}
+          </div>
         ) : (
           <button
             type="button"
@@ -509,6 +520,16 @@ export function RodadaListPage() {
             />
           ))}
         </ul>
+      )}
+
+      {mostrarChaveamentoManual && (
+        <ChaveamentoManualBuilder
+          modalidadeId={modalidadeId!}
+          onFechar={() => {
+            setMostrarChaveamentoManual(false);
+            onMudou();
+          }}
+        />
       )}
     </main>
   );

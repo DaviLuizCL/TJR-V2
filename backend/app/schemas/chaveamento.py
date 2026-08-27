@@ -9,5 +9,10 @@ class GerarChaveamentoRequest(BaseModel):
     modalidade_id: UUID
 
 
+class CriarPartidaManualRequest(BaseModel):
+    equipe_a_id: UUID
+    equipe_b_id: UUID | None = None
+
+
 class ResetarChaveamentoRequest(BaseModel):
     justificativa: NomeObrigatorio

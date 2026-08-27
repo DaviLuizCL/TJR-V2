@@ -14,6 +14,7 @@ from app.models.modalidade import DecisaoPartida, FormatoChaveamento, Modalidade
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.services.audit import registrar_audit_log
+from app.services.equipe import obter_equipe
 from app.services.modalidade import obter_modalidade
 from app.services.rodada import _gerar_pareamento, _rodadas_necessarias
 
@@ -158,6 +159,113 @@ async def gerar_chaveamento_inicial(
     return rodada
 
 
+async def criar_partida_manual(
+    db: AsyncSession,
+    modalidade_id: UUID,
+    equipe_a_id: UUID,
+    equipe_b_id: UUID | None,
+    *,
+    usuario_id: UUID,
+) -> Partida:
+    """Monta o chaveamento no braço, um confronto de cada vez: o coordenador
+    escolhe as duas equipes (ou so uma, pra dar bye) e salva -- sem precisar
+    decidir o nivel inteiro de uma so vez, nem travar formato_chaveamento
+    pra nada. Assim que a partida existe, ja aparece pro arbitro no fluxo
+    Pontuar de graca (PontuarCombatePage so olha pra Partida existente,
+    nao pra como ela foi criada).
+
+    Sempre cria/reaproveita a Rodada numero=1 da modalidade -- esse fluxo e
+    so pra montar o inicio do chaveamento; rodadas seguintes continuam
+    100% automaticas via avancar_se_rodada_completa assim que as partidas
+    fecham. Convive com gerar_chaveamento_confronto: um nivel montado por
+    aqui fica de fora quando o automatico rodar pros demais niveis da
+    mesma modalidade (ver gerar_chaveamento_confronto).
+    """
+    modalidade = await obter_modalidade(db, modalidade_id)
+    if modalidade.tipo_disputa != TipoDisputa.CONFRONTO:
+        raise AppError(
+            codigo="MODALIDADE_NAO_E_CONFRONTO",
+            mensagem="Chaveamento so pode ser gerado para modalidade de confronto.",
+            status_code=422,
+        )
+
+    if equipe_b_id is not None and equipe_a_id == equipe_b_id:
+        raise AppError(
+            codigo="EQUIPES_IGUAIS",
+            mensagem="As duas equipes de uma partida precisam ser diferentes.",
+            status_code=422,
+        )
+
+    equipe_a = await obter_equipe(db, equipe_a_id)
+    equipe_b = await obter_equipe(db, equipe_b_id) if equipe_b_id is not None else None
+
+    if equipe_b is not None and equipe_b.nivel != equipe_a.nivel:
+        raise AppError(
+            codigo="NIVEIS_INCOMPATIVEIS",
+            mensagem="As duas equipes de uma partida precisam ser do mesmo nivel.",
+            status_code=422,
+        )
+
+    for equipe in filter(None, [equipe_a, equipe_b]):
+        inscrita = await db.scalar(
+            select(Inscricao).where(
+                Inscricao.equipe_id == equipe.id, Inscricao.modalidade_id == modalidade_id
+            )
+        )
+        if inscrita is None:
+            raise AppError(
+                codigo="EQUIPE_NAO_INSCRITA",
+                mensagem=f"A equipe '{equipe.nome}' nao esta inscrita nesta modalidade.",
+                status_code=422,
+            )
+
+    ids_envolvidos = [e.id for e in filter(None, [equipe_a, equipe_b])]
+    ja_tem_partida = await db.scalar(
+        select(Partida.id)
+        .join(Rodada, Partida.rodada_id == Rodada.id)
+        .where(
+            Rodada.modalidade_id == modalidade_id,
+            (Partida.equipe_a_id.in_(ids_envolvidos) | Partida.equipe_b_id.in_(ids_envolvidos)),
+        )
+        .limit(1)
+    )
+    if ja_tem_partida is not None:
+        raise AppError(
+            codigo="EQUIPE_JA_TEM_PARTIDA",
+            mensagem="Uma dessas equipes ja tem partida nesta modalidade.",
+            status_code=409,
+        )
+
+    rodada = await db.scalar(
+        select(Rodada).where(Rodada.modalidade_id == modalidade_id, Rodada.numero == 1)
+    )
+    if rodada is None:
+        rodada = Rodada(
+            modalidade_id=modalidade_id,
+            numero=1,
+            modo_horario=ModoHorario.AUTOMATICO,
+            status=RodadaStatus.AGENDADA,
+        )
+        db.add(rodada)
+        await db.flush()
+
+    partida = _criar_partida(rodada.id, equipe_a.id, equipe_b_id, equipe_a.nivel)
+    db.add(partida)
+    await db.flush()
+
+    await registrar_audit_log(
+        db,
+        usuario_id=usuario_id,
+        entidade="partida",
+        entidade_id=partida.id,
+        acao="CRIAR_PARTIDA_MANUAL",
+        antes=None,
+        depois=_dump(partida),
+    )
+
+    return partida
+
+
 async def _recusar_se_par_conflitante_em_andamento(
     db: AsyncSession, modalidade: Modalidade
 ) -> None:
@@ -224,14 +332,6 @@ async def gerar_chaveamento_confronto(
             status_code=422,
         )
 
-    existente = await db.scalar(select(Rodada).where(Rodada.modalidade_id == modalidade_id))
-    if existente is not None:
-        raise AppError(
-            codigo="CHAVEAMENTO_JA_INICIADO",
-            mensagem="Ja existe rodada para esta modalidade; o chaveamento ja foi gerado.",
-            status_code=409,
-        )
-
     await _recusar_se_par_conflitante_em_andamento(db, modalidade)
 
     resultado = await db.execute(
@@ -244,10 +344,27 @@ async def gerar_chaveamento_confronto(
     for equipe_id, nivel in resultado.all():
         equipes_por_nivel.setdefault(nivel, []).append(equipe_id)
 
+    # Nivel que ja tem QUALQUER partida (montada na mao via
+    # criar_partida_manual, ou por uma chamada anterior deste mesmo
+    # gerador) fica de fora -- nao reembaralha nem duplica o que ja existe.
+    # E o que deixa esse gerador conviver com montagem manual de outro
+    # nivel da mesma modalidade (ver criar_partida_manual).
+    niveis_com_partida = {
+        nivel
+        for (nivel,) in (
+            await db.execute(
+                select(Partida.nivel)
+                .join(Rodada, Partida.rodada_id == Rodada.id)
+                .where(Rodada.modalidade_id == modalidade_id)
+                .distinct()
+            )
+        ).all()
+    }
+
     niveis_bracket: dict[int, list[UUID]] = {}
     niveis_liga: dict[int, list[UUID]] = {}
     for nivel, ids in equipes_por_nivel.items():
-        if len(ids) < 2:
+        if len(ids) < 2 or nivel in niveis_com_partida:
             continue
         formato = modalidade.formato_chaveamento or (
             FormatoChaveamento.TODOS_CONTRA_TODOS
@@ -260,6 +377,12 @@ async def gerar_chaveamento_confronto(
             niveis_liga[nivel] = ids
 
     if not niveis_bracket and not niveis_liga:
+        if niveis_com_partida:
+            raise AppError(
+                codigo="CHAVEAMENTO_JA_INICIADO",
+                mensagem="Ja existe rodada para esta modalidade; o chaveamento ja foi gerado.",
+                status_code=409,
+            )
         raise AppError(
             codigo="EQUIPES_INSUFICIENTES",
             mensagem="E preciso pelo menos 2 equipes do mesmo nivel pra gerar o chaveamento.",
@@ -271,6 +394,12 @@ async def gerar_chaveamento_confronto(
     async def _rodada(numero: int) -> Rodada:
         rodada = rodadas_por_numero.get(numero)
         if rodada is None:
+            rodada = await db.scalar(
+                select(Rodada).where(
+                    Rodada.modalidade_id == modalidade_id, Rodada.numero == numero
+                )
+            )
+        if rodada is None:
             rodada = Rodada(
                 modalidade_id=modalidade_id,
                 numero=numero,
@@ -279,7 +408,7 @@ async def gerar_chaveamento_confronto(
             )
             db.add(rodada)
             await db.flush()
-            rodadas_por_numero[numero] = rodada
+        rodadas_por_numero[numero] = rodada
         return rodada
 
     if niveis_bracket:

@@ -79,6 +79,82 @@ async def test_gerar_chaveamento_mata_mata_cria_rodada_1_com_partidas(client, db
     assert len(partidas.json()) == 2
 
 
+async def test_criar_partida_manual_cria_partida_na_rodada_1(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-man1@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
+    equipe_a = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe A")
+    equipe_b = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe B")
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
+        json={"equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert {corpo["equipe_a_id"], corpo["equipe_b_id"]} == {equipe_a, equipe_b}
+    assert corpo["status"] == "AGENDADA"
+
+
+async def test_criar_partida_manual_com_papel_arbitro_retorna_403(client, db_session):
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-chav-man2@tjr.app"
+    )
+    evento_id = await _criar_evento(client, coord_headers)
+    modalidade_id = await _criar_modalidade(client, coord_headers, evento_id, "MATA_MATA")
+    equipe_a = await _criar_equipe_inscrita(client, coord_headers, modalidade_id, "Equipe A")
+    equipe_b = await _criar_equipe_inscrita(client, coord_headers, modalidade_id, "Equipe B")
+    headers_arbitro = await _auth_header(
+        client, db_session, Papel.ARBITRO, "arbitro-chav-man@tjr.app"
+    )
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
+        json={"equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
+        headers=headers_arbitro,
+    )
+
+    assert resposta.status_code == 403
+
+
+async def test_criar_partida_manual_com_niveis_diferentes_retorna_422(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-man3@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
+    equipe_a = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe A", nivel=1)
+    equipe_b = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe B", nivel=2)
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
+        json={"equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "NIVEIS_INCOMPATIVEIS"
+
+
+async def test_criar_partida_manual_com_bye_fecha_a_partida_sozinha(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-man4@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
+    equipe_a = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe A")
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
+        json={"equipe_a_id": equipe_a, "equipe_b_id": None},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["equipe_b_id"] is None
+    assert corpo["status"] == "ENCERRADA"
+    assert corpo["vencedor_id"] == equipe_a
+
+
 async def test_gerar_chaveamento_com_papel_arbitro_retorna_403(client, db_session):
     coord_headers = await _auth_header(
         client, db_session, Papel.COORDENADOR, "coord-chav-2@tjr.app"

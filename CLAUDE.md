@@ -1125,6 +1125,96 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
    "Sumô") depois de restaurar o stack pra modo produção
    (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`).
 
+   **Sessão de import real de equipes + últimos ajustes antes da competição** (27/08/2026).
+   Objetivo: sair do estado de seed fictício e deixar produção pronta com as equipes de verdade.
+
+   - **Import real da planilha oficial em produção** — sequência: reset do banco de produção
+     (apagou `equipe`/`inscricao`/`rodada`/`partida`/`agendamento` fictícios do seed normal, sem
+     tocar `evento`/`modalidade`/`ficha`/`usuario`), `python -m app.db.seed --apenas-estrutura`
+     pra criar as modalidades que só existiam no código (`Sumô RC 1,5 kg`, `Sumô 3 kg`, do
+     refactor da sessão anterior — produção ainda tinha a `Sumô Controlado` antiga, que ficou
+     órfã, sem equipe, decisão consciente de não mexer), e então
+     `scripts/lista_2026/importar.py` rodado de fato contra a planilha real
+     (`LISTA 2026 (1).xlsx`, nunca commitada — tem dado real de mentor/escola). 174 linhas, 139
+     equipes novas, 166 inscrições, 2 linhas ignoradas de propósito (teste + Registro
+     Multimidiático). Correções manuais pedidas pelo coordenador em cima do import (via script
+     avulso usando os services direto, mesmo padrão de outras sessões): `Antônio` (nível 2,
+     Resgate no Plano) renomeada pra `ABCMP`; `Hefesto Tech` consolidada — a planilha tinha essa
+     equipe cadastrada com **nome de robô** em 3 modalidades diferentes (`Lidenbrock` na Viagem
+     nível 4, `Fauna-flora` na Dança nível 3, `hefestos tech - war cable` no Cabo de Guerra nível
+     3); renomeadas as duas primeiras, a inscrição de Cabo de Guerra movida pra cima da equipe
+     nível 3 renomeada (evitando duplicar `Hefesto Tech` nível 3 duas vezes), a equipe órfã
+     resultante desativada (não apagada); mais 2 modalidades novas pra ela (Corrida de Carros
+     Autônomos nível 1/ABSOLUTO, Sumô nível 3 — confirmado com o usuário, já que ela não tinha
+     nível único). `JARVIS`/`STARK` (já em Sumô RC 1,5kg, nível 1) ganharam inscrição também em
+     Sumô "autônomo" tradicional, reaproveitando a mesma equipe (nível 1 é aceito lá também,
+     `niveis_aplicaveis` default é `[1,2,3,4]`). Achado no caminho: a planilha também tinha
+     `Antônio 2` (Viagem ao Centro da Terra, mesma escola/mentor/cidade de `Antônio`) — mesma
+     pegadinha nome-de-robô-como-nome-de-equipe da Hefesto Tech; decisão do usuário foi virar
+     `ABCMP 2` como equipe distinta (não mesclar com a primeira), e ele mesmo ajustou depois pela
+     tela de Editar já que essa opção passou a existir nesta sessão.
+   - **Busca de equipe por nome** — campo `Buscar equipe` em `EquipeListPage.tsx`, filtro
+     client-side (case-insensitive) sobre a lista já carregada, ao lado dos filtros de
+     nível/modalidade que já existiam.
+   - **Editar equipe ganhou gestão de modalidades inline** — o que já existia (renomear/mudar
+     nível) e o que só dava pra fazer indo em cada modalidade (`InscricaoPage`) foram juntados:
+     clicar em "Editar" agora mostra, junto do formulário de nome/nível, um painel
+     (`EquipeModalidadesPanel`) com as modalidades já inscritas (+ "Remover") e um seletor pra
+     adicionar uma nova, já filtrado pelo nível da equipe (`niveis_aplicaveis`). Primeira versão
+     tinha um botão "Modalidades" separado do "Editar" — unificado a pedido do usuário depois de
+     testar ("faltou eu conseguir adicionar modalidade quando clicar em editar").
+   - **Criar equipe já nasce inscrita** — o formulário "Criar nova equipe" ganhou uma seção de
+     checkboxes de modalidade, também filtrada pelo nível escolhido no próprio formulário
+     (reage à mudança de nível ao vivo). Ao submeter, cria a equipe e depois um `POST
+     /inscricoes` por modalidade marcada, sequencial. Sem isso, cadastrar uma equipe nova sempre
+     exigia um segundo passo (editar → adicionar modalidade).
+   - **Rodadas das individuais: 3 → 2** — Resgate no Plano, Resgate de Alto Risco e Viagem ao
+     Centro da Terra tinham `qtd_rodadas=3` (Dança já era 2); pedido do usuário, aplicado no
+     `seed.py` e também diretamente no banco de produção via script avulso (nenhuma rodada real
+     existia ainda pra essas modalidades, sem risco de discrepância com dado já lançado).
+   - **Chaveamento manual — três desenhos até chegar no atual, todos em TDD**. Motivação:
+     coordenador reclamou do mata-mata puramente automático/sorteado e queria controlar quem
+     enfrenta quem. Primeira tentativa (`gerar_chaveamento_manual`, `ordem_por_nivel`): o
+     coordenador informava a ordem de todas as equipes de um nível de uma vez, sistema pareava
+     consecutivo; exigia `modalidade.formato_chaveamento` travado em `MATA_MATA` antes de usar.
+     Descartada pelo usuário antes de ir pro ar — ele queria montar confronto por confronto, não
+     a lista inteira de uma vez, e não queria precisar travar formato pra isso. Segunda versão
+     (a que ficou): `criar_partida_manual(modalidade_id, equipe_a_id, equipe_b_id)` cria **uma
+     partida por vez** (equipe_b `None` = bye), sempre na Rodada 1 (cria ou reaproveita),
+     validando nível igual entre as duas equipes e que nenhuma já tem partida na modalidade — sem
+     exigir formato travado. Isso expôs uma lacuna real no dispatcher automático
+     (`gerar_chaveamento_confronto`): ele recusava rodar (`CHAVEAMENTO_JA_INICIADO`) assim que
+     *qualquer* rodada existisse, mesmo que só 1 dos vários níveis da modalidade tivesse sido
+     montado na mão — bloqueando o automático completar os outros níveis (o caso real de Sumô:
+     nível com ≤5 equipes deve continuar automático/todos-contra-todos, nível com mais o
+     coordenador monta manualmente). Corrigido: o dispatcher agora calcula quais níveis já têm
+     *qualquer* partida (`niveis_com_partida`) e só gera pros que faltam, reaproveitando a Rodada
+     1 existente em vez de tentar criar outra; só recusa com `CHAVEAMENTO_JA_INICIADO` quando não
+     sobra nada pra gerar. Verificado ao vivo (não só teste automatizado): criado nível pequeno +
+     nível grande numa modalidade de teste, montado o nível grande na mão via API, rodado
+     `/chaveamento/gerar`, e só o nível pequeno foi preenchido automaticamente — o manual ficou
+     intacto, sem duplicar rodada. Frontend: botão "Montar chaveamento manual" ao lado do "Gerar
+     chaveamento" em `RodadaListPage` (some só se o formato estiver travado explicitamente em
+     `TODOS_CONTRA_TODOS`, onde ordem manual não faz sentido — round-robin joga todo mundo contra
+     todo mundo de qualquer forma), abre `ChaveamentoManualBuilder`: seletor de nível (só
+     aparece com mais de 1 nível elegível), dois selects (Equipe A / Equipe B, com opção de bye),
+     lista ao vivo dos confrontos já montados naquele nível. Terceiro ajuste, achado testando ao
+     vivo com dado real (Sumô, várias equipes por nível): o modal não tinha altura máxima nem
+     rolagem própria — com vários confrontos já montados, a caixa crescia mais que a tela e,
+     por ficar centralizada (`items-center`), cortava o topo (seletor de nível) e o rodapé
+     (botão "Fechar") **igualmente** pra fora da janela, os dois sumiam ao mesmo tempo. Corrigido
+     com `max-h-[90vh] overflow-y-auto` no card do modal; confirmado ao vivo numa janela baixa
+     (1024×550) com confrontos reais pré-criados que o "Fechar" continua alcançável via rolagem
+     interna.
+
+     **Pendência explícita pro dia seguinte** (nota do usuário, textual: "amanhã vamos ter que
+     pensar melhor nesse negócio do chaveamento pq ele bagunçou tudo"): mesmo com o bug de
+     overflow corrigido e a suíte 100% verde, o coordenador não ficou satisfeito com o desenho
+     geral do fluxo de chaveamento manual depois de usar de verdade — sem detalhe ainda de
+     *o quê* especificamente incomodou (UX de montar partida por partida, a convivência
+     automático+manual no mesmo nível, outra coisa). Não presumir o problema nem tentar
+     redesenhar sozinho antes de ouvir o que ele achou confuso/errado na prática.
+
 ---
 
 ## 13. O que não fazer

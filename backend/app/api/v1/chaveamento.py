@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import exigir_papel
 from app.db.session import get_db
 from app.models.usuario import Papel, Usuario
-from app.schemas.chaveamento import GerarChaveamentoRequest, ResetarChaveamentoRequest
+from app.schemas.chaveamento import (
+    CriarPartidaManualRequest,
+    GerarChaveamentoRequest,
+    ResetarChaveamentoRequest,
+)
+from app.schemas.partida import PartidaOut
 from app.schemas.rodada import RodadaOut
 from app.services import chaveamento as chaveamento_service
 
@@ -23,6 +28,23 @@ async def gerar_chaveamento(
         db, dto.modalidade_id, usuario_id=usuario.id
     )
     return RodadaOut.model_validate(rodadas[0])
+
+
+@router.post(
+    "/modalidades/{modalidade_id}/chaveamento/partida-manual",
+    response_model=PartidaOut,
+    status_code=201,
+)
+async def criar_partida_manual(
+    modalidade_id: UUID,
+    dto: CriarPartidaManualRequest,
+    db: AsyncSession = Depends(get_db),
+    usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
+) -> PartidaOut:
+    partida = await chaveamento_service.criar_partida_manual(
+        db, modalidade_id, dto.equipe_a_id, dto.equipe_b_id, usuario_id=usuario.id
+    )
+    return PartidaOut.model_validate(partida)
 
 
 @router.post("/modalidades/{modalidade_id}/chaveamento/reset", status_code=204)

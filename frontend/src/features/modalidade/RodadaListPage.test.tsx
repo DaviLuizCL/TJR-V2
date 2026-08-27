@@ -261,8 +261,56 @@ describe("RodadaListPage", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: /gerar chaveamento/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^gerar chaveamento$/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^gerar rodadas$/i })).not.toBeInTheDocument();
+  });
+
+  it("modalidade combate (formato automatico) tambem mostra 'Montar chaveamento manual'", async () => {
+    mockGetChaveamento([], {});
+
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", { name: /montar chaveamento manual/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("todos-contra-todos nao mostra 'Montar chaveamento manual' (override explicito p/ returno)", async () => {
+    mockGetTodosContraTodos([], {});
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /^gerar chaveamento$/i });
+    expect(
+      screen.queryByRole("button", { name: /montar chaveamento manual/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("'Gerar chaveamento' e 'Montar chaveamento manual' continuam visiveis mesmo com rodada 1 ja existindo (nivel montado na mao, outro pendente do automatico)", async () => {
+    mockGetChaveamento(
+      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
+      { r1: [{ id: "p1", equipe_a_id: "eq-1", equipe_b_id: "eq-2", vencedor_id: null, status: "AGENDADA", nivel: 2 }] },
+    );
+
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /^gerar chaveamento$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /montar chaveamento manual/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("clicar em 'Montar chaveamento manual' abre o construtor de partida por partida", async () => {
+    mockGetChaveamento([], {});
+
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /montar chaveamento manual/i }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: /montar chaveamento manual/i }),
+    ).toBeInTheDocument();
   });
 
   it("clicar em 'Gerar chaveamento' chama o endpoint de chaveamento", async () => {
@@ -273,7 +321,7 @@ describe("RodadaListPage", () => {
     } as never);
 
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: /gerar chaveamento/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^gerar chaveamento$/i }));
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith(
@@ -297,7 +345,7 @@ describe("RodadaListPage", () => {
     } as never);
 
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: /gerar chaveamento/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^gerar chaveamento$/i }));
 
     // extrairErro esta mockado globalmente neste arquivo (linha 12) pra
     // sempre devolver a mensagem generica -- o que importa aqui e provar
@@ -622,7 +670,7 @@ describe("RodadaListPage", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: /gerar chaveamento/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^gerar chaveamento$/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^gerar rodadas$/i })).not.toBeInTheDocument();
   });
 

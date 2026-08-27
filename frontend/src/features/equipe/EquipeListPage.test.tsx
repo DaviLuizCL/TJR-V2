@@ -9,7 +9,7 @@ import { useAuthStore } from "../../lib/auth-store";
 import { EquipeListPage } from "./EquipeListPage";
 
 vi.mock("../../api/client", () => ({
-  api: { GET: vi.fn(), POST: vi.fn(), PATCH: vi.fn() },
+  api: { GET: vi.fn(), POST: vi.fn(), PATCH: vi.fn(), DELETE: vi.fn() },
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
 
@@ -179,6 +179,31 @@ describe("EquipeListPage", () => {
     expect(screen.getByText("Equipe Sumo")).toBeInTheDocument();
   });
 
+  it("busca equipes pelo nome digitado, sem diferenciar maiusculas", async () => {
+    mockGetEquipes({
+      itens: [
+        { id: "eq1", nome: "ABCMP", nivel: 2, ativo: true },
+        { id: "eq2", nome: "Robocop Rosa", nivel: 2, ativo: true },
+        { id: "eq3", nome: "Hefesto Tech", nivel: 3, ativo: true },
+      ],
+      total: 3,
+      page: 1,
+      size: 50,
+    });
+
+    renderPage();
+
+    await screen.findByText("ABCMP");
+    expect(screen.getByText("Robocop Rosa")).toBeInTheDocument();
+    expect(screen.getByText("Hefesto Tech")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/buscar equipe/i), "hefesto");
+
+    await waitFor(() => expect(screen.queryByText("ABCMP")).not.toBeInTheDocument());
+    expect(screen.queryByText("Robocop Rosa")).not.toBeInTheDocument();
+    expect(screen.getByText("Hefesto Tech")).toBeInTheDocument();
+  });
+
   it("linka para a tela de submissoes da equipe", async () => {
     mockGetEquipes({
       itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
@@ -213,6 +238,78 @@ describe("EquipeListPage", () => {
         "/api/v1/equipes",
         expect.objectContaining({ body: { nome: "Equipe Nova", nivel: 1, ativo: true } }),
       ),
+    );
+  });
+
+  it("formulario de criar equipe mostra so as modalidades compativeis com o nivel selecionado", async () => {
+    mockGetEquipes(
+      { itens: [], total: 0, page: 1, size: 50 },
+      {
+        itens: [
+          { id: "mod-1", nome: "Sumô", niveis_aplicaveis: [2, 3, 4] },
+          { id: "mod-2", nome: "Sumô RC 1,5 kg", niveis_aplicaveis: [1] },
+        ],
+        total: 2,
+        page: 1,
+        size: 200,
+      },
+    );
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /criar equipe/i });
+    const secaoModalidades = screen.getByRole("group", { name: /modalidades/i });
+    await within(secaoModalidades).findByLabelText("Sumô RC 1,5 kg");
+    expect(within(secaoModalidades).queryByLabelText("Sumô")).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/nivel da equipe/i), "2");
+
+    expect(within(secaoModalidades).getByLabelText("Sumô")).toBeInTheDocument();
+    expect(within(secaoModalidades).queryByLabelText("Sumô RC 1,5 kg")).not.toBeInTheDocument();
+  });
+
+  it("cria equipe e ja inscreve nas modalidades marcadas no formulario", async () => {
+    mockGetEquipes(
+      { itens: [], total: 0, page: 1, size: 50 },
+      {
+        itens: [
+          { id: "mod-1", nome: "Cabo de Guerra", niveis_aplicaveis: [1] },
+          { id: "mod-2", nome: "Corrida de Carros Autônomos", niveis_aplicaveis: [1] },
+        ],
+        total: 2,
+        page: 1,
+        size: 200,
+      },
+    );
+    vi.mocked(api.POST).mockImplementation(async (path: unknown, opts?: unknown) => {
+      if (path === "/api/v1/equipes") {
+        return {
+          data: { id: "nova-equipe", nome: "Equipe Nova", nivel: 1, ativo: true },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/inscricoes") {
+        return { data: { id: "ins-x", ...(opts as { body: object }).body }, error: undefined } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /criar equipe/i });
+    await userEvent.type(screen.getByLabelText(/nome da equipe/i), "Equipe Nova");
+    await userEvent.click(await screen.findByLabelText("Cabo de Guerra"));
+    await userEvent.click(screen.getByRole("button", { name: /criar equipe/i }));
+
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith(
+        "/api/v1/inscricoes",
+        expect.objectContaining({ body: { equipe_id: "nova-equipe", modalidade_id: "mod-1" } }),
+      ),
+    );
+    expect(api.POST).not.toHaveBeenCalledWith(
+      "/api/v1/inscricoes",
+      expect.objectContaining({ body: expect.objectContaining({ modalidade_id: "mod-2" }) }),
     );
   });
 
@@ -331,5 +428,126 @@ describe("EquipeListPage", () => {
     expect(screen.getByRole("button", { name: /^criar equipe$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^editar$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /desativar/i })).toBeInTheDocument();
+  });
+
+  it("coordenador abre o painel de modalidades e ve as inscritas com opcao de remover", async () => {
+    mockGetEquipes(
+      { itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }], total: 1, page: 1, size: 50 },
+      {
+        itens: [
+          { id: "mod-1", nome: "Sumô", niveis_aplicaveis: [2, 3, 4] },
+          { id: "mod-2", nome: "Cabo de Guerra", niveis_aplicaveis: [2, 3, 4] },
+        ],
+        total: 2,
+        page: 1,
+        size: 200,
+      },
+      {
+        itens: [{ id: "ins-1", equipe_id: "eq1", modalidade_id: "mod-1" }],
+        total: 1,
+        page: 1,
+        size: 1000,
+      },
+    );
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^editar$/i }));
+
+    const painel = (await screen.findByLabelText(/modalidades de equipe alpha/i)).closest("div")!;
+    expect(within(painel).getByText("Sumô")).toBeInTheDocument();
+    expect(within(painel).getByRole("button", { name: /remover/i })).toBeInTheDocument();
+  });
+
+  it("select de adicionar modalidade so mostra as compativeis com o nivel da equipe, ainda nao inscritas", async () => {
+    mockGetEquipes(
+      { itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }], total: 1, page: 1, size: 50 },
+      {
+        itens: [
+          { id: "mod-1", nome: "Sumô", niveis_aplicaveis: [2, 3, 4] },
+          { id: "mod-2", nome: "Cabo de Guerra", niveis_aplicaveis: [2, 3, 4] },
+          { id: "mod-3", nome: "Sumô RC 1,5 kg", niveis_aplicaveis: [1] },
+        ],
+        total: 3,
+        page: 1,
+        size: 200,
+      },
+      {
+        itens: [{ id: "ins-1", equipe_id: "eq1", modalidade_id: "mod-1" }],
+        total: 1,
+        page: 1,
+        size: 1000,
+      },
+    );
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^editar$/i }));
+    const seletor = await screen.findByLabelText(/adicionar modalidade/i);
+
+    expect(within(seletor).queryByText("Sumô")).not.toBeInTheDocument();
+    expect(within(seletor).getByText("Cabo de Guerra")).toBeInTheDocument();
+    expect(within(seletor).queryByText("Sumô RC 1,5 kg")).not.toBeInTheDocument();
+  });
+
+  it("coordenador adiciona uma modalidade elegivel a uma equipe existente", async () => {
+    mockGetEquipes(
+      { itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }], total: 1, page: 1, size: 50 },
+      {
+        itens: [{ id: "mod-2", nome: "Cabo de Guerra", niveis_aplicaveis: [2, 3, 4] }],
+        total: 1,
+        page: 1,
+        size: 200,
+      },
+      { itens: [], total: 0, page: 1, size: 1000 },
+    );
+    vi.mocked(api.POST).mockResolvedValue({
+      data: { id: "ins-nova", equipe_id: "eq1", modalidade_id: "mod-2" },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^editar$/i }));
+    await userEvent.selectOptions(await screen.findByLabelText(/adicionar modalidade/i), "mod-2");
+    await userEvent.click(screen.getByRole("button", { name: /^adicionar$/i }));
+
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith(
+        "/api/v1/inscricoes",
+        expect.objectContaining({ body: { equipe_id: "eq1", modalidade_id: "mod-2" } }),
+      ),
+    );
+  });
+
+  it("coordenador remove uma modalidade de uma equipe", async () => {
+    mockGetEquipes(
+      { itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }], total: 1, page: 1, size: 50 },
+      {
+        itens: [{ id: "mod-1", nome: "Sumô", niveis_aplicaveis: [2, 3, 4] }],
+        total: 1,
+        page: 1,
+        size: 200,
+      },
+      {
+        itens: [{ id: "ins-1", equipe_id: "eq1", modalidade_id: "mod-1" }],
+        total: 1,
+        page: 1,
+        size: 1000,
+      },
+    );
+    vi.mocked(api.DELETE).mockResolvedValue({ data: undefined, error: undefined } as never);
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^editar$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /remover/i }));
+
+    await waitFor(() =>
+      expect(api.DELETE).toHaveBeenCalledWith(
+        "/api/v1/inscricoes/{inscricao_id}",
+        expect.objectContaining({ params: { path: { inscricao_id: "ins-1" } } }),
+      ),
+    );
   });
 });

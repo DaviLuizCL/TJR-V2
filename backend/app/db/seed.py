@@ -105,7 +105,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         # nivel existem (ver seed_arenas/_MODALIDADES_ARENA_POR_NIVEL).
         nome="Resgate no Plano",
         tipo_disputa=TipoDisputa.INDIVIDUAL,
-        qtd_rodadas=3,
+        qtd_rodadas=2,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
         duracao_maxima_rodada_seg=300,
@@ -115,7 +115,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
         nome="Resgate de Alto Risco",
         tipo_disputa=TipoDisputa.INDIVIDUAL,
-        qtd_rodadas=3,
+        qtd_rodadas=2,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
         duracao_maxima_rodada_seg=300,
@@ -125,7 +125,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
         nome="Viagem ao Centro da Terra",
         tipo_disputa=TipoDisputa.INDIVIDUAL,
-        qtd_rodadas=3,
+        qtd_rodadas=2,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
         ficha_unica_entre_niveis=False,
