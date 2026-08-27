@@ -13,6 +13,7 @@ from app.models.lancamento_item import LancamentoItem
 from app.models.modalidade import Consolidacao, FormatoChaveamento, Modalidade, TipoDisputa
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import Rodada
+from app.services.chaveamento import LIMITE_EQUIPES_TODOS_CONTRA_TODOS
 from app.services.modalidade import obter_modalidade
 
 
@@ -22,21 +23,75 @@ async def calcular_classificacao(db: AsyncSession, modalidade_id: UUID) -> list[
     Individual: soma/melhor rodada dos totais lancados (comportamento
     original, com desempates configuraveis).
 
-    Confronto + todos-contra-todos: pontos de liga (vitoria/empate/derrota),
-    usando `modalidade.pontos_vitoria`/`pontos_empate` (derrota nao pontua).
-
-    Confronto + mata-mata: sem nota, so numero de vitorias e derrotas
-    (ordenado por vitorias), e aponta quem eliminou a equipe.
+    Confronto: cada nivel pode estar num formato diferente (ver
+    `_formato_por_nivel`/`gerar_chaveamento_confronto`) - todos-contra-todos
+    usa pontos de liga (vitoria/empate/derrota, `modalidade.pontos_vitoria`/
+    `pontos_empate`); mata-mata nao tem nota, so vitorias/derrotas (ordenado
+    por vitorias) e aponta quem eliminou a equipe.
     """
     modalidade = await obter_modalidade(db, modalidade_id)
 
     if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
-        if modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA:
-            return await _classificacao_bracket(db, modalidade)
-        if modalidade.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS:
-            return await _classificacao_todos_contra_todos(db, modalidade)
+        return await _classificacao_confronto(db, modalidade)
 
     return await _classificacao_individual(db, modalidade)
+
+
+async def _formato_por_nivel(
+    db: AsyncSession, modalidade: Modalidade
+) -> dict[int, FormatoChaveamento]:
+    """Formato de cada nivel pra fins de classificacao: o que a(s) partida(s)
+    ja geradas daquele nivel decidiram (fonte da verdade, gravada em
+    Partida.formato_chaveamento no momento da criacao - ver
+    gerar_chaveamento_confronto), ou uma previa pela mesma regra de
+    contagem quando o nivel ainda nao tem chaveamento gerado.
+    """
+    resultado = await db.execute(
+        select(Partida.nivel, Partida.formato_chaveamento)
+        .join(Rodada, Partida.rodada_id == Rodada.id)
+        .where(Rodada.modalidade_id == modalidade.id, Partida.nivel.is_not(None))
+        .distinct()
+    )
+    ja_decidido = dict(resultado.all())
+
+    contagem_por_nivel: dict[int, int] = defaultdict(int)
+    for nivel in (await _equipes_por_nivel(db, modalidade.id)).values():
+        contagem_por_nivel[nivel] += 1
+
+    formatos: dict[int, FormatoChaveamento] = {}
+    for nivel, qtd in contagem_por_nivel.items():
+        if nivel in ja_decidido:
+            formatos[nivel] = ja_decidido[nivel]
+        elif modalidade.formato_chaveamento is not None:
+            formatos[nivel] = modalidade.formato_chaveamento
+        else:
+            formatos[nivel] = (
+                FormatoChaveamento.TODOS_CONTRA_TODOS
+                if qtd <= LIMITE_EQUIPES_TODOS_CONTRA_TODOS
+                else FormatoChaveamento.MATA_MATA
+            )
+    return formatos
+
+
+async def _classificacao_confronto(db: AsyncSession, modalidade: Modalidade) -> list[dict]:
+    formato_por_nivel = await _formato_por_nivel(db, modalidade)
+    niveis_bracket = {
+        nivel
+        for nivel, formato in formato_por_nivel.items()
+        if formato == FormatoChaveamento.MATA_MATA
+    }
+    niveis_liga = {
+        nivel
+        for nivel, formato in formato_por_nivel.items()
+        if formato == FormatoChaveamento.TODOS_CONTRA_TODOS
+    }
+
+    resultados: list[dict] = []
+    if niveis_bracket:
+        resultados.extend(await _classificacao_bracket(db, modalidade, niveis_bracket))
+    if niveis_liga:
+        resultados.extend(await _classificacao_todos_contra_todos(db, modalidade, niveis_liga))
+    return resultados
 
 
 async def _buscar_partidas_decididas(db: AsyncSession, modalidade_id: UUID) -> list[Partida]:
@@ -129,9 +184,20 @@ def _ordenar_com_desempate_confronto_direto(
     return ordenados
 
 
-async def _classificacao_todos_contra_todos(db: AsyncSession, modalidade: Modalidade) -> list[dict]:
+async def _classificacao_todos_contra_todos(
+    db: AsyncSession, modalidade: Modalidade, niveis: set[int]
+) -> list[dict]:
+    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
+    # Filtra por equipe (nao por partida.nivel): fixture antiga pode deixar
+    # Partida.nivel em branco mesmo a equipe pertencendo a um nivel de
+    # verdade - a associacao equipe->nivel via Equipe.nivel e que manda, o
+    # loop de stats abaixo ja ignora partida cujas equipes nao estao aqui.
     partidas = await _buscar_partidas_decididas(db, modalidade.id)
-    equipe_ids = await _equipes_inscritas(db, modalidade.id)
+    equipe_ids = [
+        eid
+        for eid in await _equipes_inscritas(db, modalidade.id)
+        if niveis_por_equipe.get(eid) in niveis
+    ]
 
     stats = {eid: {"vitorias": 0, "empates": 0, "derrotas": 0} for eid in equipe_ids}
     for partida in partidas:
@@ -161,17 +227,24 @@ async def _classificacao_todos_contra_todos(db: AsyncSession, modalidade: Modali
                 "empates": s["empates"],
                 "derrotas": s["derrotas"],
                 "eliminado_por_equipe_id": None,
+                "formato_chaveamento": FormatoChaveamento.TODOS_CONTRA_TODOS,
             }
         )
 
     resultados = _ordenar_com_desempate_confronto_direto(resultados, partidas)
-    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
     return _atribuir_posicoes_por_nivel(resultados, niveis_por_equipe, lambda r: -r["nota_final"])
 
 
-async def _classificacao_bracket(db: AsyncSession, modalidade: Modalidade) -> list[dict]:
+async def _classificacao_bracket(
+    db: AsyncSession, modalidade: Modalidade, niveis: set[int]
+) -> list[dict]:
+    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
     partidas = await _buscar_partidas_decididas(db, modalidade.id)
-    equipe_ids = await _equipes_inscritas(db, modalidade.id)
+    equipe_ids = [
+        eid
+        for eid in await _equipes_inscritas(db, modalidade.id)
+        if niveis_por_equipe.get(eid) in niveis
+    ]
 
     stats = {eid: {"vitorias": 0, "derrotas": 0, "eliminado_por": None} for eid in equipe_ids}
     for partida in partidas:
@@ -198,10 +271,10 @@ async def _classificacao_bracket(db: AsyncSession, modalidade: Modalidade) -> li
                 "empates": 0,
                 "derrotas": s["derrotas"],
                 "eliminado_por_equipe_id": s["eliminado_por"],
+                "formato_chaveamento": FormatoChaveamento.MATA_MATA,
             }
         )
 
-    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
     return _atribuir_posicoes_por_nivel(
         resultados, niveis_por_equipe, lambda r: (-r["vitorias"], r["derrotas"])
     )
@@ -271,6 +344,7 @@ async def _classificacao_individual(db: AsyncSession, modalidade: Modalidade) ->
                 "empates": 0,
                 "derrotas": 0,
                 "eliminado_por_equipe_id": None,
+                "formato_chaveamento": None,
             }
         )
 
@@ -357,5 +431,17 @@ def _valor_da_regra(
             Decimal("0"),
         )
 
-    # MENOR_TEMPO (ou tipo desconhecido): nao ha campo de tempo hoje, regra e pulada.
+    if tipo == "MENOR_TEMPO":
+        if not contados:
+            return None
+        tempos = [lanc.tempo_gasto_seg for lanc in contados if lanc.tempo_gasto_seg is not None]
+        # So decide se TODOS os lancamentos contados tem tempo registrado -
+        # comparar equipe com tempo contra equipe sem tempo nao faz sentido
+        # (nao da pra saber se a que nao registrou foi mais rapida ou mais
+        # lenta), regra e pulada e cai pra proxima.
+        if len(tempos) != len(contados):
+            return None
+        return Decimal(min(tempos))
+
+    # Tipo desconhecido: regra e pulada.
     return None

@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
+import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeInfo {
   id: string;
@@ -112,7 +113,7 @@ function NovaArenaForm({
                 checked={niveis.includes(nivel)}
                 onChange={() => alternarNivel(nivel)}
               />
-              Nível {nivel}
+              {rotuloNivel(nivel)}
             </label>
           ))}
         </div>
@@ -283,7 +284,7 @@ export function HorarioPage() {
                 <span className="font-medium text-slate-800">{arena.nome}</span>
                 <span className="ml-2 text-sm text-slate-500">
                   {arena.niveis_aplicaveis
-                    ? `Níveis ${arena.niveis_aplicaveis.join(", ")}`
+                    ? `Níveis ${arena.niveis_aplicaveis.map(rotuloNivel).join(", ")}`
                     : "Todos os níveis"}
                 </span>
               </div>

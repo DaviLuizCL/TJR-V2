@@ -10,7 +10,13 @@ from app.models.grupo import Grupo
 from app.models.inscricao import Inscricao
 from app.models.lancamento import Lancamento, LancamentoStatus
 from app.models.lancamento_item import LancamentoItem
-from app.models.modalidade import Consolidacao, Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import (
+    Consolidacao,
+    FormatoChaveamento,
+    Modalidade,
+    ModalidadeStatus,
+    TipoDisputa,
+)
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
@@ -95,6 +101,7 @@ async def test_criar_partida_entre_duas_equipes(db_session, modalidade):
         rodada_id=rodada.id,
         equipe_a_id=equipe_a.id,
         equipe_b_id=equipe_b.id,
+        formato_chaveamento=FormatoChaveamento.MATA_MATA,
         status=PartidaStatus.AGENDADA,
     )
     db_session.add(partida)

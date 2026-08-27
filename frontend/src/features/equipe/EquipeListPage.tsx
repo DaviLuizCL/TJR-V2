@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
+import { rotuloNivel } from "../../lib/nivel";
 
 const NIVEIS = [1, 2, 3, 4] as const;
 
@@ -61,7 +62,7 @@ function EquipeEditForm({
         >
           {NIVEIS.map((n) => (
             <option key={n} value={n}>
-              Nivel {n}
+              {rotuloNivel(n)}
             </option>
           ))}
         </select>
@@ -87,6 +88,11 @@ function EquipeEditForm({
 interface ModalidadeItem {
   id: string;
   nome: string;
+}
+
+interface InscricaoItem {
+  equipe_id: string;
+  modalidade_id: string;
 }
 
 export function EquipeListPage() {
@@ -115,6 +121,25 @@ export function EquipeListPage() {
       return (data?.itens ?? []) as EquipeItem[];
     },
   });
+
+  const { data: inscricoes } = useQuery({
+    queryKey: ["inscricoes", "todas-para-equipes"],
+    queryFn: async () => {
+      const { data } = await api.GET("/api/v1/inscricoes", { params: { query: { size: 1000 } } });
+      return (data?.itens ?? []) as InscricaoItem[];
+    },
+  });
+
+  const modalidadeNomePorId = new Map((modalidades ?? []).map((m) => [m.id, m.nome]));
+  const modalidadesPorEquipe = new Map<string, string[]>();
+  for (const inscricao of inscricoes ?? []) {
+    const nome = modalidadeNomePorId.get(inscricao.modalidade_id);
+    if (!nome) continue;
+    if (!modalidadesPorEquipe.has(inscricao.equipe_id)) {
+      modalidadesPorEquipe.set(inscricao.equipe_id, []);
+    }
+    modalidadesPorEquipe.get(inscricao.equipe_id)!.push(nome);
+  }
 
   const {
     register,
@@ -182,7 +207,7 @@ export function EquipeListPage() {
                 <option value="">Todos</option>
                 {NIVEIS.map((n) => (
                   <option key={n} value={n}>
-                    Nivel {n}
+                    {rotuloNivel(n)}
                   </option>
                 ))}
               </select>
@@ -229,7 +254,14 @@ export function EquipeListPage() {
                 <>
                   <div>
                     <span className="font-medium text-slate-800">{equipe.nome}</span>
-                    <span className="ml-2 text-sm text-slate-500">Nivel {equipe.nivel}</span>
+                    <span className="ml-2 text-sm text-slate-500">{rotuloNivel(equipe.nivel)}</span>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {modalidadesPorEquipe.get(equipe.id)?.length ? (
+                        <>Modalidades: {modalidadesPorEquipe.get(equipe.id)!.join(", ")}</>
+                      ) : (
+                        "Nenhuma modalidade"
+                      )}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span
@@ -306,7 +338,7 @@ export function EquipeListPage() {
             >
               {NIVEIS.map((n) => (
                 <option key={n} value={n}>
-                  Nivel {n}
+                  {rotuloNivel(n)}
                 </option>
               ))}
             </select>

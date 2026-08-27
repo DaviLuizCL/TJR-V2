@@ -10,7 +10,13 @@ from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
 from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
-from app.models.modalidade import Consolidacao, Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import (
+    Consolidacao,
+    FormatoChaveamento,
+    Modalidade,
+    ModalidadeStatus,
+    TipoDisputa,
+)
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
@@ -320,6 +326,7 @@ async def test_listar_auditoria_inclui_partida_id_quando_e_lancamento_de_confron
         equipe_a_id=equipe_a.id,
         equipe_b_id=equipe_b.id,
         nivel=equipe_a.nivel,
+        formato_chaveamento=FormatoChaveamento.MATA_MATA,
         status=PartidaStatus.AGENDADA,
     )
     db_session.add(partida)

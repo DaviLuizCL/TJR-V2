@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from datetime import UTC, date, datetime, time
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -7,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.errors import AppError
 from app.core.security import hash_senha
 from app.db.session import AsyncSessionLocal
 from app.models.agendamento import Agendamento
@@ -20,7 +22,6 @@ from app.models.inscricao import Inscricao
 from app.models.modalidade import (
     Consolidacao,
     DecisaoPartida,
-    FormatoChaveamento,
     Modalidade,
     ModalidadeStatus,
     TipoDisputa,
@@ -37,9 +38,12 @@ FUSO_FORTALEZA = ZoneInfo("America/Fortaleza")
 
 MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
+        # formato_chaveamento omitido (fica None) em todas as modalidades de
+        # confronto abaixo -- decisao automatica por nivel, ver
+        # services/chaveamento.py::gerar_chaveamento_confronto (<=5 equipes
+        # inscritas naquele nivel = todos-contra-todos, 6+ = mata-mata).
         nome="Sumô",
         tipo_disputa=TipoDisputa.CONFRONTO,
-        formato_chaveamento=FormatoChaveamento.MATA_MATA,
         qtd_rodadas=5,
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.SOMA_RODADAS,
@@ -48,19 +52,32 @@ MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
         # Mesmas regras do Sumô normal (mesmo formato, mesma ficha) -- a
         # diferenca e so a categoria do robo (controlado por radio em vez de
-        # autonomo), que nao afeta nenhuma regra de pontuacao/chaveamento.
-        nome="Sumô Controlado",
+        # autonomo), que nao afeta nenhuma regra de pontuacao/chaveamento. So
+        # tem equipe nivel 0/ABSOLUTO na planilha real (niveis_aplicaveis=[1],
+        # nivel 1 e o rotulo "ABSOLUTO" no front -- ver lib/nivel.ts).
+        nome="Sumô RC 1,5 kg",
         tipo_disputa=TipoDisputa.CONFRONTO,
-        formato_chaveamento=FormatoChaveamento.MATA_MATA,
         qtd_rodadas=5,
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.SOMA_RODADAS,
         decisao_partida=DecisaoPartida.SOMA_PONTOS,
+        niveis_aplicaveis=[1],
+    ),
+    dict(
+        # Mesma regra do Sumô normal, so muda a categoria de peso do robo
+        # (3kg em vez de 1,5kg) -- nao afeta pontuacao/chaveamento. So nivel
+        # 0/ABSOLUTO na planilha real.
+        nome="Sumô 3 kg",
+        tipo_disputa=TipoDisputa.CONFRONTO,
+        qtd_rodadas=5,
+        tentativas_por_rodada=2,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        decisao_partida=DecisaoPartida.SOMA_PONTOS,
+        niveis_aplicaveis=[1],
     ),
     dict(
         nome="Cabo de Guerra",
         tipo_disputa=TipoDisputa.CONFRONTO,
-        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
         qtd_rodadas=5,
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.SOMA_RODADAS,
@@ -69,7 +86,6 @@ MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
         nome="Corrida de Carros Autônomos",
         tipo_disputa=TipoDisputa.CONFRONTO,
-        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
         qtd_rodadas=5,
         tentativas_por_rodada=3,
         consolidacao=Consolidacao.SOMA_RODADAS,
@@ -84,13 +100,17 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         pausa_entre_rodadas_seg=60,
     ),
     dict(
+        # Sem equipe nivel 1/ABSOLUTO na planilha real pra essas duas -- so
+        # niveis 2, 3 e 4, que e exatamente onde as arenas dedicadas por
+        # nivel existem (ver seed_arenas/_MODALIDADES_ARENA_POR_NIVEL).
         nome="Resgate no Plano",
         tipo_disputa=TipoDisputa.INDIVIDUAL,
         qtd_rodadas=3,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
-        duracao_maxima_rodada_seg=180,
+        duracao_maxima_rodada_seg=300,
         pausa_entre_rodadas_seg=30,
+        niveis_aplicaveis=[2, 3, 4],
     ),
     dict(
         nome="Resgate de Alto Risco",
@@ -98,8 +118,9 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         qtd_rodadas=3,
         tentativas_por_rodada=1,
         consolidacao=Consolidacao.IGNORA_MENOR_NOTA,
-        duracao_maxima_rodada_seg=180,
+        duracao_maxima_rodada_seg=300,
         pausa_entre_rodadas_seg=30,
+        niveis_aplicaveis=[2, 3, 4],
     ),
     dict(
         nome="Viagem ao Centro da Terra",
@@ -506,7 +527,8 @@ def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]
 
 FICHAS_TJR: dict[str, tuple[tuple[str, tuple[dict, ...]], ...]] = {
     "Sumô": _FICHA_SUMO,
-    "Sumô Controlado": _FICHA_SUMO,
+    "Sumô RC 1,5 kg": _FICHA_SUMO,
+    "Sumô 3 kg": _FICHA_SUMO,
     "Cabo de Guerra": _FICHA_CABO_DE_GUERRA,
     "Corrida de Carros Autônomos": _FICHA_CORRIDA_DE_CARROS,
     "Dança": _FICHA_DANCA,
@@ -580,7 +602,7 @@ async def seed_modalidades(db: AsyncSession, evento: Evento) -> list[Modalidade]
                 nome=spec["nome"],
                 tipo_disputa=spec["tipo_disputa"],
                 formato_chaveamento=spec.get("formato_chaveamento"),
-                niveis_aplicaveis=[1, 2, 3, 4],
+                niveis_aplicaveis=spec.get("niveis_aplicaveis", [1, 2, 3, 4]),
                 ficha_unica_entre_niveis=spec.get("ficha_unica_entre_niveis", True),
                 qtd_rodadas=spec["qtd_rodadas"],
                 tentativas_por_rodada=spec["tentativas_por_rodada"],
@@ -718,6 +740,12 @@ async def seed_inscricoes(
     return inscricoes
 
 
+# Resgate no Plano/Alto Risco tem arena dedicada por nivel (2, 3 e 4) - o
+# restante das modalidades INDIVIDUAL usa 1 arena generica de sempre,
+# aberta pra qualquer nivel (niveis_aplicaveis=None).
+_MODALIDADES_ARENA_POR_NIVEL = ("Resgate no Plano", "Resgate de Alto Risco")
+
+
 async def seed_arenas(
     db: AsyncSession, modalidades: list[Modalidade], *, usuario_id: UUID
 ) -> list[Arena]:
@@ -730,6 +758,21 @@ async def seed_arenas(
         existentes = list(resultado.scalars().all())
         if existentes:
             arenas.extend(existentes)
+            continue
+
+        if modalidade.nome in _MODALIDADES_ARENA_POR_NIVEL:
+            for nivel in (2, 3, 4):
+                arena = await arena_service.criar_arena(
+                    db,
+                    ArenaCreate(
+                        modalidade_id=modalidade.id,
+                        nome=f"Arena Nível {nivel}",
+                        niveis_aplicaveis=[nivel],
+                        ativo=True,
+                    ),
+                    usuario_id=usuario_id,
+                )
+                arenas.append(arena)
             continue
 
         arena = await arena_service.criar_arena(
@@ -746,15 +789,15 @@ async def seed_arenas(
     return arenas
 
 
-async def _obter_ou_gerar_chaveamento_inicial(
+async def _obter_ou_gerar_chaveamento_confronto(
     db: AsyncSession, modalidade_id: UUID, *, usuario_id: UUID
-) -> Rodada:
-    existente = await db.scalar(
-        select(Rodada).where(Rodada.modalidade_id == modalidade_id, Rodada.numero == 1)
+) -> list[Rodada]:
+    existentes = list(
+        (await db.scalars(select(Rodada).where(Rodada.modalidade_id == modalidade_id))).all()
     )
-    if existente is not None:
-        return existente
-    return await chaveamento_service.gerar_chaveamento_inicial(
+    if existentes:
+        return existentes
+    return await chaveamento_service.gerar_chaveamento_confronto(
         db, modalidade_id, usuario_id=usuario_id
     )
 
@@ -762,21 +805,32 @@ async def _obter_ou_gerar_chaveamento_inicial(
 async def seed_rodadas(
     db: AsyncSession, modalidades: list[Modalidade], *, usuario_id: UUID
 ) -> list[Rodada]:
-    # MATA_MATA nao pode pre-gerar as `qtd_rodadas` inteiras como as demais
-    # (gerar_rodadas faz pareamento round-robin generico, que nao serve pra
-    # bracket de eliminacao - rodada 2+ so existe depois que a rodada
-    # anterior fecha de verdade, via avancar_se_rodada_completa). Por isso
-    # essa modalidade usa gerar_chaveamento_inicial (so a Rodada 1), nao
-    # gerar_rodadas.
+    # CONFRONTO usa gerar_chaveamento_confronto (decide mata-mata vs
+    # todos-contra-todos por nivel, ver comentario em MODALIDADES_TJR) em vez
+    # de gerar_rodadas -- esse ultimo faz pareamento round-robin generico,
+    # que so serve pro lado todos-contra-todos; usa-lo pra um nivel que virou
+    # mata-mata pre-criaria confrontos que nao dependem de quem venceria a
+    # rodada anterior (errado pro bracket) e deixaria o chaveamento
+    # inacessivel depois (409 CHAVEAMENTO_JA_INICIADO, ja que ja existiria
+    # rodada).
     rodadas: list[Rodada] = []
     for modalidade in modalidades:
-        if (
-            modalidade.tipo_disputa == TipoDisputa.CONFRONTO
-            and modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA
-        ):
-            rodadas.append(
-                await _obter_ou_gerar_chaveamento_inicial(db, modalidade.id, usuario_id=usuario_id)
-            )
+        if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
+            try:
+                rodadas.extend(
+                    await _obter_ou_gerar_chaveamento_confronto(
+                        db, modalidade.id, usuario_id=usuario_id
+                    )
+                )
+            except AppError as erro:
+                if erro.codigo != "MODALIDADE_CONFLITANTE_EM_ANDAMENTO":
+                    raise
+                # Sumo RC 1,5kg e Sumo 1,5kg tradicional nao podem ficar
+                # "abertos" ao mesmo tempo (mesmo robo fisico possivel) - o
+                # mesmo bloqueio do dia real (chaveamento.py) tambem vale
+                # aqui: o seed so deixa uma das duas pronta pra pontuar de
+                # cada vez, igual valeria em producao.
+                continue
         else:
             rodadas.extend(
                 await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id)
@@ -828,7 +882,14 @@ async def seed_agendamentos(
     return agendamentos
 
 
-async def _main() -> None:
+async def _main(*, apenas_estrutura: bool = False) -> None:
+    """--apenas-estrutura pula equipe/inscricao/rodada/agendamento FICTICIOS
+    (EQUIPES_TJR, "Nivel X - Equipe Y") -- so cria coordenador/evento/
+    modalidade/ficha/arena, que sao reais em qualquer ambiente (dev ou
+    producao). Usado antes de importar o cadastro real de equipes (script
+    em scripts/lista_2026/), pra nao deixar chaveamento fake gerado bloqueando
+    o real depois (gerar_chaveamento_confronto recusa se ja existe rodada).
+    """
     async with AsyncSessionLocal() as db:
         coordenador = await seed_coordenador(
             db, email=settings.seed_coordenador_email, senha=settings.seed_coordenador_senha
@@ -836,13 +897,14 @@ async def _main() -> None:
         evento = await seed_evento(db)
         modalidades = await seed_modalidades(db, evento)
         await seed_fichas(db, modalidades)
-        equipes = await seed_equipes_credenciadas(db)
-        await seed_inscricoes(db, modalidades, equipes)
         await seed_arenas(db, modalidades, usuario_id=coordenador.id)
-        await seed_rodadas(db, modalidades, usuario_id=coordenador.id)
-        await seed_agendamentos(db, evento, modalidades, usuario_id=coordenador.id)
+        if not apenas_estrutura:
+            equipes = await seed_equipes_credenciadas(db)
+            await seed_inscricoes(db, modalidades, equipes)
+            await seed_rodadas(db, modalidades, usuario_id=coordenador.id)
+            await seed_agendamentos(db, evento, modalidades, usuario_id=coordenador.id)
         await db.commit()
 
 
 if __name__ == "__main__":
-    asyncio.run(_main())
+    asyncio.run(_main(apenas_estrutura="--apenas-estrutura" in sys.argv))

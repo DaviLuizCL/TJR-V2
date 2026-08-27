@@ -251,6 +251,7 @@ async def criar_lancamento(
         revision=1,
         status=LancamentoStatus.PENDENTE,
         total=resultado_calculo.total,
+        tempo_gasto_seg=dto.tempo_gasto_seg,
     )
     db.add(lancamento)
     await db.flush()

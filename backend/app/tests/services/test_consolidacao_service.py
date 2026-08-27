@@ -174,6 +174,7 @@ async def _lancar(
     *,
     tentativa=1,
     confirmar=True,
+    tempo_gasto_seg=None,
 ):
     await _garantir_agendamento(db_session, ficha, rodada, equipe)
     payload = LancamentoCreate(
@@ -186,6 +187,7 @@ async def _lancar(
             ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=ocorrencias)
             for criterio, ocorrencias in itens_ocorrencias.items()
         ],
+        tempo_gasto_seg=tempo_gasto_seg,
     )
     lancamento = await criar_lancamento(db_session, payload, arbitro_id=arbitro.id)
     if confirmar:
@@ -511,6 +513,36 @@ async def test_desempate_pula_menor_tempo_por_falta_de_dado_e_usa_proxima_regra(
     assert {_posicao(resultados, equipe_a.id), _posicao(resultados, equipe_b.id)} == {1, 2}
 
 
+async def test_desempate_por_menor_tempo_decide_quando_tempo_esta_registrado(db_session):
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-tempo@tjr.app")
+    modalidade = await _criar_modalidade(
+        db_session,
+        desempates=[{"tipo": "MENOR_TEMPO", "direcao": "MENOR"}],
+    )
+    ficha, criterios = await _criar_ficha(db_session, modalidade, {"c": {"pontos": Decimal("5")}})
+    await publicar_ficha(db_session, ficha.id, usuario_id=coordenador.id)
+    arbitro = await _criar_arbitro(db_session)
+    r1 = await _criar_rodada(db_session, modalidade, 1)
+    equipe_a = await _criar_equipe_inscrita(db_session, modalidade, "Equipe A", coordenador)
+    equipe_b = await _criar_equipe_inscrita(db_session, modalidade, "Equipe B", coordenador)
+
+    # Empate em nota (50 pra cada), mas B foi mais rapida (90s < 120s) -- A
+    # foi criada primeiro (ordem de insercao), entao se a regra nao fizer
+    # nada de verdade a ordenacao estavel deixaria A na frente por acidente.
+    await _lancar(
+        db_session, ficha, r1, equipe_a, arbitro, {criterios["c"]: 10}, tempo_gasto_seg=120
+    )
+    await _lancar(
+        db_session, ficha, r1, equipe_b, arbitro, {criterios["c"]: 10}, tempo_gasto_seg=90
+    )
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    assert _nota(resultados, equipe_a.id) == _nota(resultados, equipe_b.id) == Decimal("50")
+    assert _posicao(resultados, equipe_b.id) == 1
+    assert _posicao(resultados, equipe_a.id) == 2
+
+
 # ---------- ranking de confronto (todos-contra-todos e mata-mata) ----------
 
 
@@ -602,6 +634,7 @@ async def test_todos_contra_todos_calcula_pontos_de_liga(db_session):
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -611,6 +644,7 @@ async def test_todos_contra_todos_calcula_pontos_de_liga(db_session):
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_c.id,
             vencedor_id=None,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             status=PartidaStatus.EMPATADA,
         )
     )
@@ -620,6 +654,7 @@ async def test_todos_contra_todos_calcula_pontos_de_liga(db_session):
             equipe_a_id=equipe_b.id,
             equipe_b_id=equipe_c.id,
             vencedor_id=equipe_b.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -661,6 +696,7 @@ async def test_mata_mata_ranking_mostra_vitorias_derrotas_e_eliminado_por(db_ses
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -670,6 +706,7 @@ async def test_mata_mata_ranking_mostra_vitorias_derrotas_e_eliminado_por(db_ses
             equipe_a_id=equipe_c.id,
             equipe_b_id=equipe_d.id,
             vencedor_id=equipe_c.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -679,6 +716,7 @@ async def test_mata_mata_ranking_mostra_vitorias_derrotas_e_eliminado_por(db_ses
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_c.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -755,6 +793,7 @@ async def test_classificacao_bracket_nao_mistura_niveis_diferentes(db_session):
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             nivel=1,
             status=PartidaStatus.ENCERRADA,
         )
@@ -765,6 +804,7 @@ async def test_classificacao_bracket_nao_mistura_niveis_diferentes(db_session):
             equipe_a_id=equipe_c.id,
             equipe_b_id=equipe_d.id,
             vencedor_id=equipe_c.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             nivel=2,
             status=PartidaStatus.ENCERRADA,
         )
@@ -801,6 +841,7 @@ async def test_todos_contra_todos_desempate_por_confronto_direto(db_session):
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -810,6 +851,7 @@ async def test_todos_contra_todos_desempate_por_confronto_direto(db_session):
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_c.id,
             vencedor_id=equipe_c.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -848,6 +890,7 @@ async def test_todos_contra_todos_desempate_cai_para_mais_vitorias_sem_confronto
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_c.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -857,6 +900,7 @@ async def test_todos_contra_todos_desempate_cai_para_mais_vitorias_sem_confronto
             equipe_a_id=equipe_b.id,
             equipe_b_id=equipe_d.id,
             vencedor_id=None,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             status=PartidaStatus.EMPATADA,
         )
     )
@@ -896,6 +940,7 @@ async def test_classificacao_todos_contra_todos_nao_mistura_niveis_diferentes(db
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             nivel=1,
             status=PartidaStatus.ENCERRADA,
         )
@@ -906,6 +951,7 @@ async def test_classificacao_todos_contra_todos_nao_mistura_niveis_diferentes(db
             equipe_a_id=equipe_c.id,
             equipe_b_id=equipe_d.id,
             vencedor_id=equipe_c.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
             nivel=2,
             status=PartidaStatus.ENCERRADA,
         )
@@ -917,4 +963,66 @@ async def test_classificacao_todos_contra_todos_nao_mistura_niveis_diferentes(db
     assert _posicao(resultados, equipe_a.id) == 1
     assert _posicao(resultados, equipe_c.id) == 1
     assert _posicao(resultados, equipe_b.id) == 2
+    assert _posicao(resultados, equipe_d.id) == 2
+
+
+async def test_classificacao_confronto_usa_formato_por_nivel_no_mesmo_calculo(db_session):
+    # Cenario alvo do chaveamento por nivel: nivel 1 e todos-contra-todos
+    # (nota de liga), nivel 2 e mata-mata (vitorias/derrotas/eliminado_por,
+    # sem nota) - NA MESMA modalidade, modalidade.formato_chaveamento=None
+    # (decisao automatica). calcular_classificacao precisa aplicar a formula
+    # certa a cada equipe, olhando o formato da partida do nivel dela.
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-misto@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    equipe_a = await _inscrever_equipe_generica(
+        db_session, modalidade, "N1 A", coordenador, nivel=1
+    )
+    equipe_b = await _inscrever_equipe_generica(
+        db_session, modalidade, "N1 B", coordenador, nivel=1
+    )
+    equipe_c = await _inscrever_equipe_generica(
+        db_session, modalidade, "N2 C", coordenador, nivel=2
+    )
+    equipe_d = await _inscrever_equipe_generica(
+        db_session, modalidade, "N2 D", coordenador, nivel=2
+    )
+    rodada = await _criar_rodada_confronto(db_session, modalidade)
+
+    # Nivel 1 (todos-contra-todos): A bate B -> A tem nota_final = pontos_vitoria.
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_b.id,
+            vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+            nivel=1,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    # Nivel 2 (mata-mata): C bate D -> C tem 1 vitoria, sem nota.
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_c.id,
+            equipe_b_id=equipe_d.id,
+            vencedor_id=equipe_c.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
+            nivel=2,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    await db_session.flush()
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    assert _nota(resultados, equipe_a.id) == Decimal("3")
+    assert _nota(resultados, equipe_b.id) == Decimal("0")
+    assert _posicao(resultados, equipe_a.id) == 1
+    assert _posicao(resultados, equipe_b.id) == 2
+
+    assert _vitorias(resultados, equipe_c.id) == 1
+    assert _derrotas(resultados, equipe_d.id) == 1
+    assert _eliminado_por(resultados, equipe_d.id) == equipe_c.id
+    assert _posicao(resultados, equipe_c.id) == 1
     assert _posicao(resultados, equipe_d.id) == 2

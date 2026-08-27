@@ -16,6 +16,7 @@ interface EnfileirarCriarParams {
   itens: ItemLancamento[];
   totalPreview: number;
   partidaId?: string;
+  tempoGastoSeg?: number;
 }
 
 interface EnfileirarConfirmarParams {
@@ -46,6 +47,7 @@ export async function enfileirarCriarLancamento(
       tentativa: params.tentativa,
       equipe_id: params.equipeId,
       ...(params.partidaId ? { partida_id: params.partidaId } : {}),
+      ...(params.tempoGastoSeg != null ? { tempo_gasto_seg: params.tempoGastoSeg } : {}),
       client_operation_id: clientOperationId,
       itens: params.itens,
       totalPreview: params.totalPreview,

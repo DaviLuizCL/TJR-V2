@@ -15,19 +15,9 @@ vi.mock("../../api/client", () => ({
 }));
 
 const MODALIDADES = [
-  { id: "mod-individual", nome: "Resgate no Plano", tipo_disputa: "INDIVIDUAL", formato_chaveamento: null },
-  {
-    id: "mod-matamata",
-    nome: "Sumô",
-    tipo_disputa: "CONFRONTO",
-    formato_chaveamento: "MATA_MATA",
-  },
-  {
-    id: "mod-todoscontratodos",
-    nome: "Cabo de Guerra",
-    tipo_disputa: "CONFRONTO",
-    formato_chaveamento: "TODOS_CONTRA_TODOS",
-  },
+  { id: "mod-individual", nome: "Resgate no Plano", tipo_disputa: "INDIVIDUAL" },
+  { id: "mod-matamata", nome: "Sumô", tipo_disputa: "CONFRONTO" },
+  { id: "mod-todoscontratodos", nome: "Cabo de Guerra", tipo_disputa: "CONFRONTO" },
 ];
 
 function renderModal(onFechar = vi.fn()) {
@@ -52,7 +42,7 @@ describe("AbrirEventoModal", () => {
     expect(screen.getByLabelText("Cabo de Guerra")).toBeInTheDocument();
   });
 
-  it("chama o endpoint certo por tipo/formato: chaveamento pro mata-mata, rodadas/gerar pros outros", async () => {
+  it("chama o endpoint certo por tipo: chaveamento/gerar pra toda modalidade de confronto (decide mata-mata/todos-contra-todos por nivel sozinho), rodadas/gerar so pra individual", async () => {
     vi.mocked(api.POST).mockResolvedValue({
       data: { id: "r1", numero: 1 },
       error: undefined,
@@ -68,16 +58,24 @@ describe("AbrirEventoModal", () => {
       ),
     );
     expect(api.POST).toHaveBeenCalledWith(
-      "/api/v1/rodadas/gerar",
-      expect.objectContaining({ body: { modalidade_id: "mod-individual" } }),
+      "/api/v1/chaveamento/gerar",
+      expect.objectContaining({ body: { modalidade_id: "mod-todoscontratodos" } }),
     );
     expect(api.POST).toHaveBeenCalledWith(
       "/api/v1/rodadas/gerar",
-      expect.objectContaining({ body: { modalidade_id: "mod-todoscontratodos" } }),
+      expect.objectContaining({ body: { modalidade_id: "mod-individual" } }),
     );
     expect(api.POST).not.toHaveBeenCalledWith(
       "/api/v1/chaveamento/gerar",
       expect.objectContaining({ body: { modalidade_id: "mod-individual" } }),
+    );
+    expect(api.POST).not.toHaveBeenCalledWith(
+      "/api/v1/rodadas/gerar",
+      expect.objectContaining({ body: { modalidade_id: "mod-matamata" } }),
+    );
+    expect(api.POST).not.toHaveBeenCalledWith(
+      "/api/v1/rodadas/gerar",
+      expect.objectContaining({ body: { modalidade_id: "mod-todoscontratodos" } }),
     );
   });
 

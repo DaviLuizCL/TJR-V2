@@ -119,7 +119,7 @@ describe("PainelPage", () => {
 
     const card = (await screen.findByText("Joana Arbitra")).closest("li")!;
     expect(within(card).getByText(/Sumo/)).toBeInTheDocument();
-    expect(within(card).getByText(/Nivel 2/)).toBeInTheDocument();
+    expect(within(card).getByText(/Nível 2/)).toBeInTheDocument();
     expect(within(card).getByText("55")).toBeInTheDocument();
     expect(within(card).getByText("Lombada: 30")).toBeInTheDocument();
     expect(within(card).getByText("Curva perfeita")).toBeInTheDocument();

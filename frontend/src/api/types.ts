@@ -875,6 +875,8 @@ export interface components {
             eliminado_por_nome: string | null;
             /** Posicao */
             posicao: number;
+            /** Formato Chaveamento */
+            formato_chaveamento: string | null;
         };
         /**
          * Consolidacao
@@ -1365,7 +1367,10 @@ export interface components {
         };
         /** LancamentoCorrigir */
         LancamentoCorrigir: {
-            /** Justificativa */
+            /**
+             * Justificativa
+             * @default
+             */
             justificativa: string;
             /** Revision */
             revision: number;
@@ -1403,6 +1408,8 @@ export interface components {
             client_operation_id: string;
             /** Itens */
             itens: components["schemas"]["ItemLancamentoInput"][];
+            /** Tempo Gasto Seg */
+            tempo_gasto_seg?: number | null;
         };
         /** LancamentoOut */
         LancamentoOut: {
@@ -1445,6 +1452,8 @@ export interface components {
             status: components["schemas"]["LancamentoStatus"];
             /** Total */
             total: number;
+            /** Tempo Gasto Seg */
+            tempo_gasto_seg: number | null;
             /** Itens */
             itens: components["schemas"]["ItemLancamentoOut"][];
             /**
@@ -1800,6 +1809,7 @@ export interface components {
             vencedor_id: string | null;
             /** Nivel */
             nivel: number | null;
+            formato_chaveamento: components["schemas"]["FormatoChaveamento"];
             status: components["schemas"]["PartidaStatus"];
             /**
              * Criado Em
@@ -2380,6 +2390,7 @@ export interface operations {
             query?: {
                 nivel?: number | null;
                 ativo?: boolean | null;
+                modalidade_id?: string | null;
                 page?: number;
                 size?: number;
             };

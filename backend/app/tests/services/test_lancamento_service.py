@@ -161,7 +161,16 @@ async def _cenario_basico(db_session, **kwargs_modalidade):
     return modalidade, ficha, criterio, rodada, equipe, arbitro
 
 
-def _payload(ficha, rodada, equipe, criterio, *, ocorrencias=3, client_operation_id=None):
+def _payload(
+    ficha,
+    rodada,
+    equipe,
+    criterio,
+    *,
+    ocorrencias=3,
+    client_operation_id=None,
+    tempo_gasto_seg=None,
+):
     return LancamentoCreate(
         ficha_id=ficha.id,
         rodada_id=rodada.id,
@@ -170,6 +179,7 @@ def _payload(ficha, rodada, equipe, criterio, *, ocorrencias=3, client_operation
         partida_id=None,
         client_operation_id=client_operation_id or uuid.uuid4(),
         itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=ocorrencias)],
+        tempo_gasto_seg=tempo_gasto_seg,
     )
 
 
@@ -182,6 +192,28 @@ async def test_criar_lancamento_calcula_total_via_servico_de_calculo(db_session)
 
     assert lancamento.total == Decimal("30")
     assert lancamento.status == LancamentoStatus.PENDENTE
+
+
+async def test_criar_lancamento_grava_tempo_gasto_seg_quando_informado(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+
+    lancamento = await criar_lancamento(
+        db_session,
+        _payload(ficha, rodada, equipe, criterio, tempo_gasto_seg=87),
+        arbitro_id=arbitro.id,
+    )
+
+    assert lancamento.tempo_gasto_seg == 87
+
+
+async def test_criar_lancamento_tempo_gasto_seg_e_opcional(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+
+    assert lancamento.tempo_gasto_seg is None
 
 
 async def test_criar_lancamento_grava_item_com_criterio_snapshot(db_session):

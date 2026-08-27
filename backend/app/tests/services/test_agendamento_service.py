@@ -33,25 +33,29 @@ async def _criar_coordenador(db_session, email="coord-agendamento@tjr.app") -> U
 async def _criar_modalidade(
     db_session,
     *,
+    nome="Resgate no Plano",
+    evento_id=None,
     tipo_disputa=TipoDisputa.INDIVIDUAL,
     niveis_aplicaveis=None,
     qtd_rodadas=3,
     duracao_maxima_rodada_seg=300,
     pausa_entre_rodadas_seg=None,
 ) -> Modalidade:
-    evento = Evento(
-        nome="TJR 2026",
-        ano=2026,
-        data_inicio=date(2026, 3, 10),
-        data_fim=date(2026, 3, 12),
-        status=EventoStatus.RASCUNHO,
-    )
-    db_session.add(evento)
-    await db_session.flush()
+    if evento_id is None:
+        evento = Evento(
+            nome="TJR 2026",
+            ano=2026,
+            data_inicio=date(2026, 3, 10),
+            data_fim=date(2026, 3, 12),
+            status=EventoStatus.RASCUNHO,
+        )
+        db_session.add(evento)
+        await db_session.flush()
+        evento_id = evento.id
 
     modalidade = Modalidade(
-        evento_id=evento.id,
-        nome="Resgate no Plano",
+        evento_id=evento_id,
+        nome=nome,
         tipo_disputa=tipo_disputa,
         niveis_aplicaveis=niveis_aplicaveis or [1, 2, 3, 4],
         ficha_unica_entre_niveis=True,
@@ -219,6 +223,60 @@ async def test_gerar_agendamentos_calcula_ordem_e_horario_corretamente(db_sessio
     rodada_atualizada = await db_session.get(Rodada, rodada.id)
     assert rodada_atualizada.horario_inicio == inicio
     assert rodada_atualizada.modo_horario == ModoHorario.AUTOMATICO
+
+
+async def test_gerar_agendamentos_evita_mesmo_horario_para_equipe_em_modalidade_conflitante(
+    db_session,
+):
+    # Equipe em Resgate no Plano E Resgate de Alto Risco: o robo pode ser o
+    # mesmo, entao a equipe nao pode ter bateria marcada pro mesmo instante
+    # nas duas modalidades.
+    coordenador = await _criar_coordenador(db_session, "coord-conflito@tjr.app")
+    plano = await _criar_modalidade(db_session, nome="Resgate no Plano")
+    alto_risco = await _criar_modalidade(
+        db_session, nome="Resgate de Alto Risco", evento_id=plano.evento_id
+    )
+    equipe = await _criar_equipe_inscrita(db_session, plano, coordenador, nome="Equipe X", nivel=1)
+    await criar_inscricao(
+        db_session,
+        InscricaoCreate(equipe_id=equipe.id, modalidade_id=alto_risco.id),
+        usuario_id=coordenador.id,
+    )
+    await _criar_arena(db_session, plano, nome="Arena Plano")
+    await _criar_arena(db_session, alto_risco, nome="Arena Alto Risco")
+    rodada_plano = await _criar_rodada(db_session, plano, 1)
+    rodada_alto_risco = await _criar_rodada(db_session, alto_risco, 1)
+    horario = datetime(2026, 3, 10, 9, 0, tzinfo=UTC)
+
+    await gerar_agendamentos(
+        db_session, plano.id, [rodada_plano.id], horario, usuario_id=coordenador.id
+    )
+    await gerar_agendamentos(
+        db_session, alto_risco.id, [rodada_alto_risco.id], horario, usuario_id=coordenador.id
+    )
+
+    [agendamento_plano] = await _agendamentos_da_rodada(db_session, rodada_plano.id)
+    [agendamento_alto_risco] = await _agendamentos_da_rodada(db_session, rodada_alto_risco.id)
+
+    assert agendamento_plano.horario_inicio != agendamento_alto_risco.horario_inicio
+
+
+async def test_gerar_agendamentos_nao_mexe_em_horario_de_equipe_sem_conflito(db_session):
+    # Equipe que NAO esta na modalidade pareada continua recebendo o
+    # primeiro horario da fila normalmente (sem desvio desnecessario).
+    coordenador = await _criar_coordenador(db_session, "coord-sem-conflito@tjr.app")
+    plano = await _criar_modalidade(db_session, nome="Resgate no Plano")
+    await _criar_arena(db_session, plano, nome="Arena Plano")
+    await _criar_equipe_inscrita(db_session, plano, coordenador, nome="Equipe Y", nivel=1)
+    rodada_plano = await _criar_rodada(db_session, plano, 1)
+    horario = datetime(2026, 3, 10, 9, 0, tzinfo=UTC)
+
+    await gerar_agendamentos(
+        db_session, plano.id, [rodada_plano.id], horario, usuario_id=coordenador.id
+    )
+
+    [agendamento] = await _agendamentos_da_rodada(db_session, rodada_plano.id)
+    assert agendamento.horario_inicio == horario
 
 
 async def test_gerar_agendamentos_grava_audit_log(db_session):

@@ -15,6 +15,23 @@ from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.services.audit import registrar_audit_log
 from app.services.modalidade import obter_modalidade
+from app.services.rodada import _gerar_pareamento, _rodadas_necessarias
+
+# Nivel com ate esse tanto de equipes vira todos-contra-todos; acima disso
+# vira mata-mata (regra combinada com o usuario pras modalidades de combate
+# do TJR 2026 - ver gerar_chaveamento_confronto).
+LIMITE_EQUIPES_TODOS_CONTRA_TODOS = 5
+
+# Par fixo (TJR 2026): Sumo RC 1,5kg e Sumo 1,5kg tradicional competem com o
+# mesmo robo fisico possivel. Confronto nao tem agenda de horario (o bracket
+# avanca dinamicamente conforme os resultados fecham, sem grade fixa como a
+# das modalidades INDIVIDUAL - ver agendamento.py), entao a unica forma de
+# garantir que as duas nunca ficam "abertas" ao mesmo tempo pro arbitro
+# pontuar e travar o INICIO da segunda ate a primeira encerrar de vez.
+_MODALIDADES_COMBATE_CONFLITANTE: dict[str, str] = {
+    "Sumô": "Sumô RC 1,5 kg",
+    "Sumô RC 1,5 kg": "Sumô",
+}
 
 
 def _dump(obj) -> dict:
@@ -43,12 +60,16 @@ def _criar_partida(
     equipe_b_id: UUID | None,
     nivel: int | None = None,
 ) -> Partida:
-    """Uma partida com equipe_b_id=None e um bye: fecha sozinha, sem jogo."""
+    """Uma partida com equipe_b_id=None e um bye: fecha sozinha, sem jogo.
+    So usada pelo lado bracket (gerar_chaveamento_inicial/avancar_se_rodada_completa),
+    por isso formato_chaveamento e sempre MATA_MATA aqui.
+    """
     return Partida(
         rodada_id=rodada_id,
         equipe_a_id=equipe_a_id,
         equipe_b_id=equipe_b_id,
         nivel=nivel,
+        formato_chaveamento=FormatoChaveamento.MATA_MATA,
         vencedor_id=equipe_a_id if equipe_b_id is None else None,
         status=PartidaStatus.ENCERRADA if equipe_b_id is None else PartidaStatus.AGENDADA,
     )
@@ -135,6 +156,175 @@ async def gerar_chaveamento_inicial(
     )
 
     return rodada
+
+
+async def _recusar_se_par_conflitante_em_andamento(
+    db: AsyncSession, modalidade: Modalidade
+) -> None:
+    nome_par = _MODALIDADES_COMBATE_CONFLITANTE.get(modalidade.nome)
+    if nome_par is None:
+        return
+
+    modalidade_par = await db.scalar(
+        select(Modalidade).where(
+            Modalidade.evento_id == modalidade.evento_id, Modalidade.nome == nome_par
+        )
+    )
+    if modalidade_par is None:
+        return
+
+    tem_partida_aberta = await db.scalar(
+        select(Partida.id)
+        .join(Rodada, Partida.rodada_id == Rodada.id)
+        .where(
+            Rodada.modalidade_id == modalidade_par.id,
+            Partida.status.in_((PartidaStatus.AGENDADA, PartidaStatus.EM_ANDAMENTO)),
+        )
+        .limit(1)
+    )
+    if tem_partida_aberta is not None:
+        raise AppError(
+            codigo="MODALIDADE_CONFLITANTE_EM_ANDAMENTO",
+            mensagem=(
+                f"Finalize {nome_par} antes de iniciar {modalidade.nome} - as duas competem "
+                "com o mesmo tipo de robo e nao podem rodar ao mesmo tempo."
+            ),
+            status_code=422,
+        )
+
+
+async def gerar_chaveamento_confronto(
+    db: AsyncSession, modalidade_id: UUID, *, usuario_id: UUID
+) -> list[Rodada]:
+    """Ponto de entrada unico pra iniciar uma modalidade de confronto.
+
+    Antes, `gerar_chaveamento_inicial` (bracket) e `gerar_rodadas` (returno)
+    exigiam que a modalidade inteira estivesse num formato so - mas a regra
+    real (TJR 2026) precisa decidir por nivel: <=5 equipes inscritas nesse
+    nivel = todos-contra-todos, 6+ = mata-mata. `modalidade.formato_chaveamento`
+    continua existindo, so muda de sentido: None = decisao automatica por
+    nivel (o caso comum agora); um valor explicito forca esse formato pra
+    TODOS os niveis da modalidade, ignorando a contagem (escape manual, ex.:
+    coordenador quer garantir mata-mata mesmo com poucas equipes).
+
+    Reaproveita a mesma mecanica ja usada por `gerar_chaveamento_inicial`
+    (bracket, `_criar_partida`/`_parear_com_bye`) e por `gerar_rodadas`
+    (returno, `_gerar_pareamento`/`_rodadas_necessarias`) - so que agora cada
+    uma opera so no subconjunto de niveis que decidiu usar aquele formato,
+    dentro da MESMA sequencia de `Rodada.numero` (um nivel bracket e um
+    nivel returno podem, por exemplo, dividir a Rodada 1 sem conflito,
+    porque toda partida ja carrega `nivel`).
+    """
+    modalidade = await obter_modalidade(db, modalidade_id)
+
+    if modalidade.tipo_disputa != TipoDisputa.CONFRONTO:
+        raise AppError(
+            codigo="MODALIDADE_NAO_E_CONFRONTO",
+            mensagem="Chaveamento so pode ser gerado para modalidade de confronto.",
+            status_code=422,
+        )
+
+    existente = await db.scalar(select(Rodada).where(Rodada.modalidade_id == modalidade_id))
+    if existente is not None:
+        raise AppError(
+            codigo="CHAVEAMENTO_JA_INICIADO",
+            mensagem="Ja existe rodada para esta modalidade; o chaveamento ja foi gerado.",
+            status_code=409,
+        )
+
+    await _recusar_se_par_conflitante_em_andamento(db, modalidade)
+
+    resultado = await db.execute(
+        select(Inscricao.equipe_id, Equipe.nivel)
+        .join(Equipe, Inscricao.equipe_id == Equipe.id)
+        .where(Inscricao.modalidade_id == modalidade_id)
+        .order_by(Inscricao.equipe_id)
+    )
+    equipes_por_nivel: dict[int, list[UUID]] = {}
+    for equipe_id, nivel in resultado.all():
+        equipes_por_nivel.setdefault(nivel, []).append(equipe_id)
+
+    niveis_bracket: dict[int, list[UUID]] = {}
+    niveis_liga: dict[int, list[UUID]] = {}
+    for nivel, ids in equipes_por_nivel.items():
+        if len(ids) < 2:
+            continue
+        formato = modalidade.formato_chaveamento or (
+            FormatoChaveamento.TODOS_CONTRA_TODOS
+            if len(ids) <= LIMITE_EQUIPES_TODOS_CONTRA_TODOS
+            else FormatoChaveamento.MATA_MATA
+        )
+        if formato == FormatoChaveamento.MATA_MATA:
+            niveis_bracket[nivel] = ids
+        else:
+            niveis_liga[nivel] = ids
+
+    if not niveis_bracket and not niveis_liga:
+        raise AppError(
+            codigo="EQUIPES_INSUFICIENTES",
+            mensagem="E preciso pelo menos 2 equipes do mesmo nivel pra gerar o chaveamento.",
+            status_code=422,
+        )
+
+    rodadas_por_numero: dict[int, Rodada] = {}
+
+    async def _rodada(numero: int) -> Rodada:
+        rodada = rodadas_por_numero.get(numero)
+        if rodada is None:
+            rodada = Rodada(
+                modalidade_id=modalidade_id,
+                numero=numero,
+                modo_horario=ModoHorario.AUTOMATICO,
+                status=RodadaStatus.AGENDADA,
+            )
+            db.add(rodada)
+            await db.flush()
+            rodadas_por_numero[numero] = rodada
+        return rodada
+
+    if niveis_bracket:
+        rodada1 = await _rodada(1)
+        for nivel, ids in niveis_bracket.items():
+            embaralhado = list(ids)
+            random.shuffle(embaralhado)
+            for equipe_a_id, equipe_b_id in _parear_com_bye(embaralhado):
+                db.add(_criar_partida(rodada1.id, equipe_a_id, equipe_b_id, nivel))
+        await db.flush()
+
+    if niveis_liga:
+        maximo = max(_rodadas_necessarias(len(ids)) for ids in niveis_liga.values())
+        for numero in range(1, maximo + 1):
+            rodada = await _rodada(numero)
+            for nivel, ids in niveis_liga.items():
+                if numero > _rodadas_necessarias(len(ids)):
+                    continue
+                for equipe_a_id, equipe_b_id in _gerar_pareamento(ids, numero):
+                    db.add(
+                        Partida(
+                            rodada_id=rodada.id,
+                            equipe_a_id=equipe_a_id,
+                            equipe_b_id=equipe_b_id,
+                            nivel=nivel,
+                            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+                            status=PartidaStatus.AGENDADA,
+                        )
+                    )
+            await db.flush()
+
+    await registrar_audit_log(
+        db,
+        usuario_id=usuario_id,
+        entidade="modalidade",
+        entidade_id=modalidade_id,
+        acao="GERAR_CHAVEAMENTO",
+        antes=None,
+        depois={
+            "niveis_bracket": sorted(niveis_bracket),
+            "niveis_liga": sorted(niveis_liga),
+        },
+    )
+
+    return sorted(rodadas_por_numero.values(), key=lambda r: r.numero)
 
 
 async def avancar_se_rodada_completa(
@@ -259,10 +449,8 @@ async def registrar_resultado_lancamento(
     if modalidade.tipo_disputa != TipoDisputa.CONFRONTO:
         return
 
-    eh_chaveamento = modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA
-    eh_todos_contra_todos = modalidade.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS
-    if not eh_chaveamento and not eh_todos_contra_todos:
-        return
+    eh_chaveamento = partida.formato_chaveamento == FormatoChaveamento.MATA_MATA
+    eh_todos_contra_todos = partida.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS
 
     resultado = await db.execute(
         select(Lancamento).where(

@@ -69,7 +69,14 @@ function mockGet(cfg: MockConfig = {}) {
     if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
       const params = opts as { params: { path: { rodada_id: string } } };
       const rodadaId = params.params.path.rodada_id;
-      return { data: cfg.partidasPorRodada?.[rodadaId] ?? [], error: undefined } as never;
+      const partidas = (cfg.partidasPorRodada?.[rodadaId] ?? []) as Record<string, unknown>[];
+      return {
+        data: partidas.map((p) => ({
+          formato_chaveamento: cfg.formatoChaveamento ?? "MATA_MATA",
+          ...p,
+        })),
+        error: undefined,
+      } as never;
     }
     return { data: undefined, error: undefined } as never;
   });
@@ -442,6 +449,47 @@ describe("PontuarCombatePage", () => {
     expect(await screen.findByRole("heading", { name: /fase de grupos/i })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^final$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /semifinal/i })).not.toBeInTheDocument();
+  });
+
+  it("mostra 'Fase de Grupos' e 'Final' juntas quando niveis diferentes da mesma modalidade tem formato diferente", async () => {
+    // gerar_chaveamento_confronto decide por nivel (<=5 equipes = todos-
+    // contra-todos, 6+ = mata-mata) -- o agrupamento aqui e por
+    // partida.formato_chaveamento, nao mais por um campo unico da
+    // modalidade (que fica null quando a decisao e automatica).
+    mockGet({
+      formatoChaveamento: null,
+      partidasPorRodada: {
+        "rod-1": [
+          {
+            id: "par-liga",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            nivel: 1,
+            status: "AGENDADA",
+            criado_em: "2026-08-05T10:00:00Z",
+            formato_chaveamento: "TODOS_CONTRA_TODOS",
+          },
+          {
+            id: "par-bracket",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            nivel: 2,
+            status: "AGENDADA",
+            criado_em: "2026-08-05T10:00:00Z",
+            formato_chaveamento: "MATA_MATA",
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: /fase de grupos/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^final$/i })).toBeInTheDocument();
   });
 
   it("mostra as partidas pendentes antes das ja decididas dentro da mesma fase", async () => {

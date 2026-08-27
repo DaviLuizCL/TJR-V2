@@ -69,8 +69,8 @@ describe("FichaListPage", () => {
 
     renderPage();
 
-    expect(await screen.findByText(/nivel 1/i)).toBeInTheDocument();
-    expect(screen.getByText(/nivel 2/i)).toBeInTheDocument();
+    expect(await screen.findByText("ABSOLUTO")).toBeInTheDocument();
+    expect(screen.getByText(/nível 2/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /criar ficha/i })).toHaveLength(2);
   });
 

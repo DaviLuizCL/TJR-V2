@@ -74,6 +74,9 @@ async def obter_ranking(
                 else None
             ),
             posicao=item["posicao"],
+            formato_chaveamento=(
+                item["formato_chaveamento"].value if item["formato_chaveamento"] else None
+            ),
         )
         for item in classificacao
     ]

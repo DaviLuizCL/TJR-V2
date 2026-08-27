@@ -232,7 +232,11 @@ describe("RodadaListPage", () => {
       if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
         const params = opts as { params: { path: { rodada_id: string } } };
         const rodadaId = params.params.path.rodada_id;
-        return { data: partidasPorRodada[rodadaId] ?? [], error: undefined } as never;
+        const partidas = (partidasPorRodada[rodadaId] ?? []) as Record<string, unknown>[];
+        return {
+          data: partidas.map((p) => ({ formato_chaveamento: "MATA_MATA", ...p })),
+          error: undefined,
+        } as never;
       }
       if (path === "/api/v1/equipes") {
         return {
@@ -277,6 +281,30 @@ describe("RodadaListPage", () => {
         expect.objectContaining({ body: { modalidade_id: "mod-1" } }),
       ),
     );
+  });
+
+  it("mostra a mensagem de erro quando gerar chaveamento falha (ex.: modalidade conflitante em andamento)", async () => {
+    mockGetChaveamento([], {});
+    vi.mocked(api.POST).mockResolvedValue({
+      data: undefined,
+      error: {
+        erro: {
+          codigo: "MODALIDADE_CONFLITANTE_EM_ANDAMENTO",
+          mensagem:
+            "Finalize Sumô antes de iniciar Sumô RC 1,5 kg - as duas competem com o mesmo tipo de robo.",
+        },
+      },
+    } as never);
+
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /gerar chaveamento/i }));
+
+    // extrairErro esta mockado globalmente neste arquivo (linha 12) pra
+    // sempre devolver a mensagem generica -- o que importa aqui e provar
+    // que a tela realmente mostra a mensagem de erro que o backend devolve
+    // (ex.: MODALIDADE_CONFLITANTE_EM_ANDAMENTO), nao o parsing em si (isso
+    // ja e coberto em client.test.ts).
+    expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
   });
 
   it("chaveamento ja gerado mostra as partidas de cada rodada com o vencedor quando decidido", async () => {
@@ -565,7 +593,11 @@ describe("RodadaListPage", () => {
       if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
         const params = opts as { params: { path: { rodada_id: string } } };
         const rodadaId = params.params.path.rodada_id;
-        return { data: partidasPorRodada[rodadaId] ?? [], error: undefined } as never;
+        const partidas = (partidasPorRodada[rodadaId] ?? []) as Record<string, unknown>[];
+        return {
+          data: partidas.map((p) => ({ formato_chaveamento: "TODOS_CONTRA_TODOS", ...p })),
+          error: undefined,
+        } as never;
       }
       if (path === "/api/v1/equipes") {
         return {
@@ -585,13 +617,13 @@ describe("RodadaListPage", () => {
     });
   }
 
-  it("modalidade de confronto todos-contra-todos continua mostrando 'Gerar rodadas' (nao 'Gerar chaveamento')", async () => {
+  it("modalidade de confronto todos-contra-todos tambem mostra 'Gerar chaveamento' (ponto de entrada unico pra CONFRONTO)", async () => {
     mockGetTodosContraTodos([], {});
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: /^gerar rodadas$/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /gerar chaveamento/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /gerar chaveamento/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^gerar rodadas$/i })).not.toBeInTheDocument();
   });
 
   it("todos-contra-todos com rodada gerada mostra as partidas com link Pontuar, nao 'Lancar notas'", async () => {
@@ -681,5 +713,100 @@ describe("RodadaListPage", () => {
       "href",
       "/eventos/evt-1/modalidades/mod-1/rodadas/r1/submissoes",
     );
+  });
+
+  it("mesma rodada com um nivel mata-mata (mostra fase/campeao) e outro todos-contra-todos (nao mostra)", async () => {
+    // formato_chaveamento=null na modalidade = decisao automatica por nivel
+    // (gerar_chaveamento_confronto) -- cada partida ja vem com o formato do
+    // proprio nivel gravado (Partida.formato_chaveamento), a tela nao
+    // precisa mais de um unico campo pra modalidade inteira.
+    vi.mocked(api.GET).mockImplementation(async (path: string, opts?: unknown) => {
+      if (path === "/api/v1/modalidades/{modalidade_id}") {
+        return {
+          data: {
+            id: "mod-1",
+            nome: "Combate Misto",
+            qtd_rodadas: 5,
+            tipo_disputa: "CONFRONTO",
+            formato_chaveamento: null,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas") {
+        return {
+          data: {
+            itens: [
+              {
+                id: "r1",
+                modalidade_id: "mod-1",
+                numero: 1,
+                modo_horario: "AUTOMATICO",
+                horario_inicio: null,
+                status: "AGENDADA",
+              },
+            ],
+            total: 1,
+            page: 1,
+            size: 200,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
+        return {
+          data: [
+            {
+              id: "p1",
+              rodada_id: "r1",
+              equipe_a_id: "eq-1",
+              equipe_b_id: "eq-2",
+              vencedor_id: "eq-1",
+              status: "ENCERRADA",
+              nivel: 1,
+              formato_chaveamento: "MATA_MATA",
+            },
+            {
+              id: "p2",
+              rodada_id: "r1",
+              equipe_a_id: "eq-3",
+              equipe_b_id: "eq-4",
+              vencedor_id: "eq-3",
+              status: "ENCERRADA",
+              nivel: 2,
+              formato_chaveamento: "TODOS_CONTRA_TODOS",
+            },
+          ],
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/equipes") {
+        return {
+          data: {
+            itens: [
+              { id: "eq-1", nome: "Equipe A", nivel: 1, ativo: true },
+              { id: "eq-2", nome: "Equipe B", nivel: 1, ativo: true },
+              { id: "eq-3", nome: "Equipe C", nivel: 2, ativo: true },
+              { id: "eq-4", nome: "Equipe D", nivel: 2, ativo: true },
+            ],
+            total: 4,
+            page: 1,
+            size: 1000,
+          },
+          error: undefined,
+        } as never;
+      }
+      void opts;
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    const nivel1 = (await screen.findByText("ABSOLUTO")).closest("div")!.parentElement!;
+    expect(within(nivel1).getByText(/campe[aã]o/i)).toBeInTheDocument();
+
+    const nivel2 = screen.getByText(/nível 2/i).closest("div")!.parentElement!;
+    expect(within(nivel2).queryByText(/campe[aã]o/i)).not.toBeInTheDocument();
+    expect(within(nivel2).getByText(/Vencedor: Equipe C/i)).toBeInTheDocument();
   });
 });

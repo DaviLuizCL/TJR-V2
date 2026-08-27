@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import AppError
 from app.models.equipe import Equipe
 from app.models.inscricao import Inscricao
-from app.models.modalidade import TipoDisputa
+from app.models.modalidade import FormatoChaveamento, TipoDisputa
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.schemas.rodada import RodadaCreate, RodadaUpdate
@@ -234,6 +234,7 @@ async def gerar_rodadas(db: AsyncSession, modalidade_id: UUID, *, usuario_id: UU
                                 equipe_a_id=equipe_a_id,
                                 equipe_b_id=equipe_b_id,
                                 nivel=nivel,
+                                formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
                                 status=PartidaStatus.AGENDADA,
                             )
                         )

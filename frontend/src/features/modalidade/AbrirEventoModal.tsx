@@ -6,7 +6,6 @@ export interface ModalidadeParaAbrir {
   id: string;
   nome: string;
   tipo_disputa: string;
-  formato_chaveamento?: string | null;
 }
 
 interface RodadaGerada {
@@ -17,10 +16,11 @@ interface RodadaGerada {
 type ResultadoModalidade = "ok" | string;
 
 async function gerarPrimeiraRodada(modalidade: ModalidadeParaAbrir): Promise<RodadaGerada[]> {
-  const ehMataMata =
-    modalidade.tipo_disputa === "CONFRONTO" && modalidade.formato_chaveamento === "MATA_MATA";
+  const ehConfronto = modalidade.tipo_disputa === "CONFRONTO";
 
-  if (ehMataMata) {
+  if (ehConfronto) {
+    // Decide mata-mata vs todos-contra-todos por nivel internamente (gerar_chaveamento_confronto),
+    // mesmo quando formato_chaveamento da modalidade e null -- nunca ler esse campo aqui.
     const { data, error } = await api.POST("/api/v1/chaveamento/gerar", {
       body: { modalidade_id: modalidade.id } as never,
     });
@@ -93,9 +93,9 @@ export function AbrirEventoModal({
       <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-1 text-lg font-semibold text-slate-800">Abrir evento</h2>
         <p className="mb-4 text-sm text-slate-500">
-          Gera a primeira rodada de cada modalidade de uma vez (chaveamento inicial no mata-mata,
-          rodadas nas demais). O horário é opcional e só marca o início da 1ª rodada — não gera
-          agendamento de arena.
+          Gera a primeira rodada de cada modalidade de uma vez (chaveamento por nível nas de
+          combate, rodadas nas demais). O horário é opcional e só marca o início da 1ª rodada —
+          não gera agendamento de arena.
         </p>
 
         <ul className="mb-4 max-h-80 space-y-3 overflow-y-auto">

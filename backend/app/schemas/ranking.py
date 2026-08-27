@@ -20,6 +20,10 @@ class ClassificacaoItemOut(BaseModel):
     derrotas: int
     eliminado_por_nome: str | None
     posicao: int
+    # Formato do NIVEL dessa equipe (nao mais um campo unico da modalidade
+    # inteira -- niveis diferentes podem estar em formatos diferentes, ver
+    # consolidacao.py::_formato_por_nivel). None so em modalidade INDIVIDUAL.
+    formato_chaveamento: str | None
 
 
 class RankingOut(BaseModel):

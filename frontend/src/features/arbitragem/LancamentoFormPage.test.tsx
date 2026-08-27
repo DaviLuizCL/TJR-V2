@@ -204,6 +204,66 @@ describe("LancamentoFormPage", () => {
     expect(within(blocoTotal).getByText("30")).toBeInTheDocument();
   });
 
+  it("modalidade individual mostra o campo de tempo gasto e envia junto no registro", async () => {
+    mockGet();
+    vi.mocked(api.POST).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/fichas/{ficha_id}/simular") {
+        return { data: { total: 30 }, error: undefined } as never;
+      }
+      if (path === "/api/v1/lancamentos") {
+        return {
+          data: {
+            id: "lanc-1",
+            ficha_id: "ficha-1",
+            rodada_id: "rod-1",
+            equipe_id: "eq-1",
+            tentativa: 1,
+            revision: 1,
+            status: "PENDENTE",
+            total: 30,
+            itens: [],
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await userEvent.selectOptions(await screen.findByLabelText(/equipe/i), "eq-1");
+    await screen.findByText("Lombada");
+    await userEvent.type(await screen.findByLabelText(/tempo gasto/i), "87");
+    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith(
+        "/api/v1/lancamentos",
+        expect.objectContaining({
+          body: expect.objectContaining({ tempo_gasto_seg: 87 }),
+        }),
+      ),
+    );
+  });
+
+  it("modalidade de confronto nao mostra o campo de tempo gasto", async () => {
+    mockGetConfronto([
+      {
+        id: "partida-1",
+        rodada_id: "rod-1",
+        equipe_a_id: "eq-1",
+        equipe_b_id: "eq-2",
+        vencedor_id: null,
+        status: "AGENDADA",
+      },
+    ]);
+
+    renderPage();
+
+    await screen.findByLabelText(/partida/i);
+    expect(screen.queryByLabelText(/tempo gasto/i)).not.toBeInTheDocument();
+  });
+
   it("depois de registrar, os criterios ficam desabilitados (editar nao muda o que sera confirmado)", async () => {
     // Bug achado testando de verdade: depois de "Registrar lancamento", os
     // campos de criterio continuavam clicaveis e atualizavam o "Preview" na

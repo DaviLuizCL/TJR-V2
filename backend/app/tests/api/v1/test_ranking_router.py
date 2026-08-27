@@ -293,6 +293,7 @@ async def test_ranking_mata_mata_traz_vitorias_derrotas_e_eliminado_por(client, 
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
             vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             status=PartidaStatus.ENCERRADA,
         )
     )
@@ -311,6 +312,88 @@ async def test_ranking_mata_mata_traz_vitorias_derrotas_e_eliminado_por(client, 
     assert por_equipe[str(equipe_b.id)]["derrotas"] == 1
     assert por_equipe[str(equipe_b.id)]["eliminado_por_nome"] == "Equipe A"
     assert por_equipe[str(equipe_b.id)]["equipe_nivel"] == 2
+    assert por_equipe[str(equipe_a.id)]["formato_chaveamento"] == "MATA_MATA"
+
+
+async def test_ranking_confronto_automatico_traz_formato_por_item_quando_niveis_divergem(
+    client, db_session
+):
+    # modalidade.formato_chaveamento=None (decisao automatica por nivel) --
+    # o JSON de cada item precisa dizer qual formato foi usado NAQUELE nivel,
+    # ja que o campo formato_chaveamento da resposta (nivel modalidade) fica
+    # None nesse caso.
+    coordenador = await _criar_usuario(
+        db_session, email="coord-ranking-7@tjr.app", papel=Papel.COORDENADOR
+    )
+    evento = await _criar_evento(db_session)
+    modalidade = Modalidade(
+        evento_id=evento.id,
+        nome="Combate Misto",
+        tipo_disputa=TipoDisputa.CONFRONTO,
+        formato_chaveamento=None,
+        niveis_aplicaveis=[1, 2],
+        ficha_unica_entre_niveis=True,
+        qtd_rodadas=2,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        status=ModalidadeStatus.PUBLICADA,
+    )
+    db_session.add(modalidade)
+    await db_session.flush()
+
+    equipe_a = Equipe(nome="N1 A", nivel=1)
+    equipe_b = Equipe(nome="N1 B", nivel=1)
+    equipe_c = Equipe(nome="N2 C", nivel=2)
+    equipe_d = Equipe(nome="N2 D", nivel=2)
+    db_session.add_all([equipe_a, equipe_b, equipe_c, equipe_d])
+    await db_session.flush()
+    for equipe in (equipe_a, equipe_b, equipe_c, equipe_d):
+        await criar_inscricao(
+            db_session,
+            InscricaoCreate(equipe_id=equipe.id, modalidade_id=modalidade.id),
+            usuario_id=coordenador.id,
+        )
+
+    rodada = Rodada(
+        modalidade_id=modalidade.id,
+        numero=1,
+        modo_horario=ModoHorario.AUTOMATICO,
+        status=RodadaStatus.AGENDADA,
+    )
+    db_session.add(rodada)
+    await db_session.flush()
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_b.id,
+            vencedor_id=equipe_a.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+            nivel=1,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_c.id,
+            equipe_b_id=equipe_d.id,
+            vencedor_id=equipe_c.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
+            nivel=2,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    modalidade.ranking_liberado = True
+    await db_session.flush()
+
+    resposta = await client.get(f"/api/v1/ranking/modalidades/{modalidade.id}")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["formato_chaveamento"] is None
+    por_equipe = {item["equipe_id"]: item for item in corpo["itens"]}
+    assert por_equipe[str(equipe_a.id)]["formato_chaveamento"] == "TODOS_CONTRA_TODOS"
+    assert por_equipe[str(equipe_c.id)]["formato_chaveamento"] == "MATA_MATA"
 
 
 async def test_relatorio_auditoria_pdf_staff_ve_mesmo_sem_ranking_liberado(client, db_session):

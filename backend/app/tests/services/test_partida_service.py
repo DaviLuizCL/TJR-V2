@@ -2,7 +2,13 @@ from datetime import date
 
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
-from app.models.modalidade import Consolidacao, Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import (
+    Consolidacao,
+    FormatoChaveamento,
+    Modalidade,
+    ModalidadeStatus,
+    TipoDisputa,
+)
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.services.partida import listar_partidas_por_rodada
@@ -65,6 +71,7 @@ async def test_listar_partidas_por_rodada_retorna_apenas_da_rodada(db_session):
             rodada_id=rodada_a.id,
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             status=PartidaStatus.AGENDADA,
         )
     )
@@ -73,6 +80,7 @@ async def test_listar_partidas_por_rodada_retorna_apenas_da_rodada(db_session):
             rodada_id=rodada_b.id,
             equipe_a_id=equipe_a.id,
             equipe_b_id=equipe_b.id,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
             status=PartidaStatus.AGENDADA,
         )
     )

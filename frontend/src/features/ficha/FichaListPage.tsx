@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
+import { rotuloNivel } from "../../lib/nivel";
 
 interface FichaResumo {
   id: string;
@@ -70,7 +71,7 @@ function SlotFicha({
     <li className="flex flex-col gap-2 rounded border border-slate-200 bg-white px-4 py-3">
       <div className="flex items-center justify-between">
         <span className="font-medium text-slate-800">
-          {nivel === null ? "Ficha unica (todos os niveis)" : `Nivel ${nivel}`}
+          {nivel === null ? "Ficha unica (todos os niveis)" : rotuloNivel(nivel)}
         </span>
 
         {ficha ? (

@@ -119,7 +119,7 @@ describe("RankingPage", () => {
             modalidade_id: "mod-1",
             modalidade_nome: "Sumo",
             tipo_disputa: "CONFRONTO",
-            formato_chaveamento: "MATA_MATA",
+            formato_chaveamento: null,
             ranking_liberado: true,
             itens: [
               {
@@ -132,6 +132,7 @@ describe("RankingPage", () => {
                 derrotas: 0,
                 eliminado_por_nome: null,
                 posicao: 1,
+                formato_chaveamento: "MATA_MATA",
               },
               {
                 equipe_id: "eq-2",
@@ -143,6 +144,7 @@ describe("RankingPage", () => {
                 derrotas: 1,
                 eliminado_por_nome: "Equipe A",
                 posicao: 2,
+                formato_chaveamento: "MATA_MATA",
               },
             ],
           },
@@ -176,7 +178,7 @@ describe("RankingPage", () => {
             modalidade_id: "mod-1",
             modalidade_nome: "Cabo de Guerra",
             tipo_disputa: "CONFRONTO",
-            formato_chaveamento: "TODOS_CONTRA_TODOS",
+            formato_chaveamento: null,
             ranking_liberado: true,
             itens: [
               {
@@ -189,6 +191,7 @@ describe("RankingPage", () => {
                 derrotas: 0,
                 eliminado_por_nome: null,
                 posicao: 1,
+                formato_chaveamento: "TODOS_CONTRA_TODOS",
               },
             ],
           },
@@ -231,7 +234,7 @@ describe("RankingPage", () => {
 
     renderPage();
 
-    const secaoNivel1 = (await screen.findByRole("heading", { name: "Nível 1" })).closest("div")!;
+    const secaoNivel1 = (await screen.findByRole("heading", { name: "ABSOLUTO" })).closest("div")!;
     const secaoNivel2 = screen.getByRole("heading", { name: "Nível 2" }).closest("div")!;
 
     const linhaN1 = within(secaoNivel1).getByText("N1 Primeiro").closest("tr")!;

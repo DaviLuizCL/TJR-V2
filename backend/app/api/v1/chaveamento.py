@@ -19,10 +19,10 @@ async def gerar_chaveamento(
     db: AsyncSession = Depends(get_db),
     usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
 ) -> RodadaOut:
-    rodada = await chaveamento_service.gerar_chaveamento_inicial(
+    rodadas = await chaveamento_service.gerar_chaveamento_confronto(
         db, dto.modalidade_id, usuario_id=usuario.id
     )
-    return RodadaOut.model_validate(rodada)
+    return RodadaOut.model_validate(rodadas[0])
 
 
 @router.post("/modalidades/{modalidade_id}/chaveamento/reset", status_code=204)

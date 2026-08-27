@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../../api/client";
+import { rotuloNivel } from "../../lib/nivel";
 
 export interface ModalidadeAba {
   id: string;
@@ -18,13 +19,16 @@ interface ClassificacaoItem {
   derrotas?: number;
   eliminado_por_nome?: string | null;
   posicao: number;
+  // Formato do NIVEL dessa equipe -- niveis diferentes da mesma modalidade
+  // podem estar em formatos diferentes (ver consolidacao.py::_formato_por_nivel
+  // no backend). None em modalidade INDIVIDUAL.
+  formato_chaveamento?: string | null;
 }
 
 interface RankingModalidade {
   modalidade_id: string;
   modalidade_nome: string;
   tipo_disputa?: string;
-  formato_chaveamento?: string | null;
   ranking_liberado: boolean;
   itens: ClassificacaoItem[];
 }
@@ -79,10 +83,6 @@ export function RankingClassificacao({
 
       {ranking &&
         (() => {
-          const formato = ranking.formato_chaveamento;
-          const ehMataMata = formato === "MATA_MATA";
-          const ehTodosContraTodos = formato === "TODOS_CONTRA_TODOS";
-
           const gruposPorNivel: Array<[number | null, ClassificacaoItem[]]> = [];
           for (const item of ranking.itens) {
             const nivel = item.equipe_nivel ?? null;
@@ -97,11 +97,16 @@ export function RankingClassificacao({
 
           return (
             <div className="flex flex-col gap-8">
-              {gruposPorNivel.map(([nivel, itens]) => (
+              {gruposPorNivel.map(([nivel, itens]) => {
+                const formato = itens[0]?.formato_chaveamento;
+                const ehMataMata = formato === "MATA_MATA";
+                const ehTodosContraTodos = formato === "TODOS_CONTRA_TODOS";
+
+                return (
                 <div key={String(nivel)}>
                   {temMaisDeUmNivel && (
                     <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-600">
-                      Nível {nivel}
+                      {nivel != null ? rotuloNivel(nivel) : "Sem nível"}
                     </h3>
                   )}
                   <table className="w-full text-left">
@@ -157,7 +162,8 @@ export function RankingClassificacao({
                     </tbody>
                   </table>
                 </div>
-              ))}
+                );
+              })}
             </div>
           );
         })()}

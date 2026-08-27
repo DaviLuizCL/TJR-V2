@@ -2,6 +2,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeInfo {
   id: string;
@@ -246,7 +247,7 @@ export function PontuarPage() {
                 <option value="">Todos os niveis</option>
                 {niveisDisponiveis.map((nivel) => (
                   <option key={nivel} value={nivel}>
-                    Nivel {nivel}
+                    {rotuloNivel(nivel)}
                   </option>
                 ))}
               </select>
@@ -323,7 +324,7 @@ export function PontuarPage() {
           );
           const corpo = (
             <>
-              <p className="text-sm text-slate-500">Nível {equipe.nivel}</p>
+              <p className="text-sm text-slate-500">{rotuloNivel(equipe.nivel)}</p>
               <p className="mt-2 text-sm font-medium text-slate-700">
                 Rodada {rodada.numero}
                 {tentativasPorRodada > 1 ? ` · Tentativa ${tentativa}` : ""}

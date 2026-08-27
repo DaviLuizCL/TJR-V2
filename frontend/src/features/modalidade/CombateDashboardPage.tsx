@@ -26,8 +26,17 @@ function ModalidadeCombateItem({
     <li className="flex items-center justify-between rounded border border-slate-200 bg-white px-4 py-3">
       <p className="font-medium text-slate-800">{modalidade.nome}</p>
       <div className="flex items-center gap-3">
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-          {LABELS_FORMATO[modalidade.formato_chaveamento ?? ""] ?? "Sem formato definido"}
+        <span
+          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+          title={
+            modalidade.formato_chaveamento
+              ? undefined
+              : "Decidido por nível ao gerar o chaveamento: até 5 equipes vira todos-contra-todos, 6 ou mais vira mata-mata."
+          }
+        >
+          {modalidade.formato_chaveamento
+            ? (LABELS_FORMATO[modalidade.formato_chaveamento] ?? "Sem formato definido")
+            : "Automático por nível"}
         </span>
         <Link
           to={`/eventos/${eventoId}/modalidades/${modalidade.id}/pontuar`}

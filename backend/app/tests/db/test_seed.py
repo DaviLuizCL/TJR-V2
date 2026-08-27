@@ -26,6 +26,7 @@ from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
 from app.models.inscricao import Inscricao
 from app.models.modalidade import (
+    Consolidacao,
     DecisaoPartida,
     FormatoChaveamento,
     Modalidade,
@@ -35,6 +36,7 @@ from app.models.modalidade import (
 from app.models.partida import Partida
 from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
+from app.services.rodada import _rodadas_necessarias
 
 
 async def _criterios_da_modalidade(db_session, modalidades, nome_modalidade) -> list[Criterio]:
@@ -142,19 +144,28 @@ async def test_seed_modalidades_cria_todas_as_modalidades_do_tjr(db_session):
     assert len(modalidades) == len(MODALIDADES_TJR)
     nomes = {m.nome for m in modalidades}
     assert nomes == {spec["nome"] for spec in MODALIDADES_TJR}
+    niveis_esperados_por_nome = {
+        spec["nome"]: spec.get("niveis_aplicaveis", [1, 2, 3, 4]) for spec in MODALIDADES_TJR
+    }
     for modalidade in modalidades:
         assert modalidade.evento_id == evento.id
         assert modalidade.status == ModalidadeStatus.PUBLICADA
-        assert modalidade.niveis_aplicaveis == [1, 2, 3, 4]
+        assert modalidade.niveis_aplicaveis == niveis_esperados_por_nome[modalidade.nome]
 
 
-async def test_seed_modalidades_confronto_tem_formato_de_chaveamento(db_session):
+async def test_seed_modalidades_confronto_decide_formato_de_chaveamento_automaticamente(
+    db_session,
+):
+    # formato_chaveamento=None em CONFRONTO agora significa "decida sozinho
+    # por nivel" (gerar_chaveamento_confronto), nao "sem formato" -- o seed
+    # de 2026 nao configura mais um valor fixo pra nenhuma modalidade de
+    # combate.
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
 
     por_nome = {m.nome: m for m in modalidades}
     assert por_nome["Sumô"].tipo_disputa == TipoDisputa.CONFRONTO
-    assert por_nome["Sumô"].formato_chaveamento is not None
+    assert por_nome["Sumô"].formato_chaveamento is None
     assert por_nome["Dança"].tipo_disputa == TipoDisputa.INDIVIDUAL
     assert por_nome["Dança"].formato_chaveamento is None
 
@@ -379,9 +390,7 @@ async def test_seed_fichas_viagem_penalidades_nao_descontam_pontos(db_session):
         select(Criterio).where(Criterio.grupo_id.in_([g.id for g in grupos_3]))
     )
     reinicio = next(
-        c
-        for c in resultado_criterios_3.scalars().all()
-        if c.nome == "Reinício entre as rodadas"
+        c for c in resultado_criterios_3.scalars().all() if c.nome == "Reinício entre as rodadas"
     )
     assert float(reinicio.pontos) == 0.0
 
@@ -521,6 +530,15 @@ async def test_seed_equipes_credenciadas_e_idempotente(db_session):
     assert len(resultado.scalars().all()) == len(EQUIPES_TJR)
 
 
+def _inscricoes_esperadas(modalidades, equipes) -> int:
+    return sum(
+        1
+        for modalidade in modalidades
+        for equipe in equipes
+        if equipe.nivel in modalidade.niveis_aplicaveis
+    )
+
+
 async def test_seed_inscricoes_credencia_toda_equipe_em_toda_modalidade_do_seu_nivel(db_session):
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
@@ -528,7 +546,7 @@ async def test_seed_inscricoes_credencia_toda_equipe_em_toda_modalidade_do_seu_n
 
     inscricoes = await seed_inscricoes(db_session, modalidades, equipes)
 
-    assert len(inscricoes) == len(modalidades) * len(equipes)
+    assert len(inscricoes) == _inscricoes_esperadas(modalidades, equipes)
 
 
 async def test_seed_inscricoes_e_idempotente(db_session):
@@ -542,7 +560,7 @@ async def test_seed_inscricoes_e_idempotente(db_session):
     await db_session.flush()
 
     resultado = await db_session.execute(select(Inscricao))
-    assert len(resultado.scalars().all()) == len(modalidades) * len(equipes)
+    assert len(resultado.scalars().all()) == _inscricoes_esperadas(modalidades, equipes)
 
 
 async def test_seed_modalidades_individual_tem_duracao_e_pausa_configuradas(db_session):
@@ -557,6 +575,16 @@ async def test_seed_modalidades_individual_tem_duracao_e_pausa_configuradas(db_s
         assert modalidade.pausa_entre_rodadas_seg is not None
 
 
+_MODALIDADES_ARENA_POR_NIVEL = {"Resgate no Plano", "Resgate de Alto Risco"}
+
+
+def _qtd_arenas_esperada_no_seed(modalidade: Modalidade) -> int:
+    # Resgate no Plano/Alto Risco tem arena dedicada por nivel (2, 3 e 4);
+    # as demais modalidades INDIVIDUAL continuam com 1 arena generica
+    # (niveis_aplicaveis=None, aberta pra qualquer nivel).
+    return 3 if modalidade.nome in _MODALIDADES_ARENA_POR_NIVEL else 1
+
+
 async def test_seed_arenas_cria_arena_ativa_para_cada_modalidade_individual(db_session):
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
@@ -565,7 +593,7 @@ async def test_seed_arenas_cria_arena_ativa_para_cada_modalidade_individual(db_s
     arenas = await seed_arenas(db_session, modalidades, usuario_id=coordenador.id)
 
     individuais = [m for m in modalidades if m.tipo_disputa == TipoDisputa.INDIVIDUAL]
-    assert len(arenas) == len(individuais)
+    assert len(arenas) == sum(_qtd_arenas_esperada_no_seed(m) for m in individuais)
     for arena in arenas:
         assert arena.ativo is True
 
@@ -582,20 +610,49 @@ async def test_seed_arenas_e_idempotente(db_session):
 
     individuais = [m for m in modalidades if m.tipo_disputa == TipoDisputa.INDIVIDUAL]
     resultado = await db_session.execute(select(Arena))
-    assert len(resultado.scalars().all()) == len(individuais)
+    assert len(resultado.scalars().all()) == sum(
+        _qtd_arenas_esperada_no_seed(m) for m in individuais
+    )
+
+
+async def test_seed_arenas_resgate_no_plano_e_alto_risco_tem_uma_arena_por_nivel(db_session):
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    coordenador = await seed_coordenador(db_session, email="arenas-3@tjr.app", senha="senha-123")
+
+    arenas = await seed_arenas(db_session, modalidades, usuario_id=coordenador.id)
+
+    por_nome = {m.nome: m for m in modalidades}
+    for nome in _MODALIDADES_ARENA_POR_NIVEL:
+        arenas_da_modalidade = [a for a in arenas if a.modalidade_id == por_nome[nome].id]
+        niveis = sorted(a.niveis_aplicaveis[0] for a in arenas_da_modalidade)
+        assert niveis == [2, 3, 4]
+
+    danca = por_nome["Dança"]
+    arenas_danca = [a for a in arenas if a.modalidade_id == danca.id]
+    assert len(arenas_danca) == 1
+    assert arenas_danca[0].niveis_aplicaveis is None
 
 
 def _qtd_rodadas_esperada_no_seed(modalidade: Modalidade) -> int:
     # MATA_MATA so pode ter a Rodada 1 pre-gerada: as proximas dependem de
     # quem vence cada partida (avancar_se_rodada_completa gera dinamicamente
     # conforme o chaveamento avanca) - nao da pra saber os confrontos de
-    # antemao, entao pre-criar as `qtd_rodadas` (usada so como profundidade
-    # maxima do bracket) estaria inventando pareamento que nao existe ainda.
-    if (
-        modalidade.tipo_disputa == TipoDisputa.CONFRONTO
-        and modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA
-    ):
-        return 1
+    # antemao. TODOS_CONTRA_TODOS (explicito ou decidido automaticamente,
+    # ver gerar_chaveamento_confronto) gera exatamente o que o metodo do
+    # circulo precisa pras equipes daquele nivel, nao mais o teto de
+    # `qtd_rodadas` (o seed credencia 4 equipes por nivel em toda modalidade
+    # de confronto, sempre <=5 -> sempre vira todos-contra-todos hoje).
+    if modalidade.nome == "Sumô RC 1,5 kg":
+        # Sumo RC e Sumo tradicional nao podem ficar abertos ao mesmo tempo
+        # (mesmo robo fisico possivel) - Sumo vem antes na ordem do seed e
+        # fica com combate pendente, entao Sumo RC e pulado (seed_rodadas
+        # engole o 422 MODALIDADE_CONFLITANTE_EM_ANDAMENTO de proposito).
+        return 0
+    if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
+        if modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA:
+            return 1
+        return _rodadas_necessarias(4)
     return modalidade.qtd_rodadas
 
 
@@ -630,28 +687,46 @@ async def test_seed_rodadas_confronto_ja_vem_com_partidas(db_session):
 
 
 async def test_seed_rodadas_mata_mata_nao_pre_gera_rodadas_futuras(db_session):
-    # Bug real: seed_rodadas chamava o pareamento generico (round-robin,
-    # "metodo do circulo") pra toda modalidade de CONFRONTO, sumo incluso -
-    # isso pre-criava as 5 rodadas inteiras de Sumo com confrontos que nao
-    # dependiam de quem venceria a rodada anterior (errado pra MATA_MATA) e
-    # ainda deixava `gerar_chaveamento_inicial` inacessivel depois (recusa
-    # com 409 CHAVEAMENTO_JA_INICIADO pq ja existia rodada). Sumo (e
-    # qualquer outra MATA_MATA) so pode ter a Rodada 1 pronta no seed; as
-    # seguintes vem de `avancar_se_rodada_completa`, so depois que as
-    # partidas da rodada atual fecharem de verdade.
+    # Bug real (historico): seed_rodadas chamava o pareamento generico
+    # (round-robin, "metodo do circulo") pra toda modalidade de CONFRONTO,
+    # inclusive quando o formato era MATA_MATA - isso pre-criava rodadas
+    # futuras com confrontos que nao dependiam de quem venceria a rodada
+    # anterior (errado pro bracket) e deixava `gerar_chaveamento_confronto`
+    # inacessivel depois (409 CHAVEAMENTO_JA_INICIADO, ja que ja existia
+    # rodada). O seed real de 2026 nao seta mais formato_chaveamento
+    # explicito (vira decisao automatica por nivel - com 4 equipes
+    # credenciadas por nivel, sempre da <=5 e vira todos-contra-todos, ver
+    # test_seed_rodadas_cria_qtd_rodadas_para_cada_modalidade), mas o escape
+    # manual (coordenador forca MATA_MATA numa modalidade) ainda precisa
+    # desse comportamento certo - so a Rodada 1 pronta no seed; as seguintes
+    # vem de `avancar_se_rodada_completa`, so depois que as partidas da
+    # rodada atual fecharem de verdade.
     evento = await seed_evento(db_session)
-    modalidades = await seed_modalidades(db_session, evento)
-    equipes = await seed_equipes_credenciadas(db_session)
-    await seed_inscricoes(db_session, modalidades, equipes)
     coordenador = await seed_coordenador(
         db_session, email="rodadas-mata-mata@tjr.app", senha="senha-123"
     )
+    modalidade_forcada = Modalidade(
+        evento_id=evento.id,
+        nome="Combate Forcado Mata-Mata",
+        tipo_disputa=TipoDisputa.CONFRONTO,
+        formato_chaveamento=FormatoChaveamento.MATA_MATA,
+        niveis_aplicaveis=[1, 2, 3, 4],
+        ficha_unica_entre_niveis=True,
+        qtd_rodadas=5,
+        tentativas_por_rodada=1,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        status=ModalidadeStatus.PUBLICADA,
+    )
+    db_session.add(modalidade_forcada)
+    await db_session.flush()
+    equipes = await seed_equipes_credenciadas(db_session)
+    await seed_inscricoes(db_session, [modalidade_forcada], equipes)
 
-    await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
+    await seed_rodadas(db_session, [modalidade_forcada], usuario_id=coordenador.id)
 
-    sumo = next(m for m in modalidades if m.nome == "Sumô")
-    assert sumo.formato_chaveamento == FormatoChaveamento.MATA_MATA
-    resultado = await db_session.execute(select(Rodada).where(Rodada.modalidade_id == sumo.id))
+    resultado = await db_session.execute(
+        select(Rodada).where(Rodada.modalidade_id == modalidade_forcada.id)
+    )
     numeros = sorted(r.numero for r in resultado.scalars().all())
     assert numeros == [1]
 
@@ -727,32 +802,44 @@ async def test_seed_modalidades_cabo_de_guerra_e_sumo_usam_soma_pontos(db_sessio
     assert por_nome["Sumô"].decisao_partida == DecisaoPartida.SOMA_PONTOS
 
 
-async def test_seed_modalidades_sumo_controlado_tem_as_mesmas_regras_do_sumo(db_session):
+async def test_seed_modalidades_sumo_rc_e_sumo_3kg_tem_as_mesmas_regras_do_sumo(db_session):
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
 
     por_nome = {m.nome: m for m in modalidades}
     sumo = por_nome["Sumô"]
-    sumo_controlado = por_nome["Sumô Controlado"]
 
-    assert sumo_controlado.tipo_disputa == sumo.tipo_disputa == TipoDisputa.CONFRONTO
-    assert (
-        sumo_controlado.formato_chaveamento == sumo.formato_chaveamento == FormatoChaveamento.MATA_MATA
-    )
-    assert sumo_controlado.tentativas_por_rodada == sumo.tentativas_por_rodada == 2
-    assert sumo_controlado.decisao_partida == sumo.decisao_partida == DecisaoPartida.SOMA_PONTOS
+    for nome in ("Sumô RC 1,5 kg", "Sumô 3 kg"):
+        outro = por_nome[nome]
+        assert outro.tipo_disputa == sumo.tipo_disputa == TipoDisputa.CONFRONTO
+        assert outro.formato_chaveamento == sumo.formato_chaveamento is None
+        assert outro.tentativas_por_rodada == sumo.tentativas_por_rodada == 2
+        assert outro.decisao_partida == sumo.decisao_partida == DecisaoPartida.SOMA_PONTOS
 
 
-async def test_seed_fichas_sumo_controlado_tem_criterio_escala_resultado_do_combate(db_session):
+async def test_seed_modalidades_sumo_rc_e_sumo_3kg_sao_so_nivel_absoluto(db_session):
+    # Nivel 1 e reaproveitado como "ABSOLUTO" (rotulo so no front) -- essas
+    # 2 modalidades so tem equipe nivel 0/ABSOLUTO na planilha real, entao
+    # niveis_aplicaveis fica restrito a [1] em vez do [1,2,3,4] padrao.
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    por_nome = {m.nome: m for m in modalidades}
+    assert por_nome["Sumô RC 1,5 kg"].niveis_aplicaveis == [1]
+    assert por_nome["Sumô 3 kg"].niveis_aplicaveis == [1]
+    assert por_nome["Sumô"].niveis_aplicaveis == [1, 2, 3, 4]
+
+
+async def test_seed_fichas_sumo_rc_e_sumo_3kg_tem_criterio_escala_resultado_do_combate(db_session):
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
     await seed_fichas(db_session, modalidades)
 
-    criterio = await _criterio_unico_da_modalidade(db_session, modalidades, "Sumô Controlado")
-
-    assert criterio.nome == "Resultado do combate"
-    assert criterio.tipo == CriterioTipo.ESCALA
-    assert criterio.valores_permitidos == [0, 1, 2]
+    for nome in ("Sumô RC 1,5 kg", "Sumô 3 kg"):
+        criterio = await _criterio_unico_da_modalidade(db_session, modalidades, nome)
+        assert criterio.nome == "Resultado do combate"
+        assert criterio.tipo == CriterioTipo.ESCALA
+        assert criterio.valores_permitidos == [0, 1, 2]
 
 
 async def test_seed_modalidades_corrida_de_carros_usa_combates_vencidos(db_session):

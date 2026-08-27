@@ -31,6 +31,7 @@ from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
 from app.schemas.modalidade import ModalidadeUpdate
 from app.services.chaveamento import (
     avancar_se_rodada_completa,
+    gerar_chaveamento_confronto,
     gerar_chaveamento_inicial,
     registrar_resultado_lancamento,
     resetar_chaveamento,
@@ -62,24 +63,28 @@ async def _criar_arbitro(db_session, email="arbitro-chaveamento@tjr.app") -> Usu
 async def _criar_modalidade_confronto(
     db_session,
     *,
+    nome="Combate",
+    evento_id=None,
     formato=FormatoChaveamento.MATA_MATA,
     niveis_aplicaveis=None,
     tentativas_por_rodada=1,
     decisao_partida=DecisaoPartida.COMBATES_VENCIDOS,
 ) -> Modalidade:
-    evento = Evento(
-        nome="TJR 2026",
-        ano=2026,
-        data_inicio=date(2026, 3, 10),
-        data_fim=date(2026, 3, 12),
-        status=EventoStatus.RASCUNHO,
-    )
-    db_session.add(evento)
-    await db_session.flush()
+    if evento_id is None:
+        evento = Evento(
+            nome="TJR 2026",
+            ano=2026,
+            data_inicio=date(2026, 3, 10),
+            data_fim=date(2026, 3, 12),
+            status=EventoStatus.RASCUNHO,
+        )
+        db_session.add(evento)
+        await db_session.flush()
+        evento_id = evento.id
 
     modalidade = Modalidade(
-        evento_id=evento.id,
-        nome="Combate",
+        evento_id=evento_id,
+        nome=nome,
         tipo_disputa=TipoDisputa.CONFRONTO,
         formato_chaveamento=formato,
         niveis_aplicaveis=niveis_aplicaveis or [1],
@@ -407,6 +412,7 @@ async def test_todos_contra_todos_com_vencedor_fecha_partida_sem_avancar_rodada(
         rodada_id=rodada.id,
         equipe_a_id=equipes[0].id,
         equipe_b_id=equipes[1].id,
+        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
         status=PartidaStatus.AGENDADA,
     )
     db_session.add(partida)
@@ -445,6 +451,7 @@ async def test_todos_contra_todos_com_empate_marca_partida_empatada(db_session):
         rodada_id=rodada.id,
         equipe_a_id=equipes[0].id,
         equipe_b_id=equipes[1].id,
+        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
         status=PartidaStatus.AGENDADA,
     )
     db_session.add(partida)
@@ -456,6 +463,41 @@ async def test_todos_contra_todos_com_empate_marca_partida_empatada(db_session):
     partida_final = await db_session.get(Partida, partida.id)
     assert partida_final.status == PartidaStatus.EMPATADA
     assert partida_final.vencedor_id is None
+
+
+async def test_registrar_resultado_usa_formato_da_partida_nao_da_modalidade(db_session):
+    # Cenario alvo do chaveamento por nivel: modalidade.formato_chaveamento
+    # fica None (decisao automatica por nivel, ver gerar_chaveamento_confronto),
+    # entao quem decide o comportamento de uma partida especifica e o
+    # formato_chaveamento gravado nela mesma, nao mais o campo da modalidade.
+    coordenador = await _criar_coordenador(db_session, "c17b@tjr.app")
+    arbitro = await _criar_arbitro(db_session, "a17b@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+    rodada = Rodada(
+        modalidade_id=modalidade.id,
+        numero=1,
+        modo_horario=ModoHorario.AUTOMATICO,
+        status=RodadaStatus.AGENDADA,
+    )
+    db_session.add(rodada)
+    await db_session.flush()
+    partida = Partida(
+        rodada_id=rodada.id,
+        equipe_a_id=equipes[0].id,
+        equipe_b_id=equipes[1].id,
+        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+        status=PartidaStatus.AGENDADA,
+    )
+    db_session.add(partida)
+    await db_session.flush()
+
+    await _lancar_e_confirmar(db_session, ficha, rodada, equipes[0], criterio, partida, arbitro, 2)
+    await _lancar_e_confirmar(db_session, ficha, rodada, equipes[1], criterio, partida, arbitro, 2)
+
+    partida_final = await db_session.get(Partida, partida.id)
+    assert partida_final.status == PartidaStatus.EMPATADA
 
 
 async def test_registrar_resultado_ignora_lancamento_sem_partida(db_session):
@@ -526,6 +568,171 @@ async def test_gerar_chaveamento_nivel_com_uma_equipe_nao_gera_partida(db_sessio
     assert len(partidas) == 1
     participantes = {partidas[0].equipe_a_id, partidas[0].equipe_b_id}
     assert equipe_solitaria.id not in participantes
+
+
+async def test_gerar_chaveamento_confronto_decide_formato_por_nivel_pela_contagem(db_session):
+    # Regra real (LISTA 2026): dentro da MESMA modalidade, nivel com <=5
+    # equipes vira todos-contra-todos, nivel com 6+ vira mata-mata -
+    # modalidade.formato_chaveamento=None e o sinal de "decida sozinho".
+    coordenador = await _criar_coordenador(db_session, "c-auto1@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session, formato=None, niveis_aplicaveis=[1, 2]
+    )
+    await _inscrever_equipes_por_nivel(
+        db_session, modalidade, coordenador, [1, 1, 1, 2, 2, 2, 2, 2, 2]
+    )
+
+    from app.services.partida import listar_partidas_por_rodada
+
+    rodadas = await gerar_chaveamento_confronto(
+        db_session, modalidade.id, usuario_id=coordenador.id
+    )
+
+    todas_partidas = []
+    for rodada in rodadas:
+        todas_partidas.extend(await listar_partidas_por_rodada(db_session, rodada.id))
+
+    partidas_nivel_1 = [p for p in todas_partidas if p.nivel == 1]
+    partidas_nivel_2 = [p for p in todas_partidas if p.nivel == 2]
+
+    assert partidas_nivel_1
+    assert all(
+        p.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS for p in partidas_nivel_1
+    )
+    assert partidas_nivel_2
+    assert all(p.formato_chaveamento == FormatoChaveamento.MATA_MATA for p in partidas_nivel_2)
+    # nivel 1 (returno com 3 equipes) precisa de mais de 1 rodada.
+    assert len({p.rodada_id for p in partidas_nivel_1}) > 1
+    # nivel 2 (bracket) so gera a rodada de saida, o resto e dinamico.
+    assert len({p.rodada_id for p in partidas_nivel_2}) == 1
+
+
+async def test_gerar_chaveamento_confronto_override_manual_ignora_contagem(db_session):
+    coordenador = await _criar_coordenador(db_session, "c-auto2@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session, formato=FormatoChaveamento.MATA_MATA, niveis_aplicaveis=[1]
+    )
+    # 3 equipes cairia em todos-contra-todos pela regra automatica, mas o
+    # campo explicito da modalidade forca mata-mata mesmo assim.
+    await _inscrever_equipes_por_nivel(db_session, modalidade, coordenador, [1, 1, 1])
+
+    from app.services.partida import listar_partidas_por_rodada
+
+    rodadas = await gerar_chaveamento_confronto(
+        db_session, modalidade.id, usuario_id=coordenador.id
+    )
+    partidas = await listar_partidas_por_rodada(db_session, rodadas[0].id)
+
+    assert partidas
+    assert all(p.formato_chaveamento == FormatoChaveamento.MATA_MATA for p in partidas)
+
+
+async def test_gerar_chaveamento_confronto_recusa_modalidade_individual(db_session):
+    coordenador = await _criar_coordenador(db_session, "c-auto3@tjr.app")
+    evento = Evento(
+        nome="E-auto",
+        ano=2026,
+        data_inicio=date(2026, 3, 10),
+        data_fim=date(2026, 3, 12),
+        status=EventoStatus.RASCUNHO,
+    )
+    db_session.add(evento)
+    await db_session.flush()
+    modalidade = Modalidade(
+        evento_id=evento.id,
+        nome="Individual",
+        tipo_disputa=TipoDisputa.INDIVIDUAL,
+        niveis_aplicaveis=[1],
+        ficha_unica_entre_niveis=True,
+        qtd_rodadas=1,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        status=ModalidadeStatus.PUBLICADA,
+    )
+    db_session.add(modalidade)
+    await db_session.flush()
+
+    with pytest.raises(AppError) as exc_info:
+        await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
+
+    assert exc_info.value.codigo == "MODALIDADE_NAO_E_CONFRONTO"
+
+
+async def test_gerar_chaveamento_confronto_recusa_equipes_insuficientes(db_session):
+    coordenador = await _criar_coordenador(db_session, "c-auto4@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    await _inscrever_equipes(db_session, modalidade, coordenador, 1)
+
+    with pytest.raises(AppError) as exc_info:
+        await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
+
+    assert exc_info.value.codigo == "EQUIPES_INSUFICIENTES"
+
+
+async def test_gerar_chaveamento_confronto_recusa_se_ja_iniciado(db_session):
+    coordenador = await _criar_coordenador(db_session, "c-auto5@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    await _inscrever_equipes(db_session, modalidade, coordenador, 3)
+    await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
+
+    with pytest.raises(AppError) as exc_info:
+        await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
+
+    assert exc_info.value.codigo == "CHAVEAMENTO_JA_INICIADO"
+
+
+async def test_gerar_chaveamento_confronto_recusa_iniciar_sumo_rc_com_sumo_em_andamento(
+    db_session,
+):
+    # Sumo RC 1,5kg e Sumo 1,5kg tradicional competem com o mesmo robo
+    # possivel - as duas nao podem estar "abertas" (com combate pendente) ao
+    # mesmo tempo, senao um arbitro pode chamar a mesma equipe pras duas
+    # modalidades no mesmo instante. Sem agenda de horario pro confronto,
+    # a trava e travar o INICIO da segunda ate a primeira fechar de vez.
+    coordenador = await _criar_coordenador(db_session, "c-conflito-sumo@tjr.app")
+    sumo = await _criar_modalidade_confronto(db_session, nome="Sumô", formato=None)
+    sumo_rc = await _criar_modalidade_confronto(
+        db_session, nome="Sumô RC 1,5 kg", evento_id=sumo.evento_id, formato=None
+    )
+    await _inscrever_equipes(db_session, sumo, coordenador, 3)
+    await _inscrever_equipes(db_session, sumo_rc, coordenador, 3)
+
+    await gerar_chaveamento_confronto(db_session, sumo.id, usuario_id=coordenador.id)
+
+    with pytest.raises(AppError) as exc_info:
+        await gerar_chaveamento_confronto(db_session, sumo_rc.id, usuario_id=coordenador.id)
+
+    assert exc_info.value.codigo == "MODALIDADE_CONFLITANTE_EM_ANDAMENTO"
+
+
+async def test_gerar_chaveamento_confronto_permite_sumo_rc_depois_do_sumo_encerrado(db_session):
+    coordenador = await _criar_coordenador(db_session, "c-conflito-sumo2@tjr.app")
+    arbitro = await _criar_arbitro(db_session, "a-conflito-sumo2@tjr.app")
+    sumo = await _criar_modalidade_confronto(
+        db_session, nome="Sumô", formato=FormatoChaveamento.TODOS_CONTRA_TODOS
+    )
+    sumo_rc = await _criar_modalidade_confronto(
+        db_session, nome="Sumô RC 1,5 kg", evento_id=sumo.evento_id, formato=None
+    )
+    equipes = await _inscrever_equipes(db_session, sumo, coordenador, 2)
+    await _inscrever_equipes(db_session, sumo_rc, coordenador, 3)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, sumo, coordenador)
+
+    rodadas = await gerar_chaveamento_confronto(db_session, sumo.id, usuario_id=coordenador.id)
+    from app.services.partida import listar_partidas_por_rodada
+
+    [partida] = await listar_partidas_por_rodada(db_session, rodadas[0].id)
+    await _lancar_e_confirmar(
+        db_session, ficha, rodadas[0], equipes[0], criterio, partida, arbitro, 4
+    )
+    await _lancar_e_confirmar(
+        db_session, ficha, rodadas[0], equipes[1], criterio, partida, arbitro, 2
+    )
+
+    # Sumo fechou (unica partida ENCERRADA) -- Sumo RC agora pode iniciar.
+    rodadas_rc = await gerar_chaveamento_confronto(
+        db_session, sumo_rc.id, usuario_id=coordenador.id
+    )
+    assert rodadas_rc
 
 
 async def test_mata_mata_avanca_niveis_de_tamanhos_diferentes_independente(db_session):
@@ -921,6 +1128,7 @@ async def test_todos_contra_todos_marca_empatada_quando_combates_empatam(db_sess
         rodada_id=rodada.id,
         equipe_a_id=equipes[0].id,
         equipe_b_id=equipes[1].id,
+        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
         status=PartidaStatus.AGENDADA,
     )
     db_session.add(partida)
@@ -984,6 +1192,7 @@ async def test_soma_pontos_decide_vencedor_pelo_total_mesmo_com_1_combate_vencid
         rodada_id=rodada.id,
         equipe_a_id=equipes[0].id,
         equipe_b_id=equipes[1].id,
+        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
         status=PartidaStatus.AGENDADA,
     )
     db_session.add(partida)
@@ -1044,6 +1253,7 @@ async def test_soma_pontos_mata_mata_usa_ponto_de_ouro_quando_soma_tambem_empata
         rodada_id=rodada.id,
         equipe_a_id=equipes[0].id,
         equipe_b_id=equipes[1].id,
+        formato_chaveamento=FormatoChaveamento.MATA_MATA,
         status=PartidaStatus.AGENDADA,
     )
     db_session.add(partida)

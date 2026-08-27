@@ -21,6 +21,7 @@ class LancamentoCreate(BaseModel):
     partida_id: UUID | None = None
     client_operation_id: UUID
     itens: list[ItemLancamentoInput]
+    tempo_gasto_seg: int | None = Field(default=None, ge=0)
 
 
 class LancamentoCorrigir(BaseModel):
@@ -57,6 +58,7 @@ class LancamentoOut(BaseModel):
     revision: int
     status: LancamentoStatus
     total: float
+    tempo_gasto_seg: int | None
     itens: list[ItemLancamentoOut]
     criado_em: datetime
     atualizado_em: datetime

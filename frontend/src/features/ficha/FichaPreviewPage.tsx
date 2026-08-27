@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { rotuloNivel } from "../../lib/nivel";
 
 export interface CriterioItem {
   id: string;
@@ -307,7 +308,7 @@ export function FichaPreviewPage() {
                 .filter((f) => f.status !== "SUBSTITUIDA")
                 .map((f) => (
                   <option key={f.id} value={f.id}>
-                    {f.nivel === null ? "Ficha unica" : `Nivel ${f.nivel}`} · {f.status}
+                    {f.nivel === null ? "Ficha unica" : rotuloNivel(f.nivel)} · {f.status}
                   </option>
                 ))}
             </select>

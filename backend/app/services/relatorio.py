@@ -27,14 +27,15 @@ def _calcular_gerado_em() -> datetime:
 
 def _formatar_metrica_classificacao(modalidade: Modalidade, item: dict) -> str:
     """Mesma logica de exibicao do RankingOut (ranking.py): o formato do
-    numero depende de tipo_disputa/formato_chaveamento, nao do conteudo do
-    dict - calcular_classificacao sempre devolve as mesmas chaves pras 3
-    variantes, so o que faz sentido mostrar muda.
+    numero depende do formato_chaveamento do NIVEL dessa equipe (gravado no
+    proprio item por calcular_classificacao, ja que niveis diferentes da
+    mesma modalidade podem estar em formatos diferentes), nao mais de um
+    campo unico da modalidade inteira.
     """
     if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
-        if modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA:
+        if item["formato_chaveamento"] == FormatoChaveamento.MATA_MATA:
             return f"{item['vitorias']}V {item['derrotas']}D"
-        if modalidade.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS:
+        if item["formato_chaveamento"] == FormatoChaveamento.TODOS_CONTRA_TODOS:
             return (
                 f"{item['nota_final']} pts "
                 f"({item['vitorias']}V {item['empates']}E {item['derrotas']}D)"

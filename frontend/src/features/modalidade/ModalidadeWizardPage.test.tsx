@@ -102,7 +102,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     // passo 3
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     // passo 4
@@ -139,7 +139,7 @@ describe("ModalidadeWizardPage - criacao", () => {
 
     // passo 3: marca ficha unica sem escolher nenhum nivel manualmente
     await userEvent.click(screen.getByLabelText(/usar uma unica ficha/i));
-    expect(screen.queryByLabelText(/^nivel 1$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^absoluto$/i)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     // passo 4: nao mexe em nada, so avanca
@@ -162,7 +162,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Sumo de Robos");
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     expect(screen.getByLabelText(/quantidade de rodadas/i)).toBeInTheDocument();
@@ -178,7 +178,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Sumo de Robos");
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
@@ -206,7 +206,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Sumo de Robos");
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     const tentativas = screen.getByLabelText(/tentativas por rodada/i);
@@ -233,7 +233,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Resgate no Plano");
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     expect(screen.getByRole("button", { name: /adicionar arena/i })).toBeInTheDocument();
@@ -248,7 +248,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByLabelText(/^confronto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     expect(screen.queryByRole("button", { name: /adicionar arena/i })).not.toBeInTheDocument();
@@ -280,12 +280,12 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Resgate no Plano");
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
     await userEvent.click(screen.getByRole("button", { name: /adicionar arena/i }));
     await userEvent.type(screen.getByLabelText(/nome da arena/i), "Arena A");
-    await userEvent.click(screen.getByLabelText(/atende nivel 1/i));
+    await userEvent.click(screen.getByLabelText(/atende absoluto/i));
 
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await waitFor(() => expect(screen.getByText(/passo 5 de 5/i)).toBeInTheDocument());
@@ -329,7 +329,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Resgate no Plano");
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-    await userEvent.click(screen.getByLabelText(/^nivel 1$/i));
+    await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 

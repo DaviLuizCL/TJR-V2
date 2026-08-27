@@ -3,11 +3,11 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { calcularTotalRodadasPorNivel, nomeFase } from "../../lib/fase-chaveamento";
+import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeInfo {
   id: string;
   nome: string;
-  formato_chaveamento?: string | null;
 }
 
 const CLASSES_FASE_NEUTRA = "bg-slate-100 text-slate-700 border border-slate-300";
@@ -31,6 +31,7 @@ interface PartidaItem {
   nivel: number | null;
   status: string;
   criado_em: string;
+  formato_chaveamento?: string;
 }
 
 function corDaEquipe(partida: PartidaItem, equipeId: string): string {
@@ -121,7 +122,10 @@ export function PontuarCombatePage() {
   const totalRodadasPorNivel = calcularTotalRodadasPorNivel(partidasRodada1);
 
   function grupoDaPartida(partida: PartidaItem): { label: string; classes: string; ordem: number } {
-    if (modalidade!.formato_chaveamento === "TODOS_CONTRA_TODOS") {
+    // Formato e por partida (nivel), nao mais um campo unico da modalidade
+    // inteira -- uma modalidade pode ter nivel em mata-mata e outro em
+    // todos-contra-todos ao mesmo tempo (gerar_chaveamento_confronto).
+    if (partida.formato_chaveamento === "TODOS_CONTRA_TODOS") {
       return { label: "Fase de Grupos", classes: CLASSES_FASE_NEUTRA, ordem: 0 };
     }
     const numero = rodadaPorId.get(partida.rodada_id)?.numero ?? 0;
@@ -192,7 +196,7 @@ export function PontuarCombatePage() {
             <option value="">Todos os niveis</option>
             {niveisDisponiveis.map((nivel) => (
               <option key={nivel} value={nivel}>
-                Nivel {nivel}
+                {rotuloNivel(nivel)}
               </option>
             ))}
           </select>
@@ -205,7 +209,10 @@ export function PontuarCombatePage() {
         </div>
       )}
       {todasPartidas.length > 0 && partidas.length === 0 && (
-        <p className="text-slate-500">Nenhuma partida do nível {nivelFiltro} nesta modalidade.</p>
+        <p className="text-slate-500">
+          Nenhuma partida do {nivelFiltro ? rotuloNivel(Number(nivelFiltro)) : "nível"} nesta
+          modalidade.
+        </p>
       )}
 
       <div className="space-y-8">
@@ -229,7 +236,7 @@ export function PontuarCombatePage() {
                   <>
                     <p className="text-sm text-slate-500">
                       Rodada {rodada?.numero}
-                      {partida.nivel != null ? ` · Nivel ${partida.nivel}` : ""}
+                      {partida.nivel != null ? ` · ${rotuloNivel(partida.nivel)}` : ""}
                     </p>
                     <p className="mt-2 text-sm font-medium">
                       <span className={corDaEquipe(partida, partida.equipe_a_id)}>{nomeA}</span>

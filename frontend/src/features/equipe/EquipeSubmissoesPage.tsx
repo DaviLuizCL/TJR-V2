@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { rotuloNivel } from "../../lib/nivel";
 import { ListaSubmissoes } from "../painel/ListaSubmissoes";
 
 interface EquipeInfo {
@@ -35,7 +36,7 @@ export function EquipeSubmissoesPage() {
       ) : (
         <>
           <h1 className="mb-1 text-2xl font-semibold text-slate-800">{equipe.nome}</h1>
-          <p className="mb-6 text-sm text-slate-500">Nivel {equipe.nivel} · Submissões</p>
+          <p className="mb-6 text-sm text-slate-500">{rotuloNivel(equipe.nivel)} · Submissões</p>
           <ListaSubmissoes
             equipeId={equipeId}
             mensagemVazia="Esta equipe ainda nao tem nenhuma pontuacao lancada."

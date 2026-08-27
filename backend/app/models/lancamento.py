@@ -41,3 +41,8 @@ class Lancamento(TimestampedBase):
         Enum(LancamentoStatus, name="lancamento_status")
     )
     total: Mapped[float] = mapped_column(Numeric)
+    # Preenchido pelo arbitro em modalidade INDIVIDUAL (tempo que a equipe
+    # levou na rodada) -- usado como criterio de desempate configuravel
+    # (Modalidade.desempates, regra "MENOR_TEMPO"). Opcional: nem toda
+    # modalidade usa esse desempate.
+    tempo_gasto_seg: Mapped[int | None] = mapped_column(Integer, nullable=True)

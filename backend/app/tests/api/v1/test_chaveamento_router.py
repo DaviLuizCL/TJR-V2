@@ -47,8 +47,10 @@ async def _criar_modalidade(client, headers, evento_id, formato_chaveamento):
     return resposta.json()["id"]
 
 
-async def _criar_equipe_inscrita(client, headers, modalidade_id, nome):
-    equipe = await client.post("/api/v1/equipes", json={"nome": nome, "nivel": 1}, headers=headers)
+async def _criar_equipe_inscrita(client, headers, modalidade_id, nome, nivel=1):
+    equipe = await client.post(
+        "/api/v1/equipes", json={"nome": nome, "nivel": nivel}, headers=headers
+    )
     equipe_id = equipe.json()["id"]
     await client.post(
         "/api/v1/inscricoes",
@@ -94,7 +96,13 @@ async def test_gerar_chaveamento_com_papel_arbitro_retorna_403(client, db_sessio
     assert resposta.status_code == 403
 
 
-async def test_gerar_chaveamento_com_formato_todos_contra_todos_retorna_422(client, db_session):
+async def test_gerar_chaveamento_com_formato_todos_contra_todos_explicito_cria_returno(
+    client, db_session
+):
+    # /chaveamento/gerar virou o ponto de entrada unico pra CONFRONTO (antes
+    # so aceitava MATA_MATA, e TODOS_CONTRA_TODOS explicito tinha que passar
+    # por /rodadas/gerar) -- com o formato forcado na modalidade, gera o
+    # returno pra todos os niveis igual, sem olhar contagem de equipe.
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-3@tjr.app")
     evento_id = await _criar_evento(client, headers)
     modalidade_id = await _criar_modalidade(client, headers, evento_id, "TODOS_CONTRA_TODOS")
@@ -105,8 +113,49 @@ async def test_gerar_chaveamento_com_formato_todos_contra_todos_retorna_422(clie
         "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers
     )
 
-    assert resposta.status_code == 422
-    assert resposta.json()["erro"]["codigo"] == "FORMATO_CHAVEAMENTO_INVALIDO_PARA_GERAR"
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["numero"] == 1
+
+    partidas = await client.get(f"/api/v1/rodadas/{corpo['id']}/partidas", headers=headers)
+    assert len(partidas.json()) == 1
+
+
+async def test_gerar_chaveamento_automatico_decide_formato_por_nivel_pela_contagem(
+    client, db_session
+):
+    # formato_chaveamento=None na modalidade = decisao automatica por nivel:
+    # <=5 equipes = todos-contra-todos, 6+ = mata-mata. Nivel 1 (3 equipes) e
+    # nivel 2 (6 equipes) na MESMA modalidade, cada um com o formato certo.
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-7@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade(client, headers, evento_id, None)
+    for i in range(3):
+        await _criar_equipe_inscrita(client, headers, modalidade_id, f"N1 Equipe {i}", nivel=1)
+    for i in range(6):
+        await _criar_equipe_inscrita(client, headers, modalidade_id, f"N2 Equipe {i}", nivel=2)
+
+    resposta = await client.post(
+        "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers
+    )
+
+    assert resposta.status_code == 201
+
+    rodadas = await client.get(
+        "/api/v1/rodadas", params={"modalidade_id": modalidade_id}, headers=headers
+    )
+    partidas_por_nivel = {1: [], 2: []}
+    for rodada in rodadas.json()["itens"]:
+        resposta_partidas = await client.get(
+            f"/api/v1/rodadas/{rodada['id']}/partidas", headers=headers
+        )
+        for partida in resposta_partidas.json():
+            partidas_por_nivel[partida["nivel"]].append(partida)
+
+    assert partidas_por_nivel[1]
+    assert all(p["formato_chaveamento"] == "TODOS_CONTRA_TODOS" for p in partidas_por_nivel[1])
+    assert partidas_por_nivel[2]
+    assert all(p["formato_chaveamento"] == "MATA_MATA" for p in partidas_por_nivel[2])
 
 
 async def test_resetar_chaveamento_apaga_rodada_e_retorna_204(client, db_session):

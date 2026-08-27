@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from app.models.modalidade import FormatoChaveamento
 from app.models.partida import PartidaStatus
 
 
@@ -15,6 +16,7 @@ class PartidaOut(BaseModel):
     equipe_b_id: UUID | None
     vencedor_id: UUID | None
     nivel: int | None
+    formato_chaveamento: FormatoChaveamento
     status: PartidaStatus
     criado_em: datetime
     atualizado_em: datetime

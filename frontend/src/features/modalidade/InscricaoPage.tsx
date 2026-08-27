@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
+import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeInfo {
   id: string;
@@ -128,7 +129,7 @@ export function InscricaoPage() {
           >
             <div>
               <span className="font-medium text-slate-800">{equipe!.nome}</span>
-              <span className="ml-2 text-sm text-slate-500">Nivel {equipe!.nivel}</span>
+              <span className="ml-2 text-sm text-slate-500">{rotuloNivel(equipe!.nivel)}</span>
             </div>
             {ehCoordenador && (
               <button
@@ -161,7 +162,7 @@ export function InscricaoPage() {
               <option value="">Selecione uma equipe</option>
               {elegiveis.map((equipe) => (
                 <option key={equipe.id} value={equipe.id}>
-                  {equipe.nome} (Nivel {equipe.nivel})
+                  {equipe.nome} ({rotuloNivel(equipe.nivel)})
                 </option>
               ))}
             </select>

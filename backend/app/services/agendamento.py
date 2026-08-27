@@ -16,6 +16,37 @@ from app.models.rodada import ModoHorario, Rodada
 from app.services.audit import registrar_audit_log
 from app.services.modalidade import obter_modalidade
 
+# Par fixo (TJR 2026): equipe nas duas modalidades nao pode ter bateria no
+# mesmo instante, porque o robo pode ser o mesmo fisico. Resolvido aqui, nao
+# generalizado pra uma tabela de config - unico par que existe hoje.
+_MODALIDADES_AGENDA_CONFLITANTE: dict[str, str] = {
+    "Resgate no Plano": "Resgate de Alto Risco",
+    "Resgate de Alto Risco": "Resgate no Plano",
+}
+
+
+async def _horarios_ja_ocupados_no_par(
+    db: AsyncSession, modalidade: Modalidade, equipe_ids: list[UUID]
+) -> dict[UUID, set[datetime]]:
+    nome_par = _MODALIDADES_AGENDA_CONFLITANTE.get(modalidade.nome)
+    if nome_par is None or not equipe_ids:
+        return {}
+
+    resultado = await db.execute(
+        select(Agendamento.equipe_id, Agendamento.horario_inicio)
+        .join(Rodada, Agendamento.rodada_id == Rodada.id)
+        .join(Modalidade, Rodada.modalidade_id == Modalidade.id)
+        .where(
+            Modalidade.evento_id == modalidade.evento_id,
+            Modalidade.nome == nome_par,
+            Agendamento.equipe_id.in_(equipe_ids),
+        )
+    )
+    ocupados: dict[UUID, set[datetime]] = defaultdict(set)
+    for equipe_id, horario in resultado.all():
+        ocupados[equipe_id].add(horario)
+    return ocupados
+
 
 def _serializar_agendamento(agendamento: Agendamento) -> dict:
     return {
@@ -157,6 +188,9 @@ async def gerar_agendamentos(
         await db.flush()
 
     usados_por_equipe = await _carregar_historico_de_arenas_usadas(db, modalidade_id)
+    horarios_ocupados_no_par = await _horarios_ja_ocupados_no_par(
+        db, modalidade, [equipe_id for equipe_id, _nivel in equipes]
+    )
 
     duracao = modalidade.duracao_maxima_rodada_seg
     pausa = modalidade.pausa_entre_rodadas_seg or 0
@@ -177,6 +211,20 @@ async def gerar_agendamentos(
 
             ordem = fila_por_arena[arena_escolhida]
             horario_equipe = rodada_horario_inicio + timedelta(seconds=ordem * duracao)
+
+            # Se esse instante ja esta reservado pra essa equipe na
+            # modalidade pareada (mesmo robo fisico possivel), pula pra
+            # proxima posicao da mesma arena ate achar um horario livre -
+            # nunca deixa a equipe sem agendamento, so desvia da colisao.
+            # Bound de seguranca (nao pode ficar preso num loop infinito
+            # numa distribuicao patologica de horarios ocupados).
+            ocupados = horarios_ocupados_no_par.get(equipe_id, set())
+            tentativas = 0
+            while horario_equipe in ocupados and tentativas <= len(equipes):
+                fila_por_arena[arena_escolhida] += 1
+                ordem = fila_por_arena[arena_escolhida]
+                horario_equipe = rodada_horario_inicio + timedelta(seconds=ordem * duracao)
+                tentativas += 1
 
             agendamento = Agendamento(
                 rodada_id=rodada.id,

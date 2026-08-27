@@ -343,6 +343,7 @@ describe("ChaveamentoPage", () => {
               vencedor_id: "eq-1",
               status: "ENCERRADA",
               nivel: 1,
+              formato_chaveamento: "MATA_MATA",
             },
           ],
           error: undefined,
@@ -407,6 +408,7 @@ describe("ChaveamentoPage", () => {
               vencedor_id: "eq-1",
               status: "ENCERRADA",
               nivel: 1,
+              formato_chaveamento: "TODOS_CONTRA_TODOS",
             },
             {
               id: "p2",
@@ -415,6 +417,7 @@ describe("ChaveamentoPage", () => {
               vencedor_id: null,
               status: "EMPATADA",
               nivel: 1,
+              formato_chaveamento: "TODOS_CONTRA_TODOS",
             },
           ],
           error: undefined,

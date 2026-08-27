@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
 import type { components } from "../../api/types";
+import { rotuloNivel } from "../../lib/nivel";
 
 type ModalidadeCreateBody = components["schemas"]["ModalidadeCreate"];
 
@@ -235,7 +236,7 @@ function EtapaNiveis({ form }: { form: UseFormReturn<FormData> }) {
                         );
                       }}
                     />
-                    Nivel {nivel}
+                    {rotuloNivel(nivel)}
                   </label>
                 ))}
               </div>
@@ -318,7 +319,7 @@ function EtapaArenas({ form }: { form: UseFormReturn<FormData> }) {
                             );
                           }}
                         />
-                        Atende nivel {nivel}
+                        Atende {rotuloNivel(nivel)}
                       </label>
                     ))}
                   </div>

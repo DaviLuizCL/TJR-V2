@@ -129,6 +129,18 @@ async def test_listar_inscricoes_filtra_por_modalidade(client, db_session):
     assert modalidade_b  # sanity: usada so para garantir isolamento do filtro
 
 
+async def test_listar_inscricoes_aceita_size_ate_1000(client, db_session):
+    # Mesmo teto de /equipes -- a tela de Equipes busca todas as inscricoes
+    # de uma vez (sem paginar) pra montar "quais modalidades cada equipe
+    # esta inscrita", e o teto antigo de 200 nao cobre um evento real.
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-insc-5@tjr.app")
+
+    resposta = await client.get("/api/v1/inscricoes?size=1000", headers=headers)
+
+    assert resposta.status_code == 200
+    assert resposta.json()["size"] == 1000
+
+
 async def test_listar_inscricoes_com_papel_arbitro_retorna_200(client, db_session):
     headers_coord = await _auth_header(
         client, db_session, Papel.COORDENADOR, "coord-insc-6@tjr.app"

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
+import { rotuloNivel } from "../../lib/nivel";
 
 interface ItemAuditoria {
   criterio_snapshot: {
@@ -86,7 +87,7 @@ function CardSubmissao({ item, ehCoordenador }: { item: LancamentoAuditoria; ehC
         <div>
           <p className="font-semibold text-slate-800">
             {item.modalidade_nome}
-            {item.nivel !== null ? ` · Nivel ${item.nivel}` : ""}
+            {item.nivel !== null ? ` · ${rotuloNivel(item.nivel)}` : ""}
           </p>
           <p className="text-xs text-slate-500">
             {item.equipe_nome} · Rodada {item.rodada_numero} · Tentativa {item.tentativa} · ID{" "}
@@ -244,7 +245,7 @@ function CardCombate({ grupo, ehCoordenador }: { grupo: GrupoCombate; ehCoordena
     <li className="rounded border border-slate-200 bg-white p-4">
       <p className="font-semibold text-slate-800">
         {grupo.modalidade_nome}
-        {grupo.nivel !== null ? ` · Nivel ${grupo.nivel}` : ""}
+        {grupo.nivel !== null ? ` · ${rotuloNivel(grupo.nivel)}` : ""}
       </p>
       <p className="mb-3 text-xs text-slate-500">
         Rodada {grupo.rodada_numero} · Tentativa {grupo.tentativa}

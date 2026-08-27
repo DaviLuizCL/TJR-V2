@@ -59,6 +59,35 @@ describe("CombateDashboardPage", () => {
     expect(linkPontuar).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/pontuar");
   });
 
+  it("formato_chaveamento nulo mostra 'Automático por nível', nao 'Sem formato definido'", async () => {
+    // formato_chaveamento=null numa modalidade CONFRONTO nao significa mais
+    // "sem formato" -- desde o chaveamento por nivel (gerar_chaveamento_confronto),
+    // null e o normal: decide sozinho por nivel (<=5 equipes = todos-contra-
+    // todos, 6+ = mata-mata). "Sem formato definido" sugeria erro de
+    // configuracao, o que confundiu o coordenador ao olhar a tela.
+    vi.mocked(api.GET).mockResolvedValue({
+      data: {
+        itens: [
+          {
+            id: "m1",
+            nome: "Sumô",
+            tipo_disputa: "CONFRONTO",
+            formato_chaveamento: null,
+          },
+        ],
+        total: 1,
+        page: 1,
+        size: 100,
+      },
+      error: undefined,
+    } as never);
+
+    renderPage("evt-1");
+
+    expect(await screen.findByText(/autom[aá]tico por n[ií]vel/i)).toBeInTheDocument();
+    expect(screen.queryByText(/sem formato definido/i)).not.toBeInTheDocument();
+  });
+
   it("nao mostra modalidades individuais (elas ficam na aba Rodadas)", async () => {
     vi.mocked(api.GET).mockResolvedValue({
       data: {

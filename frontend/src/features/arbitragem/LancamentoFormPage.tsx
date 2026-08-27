@@ -7,6 +7,7 @@ import { api } from "../../api/client";
 import { db, type LancamentoOutboxItem } from "../../lib/db";
 import { derivarLancamentoAtivo, type LancamentoAtivoView } from "../../lib/lancamento-outbox-view";
 import { enfileirarConfirmarLancamento, enfileirarCriarLancamento } from "../../lib/outbox";
+import { rotuloNivel } from "../../lib/nivel";
 import { sincronizar } from "../../lib/sync";
 import { CriterioPreview, type CriterioItem, type ValorEstado } from "../ficha/FichaPreviewPage";
 
@@ -96,6 +97,7 @@ export function LancamentoFormPage() {
   const [nivelFiltro, setNivelFiltro] = useState("");
   const [tentativa, setTentativa] = useState(() => Number(searchParams.get("tentativa")) || 1);
   const [valores, setValores] = useState<Record<string, ValorEstado>>({});
+  const [tempoGastoSeg, setTempoGastoSeg] = useState("");
   const [totalPreview, setTotalPreview] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -360,6 +362,8 @@ export function LancamentoFormPage() {
         itens,
         totalPreview: totalPreview ?? 0,
         partidaId: isConfronto ? partidaId : undefined,
+        tempoGastoSeg:
+          !isConfronto && tempoGastoSeg !== "" ? Number(tempoGastoSeg) : undefined,
       });
       void sincronizar();
     } catch {
@@ -486,7 +490,7 @@ export function LancamentoFormPage() {
               <option value="">Todos os niveis</option>
               {niveisDisponiveis.map((nivel) => (
                 <option key={nivel} value={nivel}>
-                  Nivel {nivel}
+                  {rotuloNivel(nivel)}
                 </option>
               ))}
             </select>
@@ -497,7 +501,7 @@ export function LancamentoFormPage() {
       {veioPreselecionado && equipePorId.get(equipeId) && (
         <p className="mb-6 text-sm text-slate-600">
           Pontuando: <span className="font-medium text-slate-800">{equipePorId.get(equipeId)!.nome}</span>{" "}
-          (Nivel {equipePorId.get(equipeId)!.nivel})
+          ({rotuloNivel(equipePorId.get(equipeId)!.nivel)})
           {modalidade.tentativas_por_rodada > 1 ? ` · ${tentativa}ª tentativa` : ""}
         </p>
       )}
@@ -516,7 +520,7 @@ export function LancamentoFormPage() {
             <option value="">Selecione uma equipe</option>
             {equipesElegiveis.map((equipe) => (
               <option key={equipe.id} value={equipe.id}>
-                {equipe.nome} (Nivel {equipe.nivel})
+                {equipe.nome} ({rotuloNivel(equipe.nivel)})
               </option>
             ))}
           </select>
@@ -580,6 +584,27 @@ export function LancamentoFormPage() {
               </div>
             </section>
           ))}
+
+          {!isConfronto && (
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-slate-700"
+                htmlFor="tempo-gasto-seg"
+              >
+                Tempo gasto (segundos)
+              </label>
+              <input
+                id="tempo-gasto-seg"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={tempoGastoSeg}
+                onChange={(e) => setTempoGastoSeg(e.target.value)}
+                disabled={!!lancamentoAtivo}
+                className="w-32 rounded border border-slate-300 px-3 py-2 disabled:opacity-50"
+              />
+            </div>
+          )}
 
           {!lancamentoAtivo && (
             <p className="text-sm text-slate-500">

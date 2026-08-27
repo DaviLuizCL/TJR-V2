@@ -40,6 +40,7 @@ function logarComo(papel: string) {
 function mockGetEquipes(
   equipesPayload: unknown,
   modalidadesPayload: unknown = { itens: [], total: 0, page: 1, size: 200 },
+  inscricoesPayload: unknown = { itens: [], total: 0, page: 1, size: 1000 },
 ) {
   vi.mocked(api.GET).mockImplementation(async (path: unknown) => {
     if (path === "/api/v1/modalidades") {
@@ -47,6 +48,9 @@ function mockGetEquipes(
     }
     if (path === "/api/v1/equipes") {
       return { data: equipesPayload, error: undefined } as never;
+    }
+    if (path === "/api/v1/inscricoes") {
+      return { data: inscricoesPayload, error: undefined } as never;
     }
     return { data: undefined, error: undefined } as never;
   });
@@ -74,8 +78,48 @@ describe("EquipeListPage", () => {
     const linhaAlpha = (await screen.findByText("Equipe Alpha")).closest("li")!;
     const linhaBeta = screen.getByText("Equipe Beta").closest("li")!;
 
-    expect(within(linhaAlpha).getByText(/nivel 2/i)).toBeInTheDocument();
+    expect(within(linhaAlpha).getByText(/nível 2/i)).toBeInTheDocument();
     expect(within(linhaBeta).getByText(/inativa/i)).toBeInTheDocument();
+  });
+
+  it("mostra as modalidades em que cada equipe esta inscrita", async () => {
+    mockGetEquipes(
+      {
+        itens: [
+          { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true },
+          { id: "eq2", nome: "Equipe Beta", nivel: 3, ativo: true },
+        ],
+        total: 2,
+        page: 1,
+        size: 50,
+      },
+      {
+        itens: [
+          { id: "mod-1", nome: "Sumô" },
+          { id: "mod-2", nome: "Cabo de Guerra" },
+        ],
+        total: 2,
+        page: 1,
+        size: 200,
+      },
+      {
+        itens: [
+          { id: "ins-1", equipe_id: "eq1", modalidade_id: "mod-1" },
+          { id: "ins-2", equipe_id: "eq1", modalidade_id: "mod-2" },
+        ],
+        total: 2,
+        page: 1,
+        size: 1000,
+      },
+    );
+
+    renderPage();
+
+    const linhaAlpha = (await screen.findByText("Equipe Alpha")).closest("li")!;
+    const linhaBeta = screen.getByText("Equipe Beta").closest("li")!;
+
+    expect(within(linhaAlpha).getByText(/Sumô, Cabo de Guerra/)).toBeInTheDocument();
+    expect(within(linhaBeta).getByText(/nenhuma modalidade/i)).toBeInTheDocument();
   });
 
   it("filtra equipes por modalidade", async () => {

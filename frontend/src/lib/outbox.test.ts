@@ -26,6 +26,35 @@ describe("outbox", () => {
     expect(itens[0].contexto).toEqual({ rodadaId: "rod-1", equipeId: "eq-1", tentativa: 1 });
   });
 
+  it("inclui tempo_gasto_seg no payload quando informado", async () => {
+    await enfileirarCriarLancamento({
+      fichaId: "ficha-1",
+      rodadaId: "rod-1",
+      equipeId: "eq-1",
+      tentativa: 1,
+      itens: [],
+      totalPreview: 0,
+      tempoGastoSeg: 87,
+    });
+
+    const item = (await db.lancamentoOutbox.toArray())[0];
+    expect(item.payload.tempo_gasto_seg).toBe(87);
+  });
+
+  it("nao inclui tempo_gasto_seg no payload quando nao informado", async () => {
+    await enfileirarCriarLancamento({
+      fichaId: "ficha-1",
+      rodadaId: "rod-1",
+      equipeId: "eq-1",
+      tentativa: 1,
+      itens: [],
+      totalPreview: 0,
+    });
+
+    const item = (await db.lancamentoOutbox.toArray())[0];
+    expect(item.payload.tempo_gasto_seg).toBeUndefined();
+  });
+
   it("gera um client_operation_id fixo, nao reaproveita a cada chamada", async () => {
     const primeira = await enfileirarCriarLancamento({
       fichaId: "ficha-1",

@@ -4,14 +4,12 @@ import { useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
-
-const FORMATOS_BRACKET = ["MATA_MATA"];
+import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeChaveamento {
   id: string;
   nome: string;
   tipo_disputa: string;
-  formato_chaveamento: string | null;
 }
 
 interface RodadaItem {
@@ -26,6 +24,7 @@ interface PartidaItem {
   vencedor_id: string | null;
   status: string;
   nivel: number | null;
+  formato_chaveamento?: string;
 }
 
 function ladoClasses(vencedorId: string | null, equipeId: string): string {
@@ -242,7 +241,12 @@ export function ChaveamentoPage() {
     const partidasDoNivel = todasPartidas.filter((p) => p.nivel === nivelAtivo);
     if (partidasDoNivel.length === 0) return null;
 
-    if (FORMATOS_BRACKET.includes(modalidadeAtiva.formato_chaveamento ?? "")) {
+    // Formato e por nivel (Partida.formato_chaveamento), nao mais um campo
+    // unico da modalidade -- todas as partidas de um nivel compartilham o
+    // mesmo formato, por construcao (gerar_chaveamento_confronto).
+    const formatoDoNivel = partidasDoNivel[0]?.formato_chaveamento;
+
+    if (formatoDoNivel === "MATA_MATA") {
       const rodadasComNivel = rodadasOrdenadas.filter((r) =>
         (partidasPorRodada.get(r.id) ?? []).some((p) => p.nivel === nivelAtivo),
       );
@@ -258,7 +262,7 @@ export function ChaveamentoPage() {
       return null;
     }
 
-    if (modalidadeAtiva.formato_chaveamento === "TODOS_CONTRA_TODOS") {
+    if (formatoDoNivel === "TODOS_CONTRA_TODOS") {
       const finalizado = partidasDoNivel.every(
         (p) => p.status === "ENCERRADA" || p.status === "EMPATADA",
       );
@@ -319,7 +323,7 @@ export function ChaveamentoPage() {
                 >
                   {niveisDisponiveis.map((nivel) => (
                     <option key={nivel} value={nivel}>
-                      Nivel {nivel}
+                      {rotuloNivel(nivel)}
                     </option>
                   ))}
                 </select>
