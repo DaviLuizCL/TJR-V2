@@ -93,7 +93,14 @@ describe("ChaveamentoManualBuilder", () => {
 
   it("equipe que ja tem partida some dos seletores e aparece no card", async () => {
     mockDados([
-      { id: "p1", equipe_a_id: "eq-a", equipe_b_id: "eq-b", nivel: 2, status: "AGENDADA" },
+      {
+        id: "p1",
+        equipe_a_id: "eq-a",
+        equipe_b_id: "eq-b",
+        nivel: 2,
+        status: "AGENDADA",
+        formato_chaveamento: "MATA_MATA",
+      },
     ]);
     renderBuilder();
 
@@ -168,6 +175,85 @@ describe("ChaveamentoManualBuilder", () => {
     await userEvent.click(screen.getByRole("button", { name: /salvar confronto/i }));
 
     expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
+  });
+
+  it("equipe que ja jogou fase de grupos (TODOS_CONTRA_TODOS) aparece elegivel pro mata-mata", async () => {
+    // Nivel 2 passou pela fase de grupos na rodada 1 (chave, TODOS_CONTRA_TODOS)
+    // -- eq-a e eq-b ja tem partida ali, mas isso NAO deve bloquear elas pro
+    // mata-mata: a rodada-alvo bate pra rodada 2 (nova, ainda vazia).
+    vi.mocked(api.GET).mockImplementation(async (path: unknown, opts?: unknown) => {
+      if (path === "/api/v1/equipes") {
+        return {
+          data: {
+            itens: [
+              { id: "eq-a", nome: "Equipe A", nivel: 2, ativo: true },
+              { id: "eq-b", nome: "Equipe B", nivel: 2, ativo: true },
+              { id: "eq-c", nome: "Equipe C", nivel: 2, ativo: true },
+            ],
+            total: 3,
+            page: 1,
+            size: 1000,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/inscricoes") {
+        return {
+          data: {
+            itens: [
+              { equipe_id: "eq-a", modalidade_id: "mod-1" },
+              { equipe_id: "eq-b", modalidade_id: "mod-1" },
+              { equipe_id: "eq-c", modalidade_id: "mod-1" },
+            ],
+            total: 3,
+            page: 1,
+            size: 1000,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas") {
+        return {
+          data: {
+            itens: [
+              { id: "r1", numero: 1 },
+              { id: "r2", numero: 2 },
+            ],
+            total: 2,
+            page: 1,
+            size: 200,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
+        const rodadaId = (opts as { params?: { path?: { rodada_id?: string } } })?.params?.path
+          ?.rodada_id;
+        if (rodadaId === "r1") {
+          return {
+            data: [
+              {
+                id: "p-grupo",
+                equipe_a_id: "eq-a",
+                equipe_b_id: "eq-b",
+                nivel: 2,
+                status: "ENCERRADA",
+                formato_chaveamento: "TODOS_CONTRA_TODOS",
+              },
+            ],
+            error: undefined,
+          } as never;
+        }
+        return { data: [], error: undefined } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+    renderBuilder();
+
+    const selectA = screen.getByLabelText(/equipe a/i);
+    await within(selectA).findByText("Equipe A");
+    expect(within(selectA).getByText("Equipe B")).toBeInTheDocument();
+    expect(within(selectA).getByText("Equipe C")).toBeInTheDocument();
   });
 
   it("trocar de nivel mostra as equipes daquele nivel", async () => {

@@ -208,12 +208,13 @@ Se alguma tarefa parecer exigir quebrar uma destas, **pare e pergunte**.
    `SECRETARIA`, `PUBLICO`.
 9. **Equipes de níveis diferentes nunca se enfrentam em modalidade de confronto.** Chaveamento e
    returno são sempre separados por nível (ver seção 6).
-10. **Modalidade INDIVIDUAL: nenhum lançamento sem arena atribuída.** `criar_lancamento` recusa
-    com `422 EQUIPE_SEM_ARENA_ATRIBUIDA` se não existir `agendamento` (equipe + rodada + arena)
-    pra aquela equipe naquela rodada. Reflete o fluxo real do dia da competição: arenas são
-    montadas primeiro (podem ter dificuldade/nível diferentes), só depois o horário é gerado e as
-    equipes são chamadas — não existe "equipe pontuando sem lugar pra competir". Vale só pra
-    INDIVIDUAL; CONFRONTO não usa arena/agendamento neste sistema.
+
+~~10. Modalidade INDIVIDUAL: nenhum lançamento sem arena atribuída.~~ **Removida em 28/08/2026**
+(véspera do TJR 2026), pedido direto do coordenador — na prática as arenas de uma modalidade são
+fisicamente equivalentes no ginásio real, então a trava só bloqueava o card de pontuar sem
+carregar informação útil nenhuma. `criar_lancamento` não exige mais `Agendamento` pra
+INDIVIDUAL; `PontuarPage.tsx` mostra arena/horário como informação extra quando existir, nunca
+mais como pré-requisito. Ver histórico na seção 12. Não reintroduzir sem pedido explícito.
 
 ---
 
@@ -1214,6 +1215,171 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
      *o quê* especificamente incomodou (UX de montar partida por partida, a convivência
      automático+manual no mesmo nível, outra coisa). Não presumir o problema nem tentar
      redesenhar sozinho antes de ouvir o que ele achou confuso/errado na prática.
+
+   **Reset de equipes pra reimportar a planilha oficial + fase de grupos ("chave")** (28/08/2026).
+   O usuário achou erros reais no import anterior (equipes de robô virando equipe separada tipo
+   "Bananabot"/"Bananabot2", equipe real faltando) e pediu reset total de equipe/inscrição/
+   rodada/partida (local e produção são **o mesmo banco** nesta máquina — dev e prod só mudam o
+   modo do compose, `docker-compose.prod.yml` reaproveita o volume de propósito, documentado no
+   próprio arquivo) pra reimportar devagar e conferir. Confirmado zero lançamento antes de apagar
+   (`DELETE` direto, sem passar pelo `resetar_chaveamento` porque não era por modalidade, era o
+   banco inteiro) — `evento`/`modalidade`/`ficha`/`usuario` ficaram intactos.
+
+   Na sequência, pedido novo do coordenador pra Cabo de Guerra/Corrida de Carros Autônomos/Sumô/
+   Sumô 3 kg (**não** Sumô RC 1,5 kg, que fica mata-mata puro): fase de grupos "estilo Copa do
+   Mundo" — equipes de um nível divididas em grupos menores (cada grupo joga todos-contra-todos
+   entre si, garante pelo menos 2 jogos por equipe), e depois da fase de grupos o próprio
+   coordenador monta o mata-mata (quartas/semi/final) na mão a partir da classificação de cada
+   grupo. Decisão consciente de **não automatizar o cruzamento entre grupos pro mata-mata** (tipo
+   "1º do A pega 2º do B") — é a parte que o coordenador achou complicada quando tentou pensar
+   nisso sozinho, e ele topou montar esse cruzamento na mão com a ferramenta de chaveamento manual
+   que já existia (seção anterior). Nome de domínio novo aprovado pelo usuário: **"chave"** (ex.:
+   "Chave A", "Chave B") — diferente de "grupo" (já reservado pra seção de ficha).
+
+   Arquitetura (planejada em `EnterPlanMode` antes de codar, TDD do início ao fim): **sem** valor
+   novo no enum `FormatoChaveamento` (evita `ALTER TYPE ... ADD VALUE`, sem precedente nas
+   migrations do projeto) — fase de grupos é ortogonal a esse enum, as partidas de chave continuam
+   `formato_chaveamento=TODOS_CONTRA_TODOS` (é logicamente o que são), só que agora carregam
+   `Partida.chave_id` (nullable, migration `6a506624890d`, depois de `101da0b8d6c0` criar as
+   tabelas `chave`/`chave_equipe`) pra saber de qual chave vieram. Isso deixa
+   `gerar_chaveamento_confronto` (dispatcher automático) **inalterado** — como ele já pula
+   (`niveis_com_partida`) qualquer nível que já tenha qualquer partida, um nível que passou por
+   fase de grupos manual fica de fora do automático de graça.
+
+   - `services/chave.py` (novo): `criar_chave`/`adicionar_equipe`/`remover_equipe`/`listar_chaves`
+     — regra nova `EQUIPE_JA_TEM_CHAVE` (409): equipe só pode estar numa chave por modalidade
+     (permitido a mesma equipe estar em chaves de modalidades diferentes). `remover_equipe`
+     recusa (`CHAVE_JA_TEM_PARTIDA`) se a chave já tem jogo gerado — sem reset granular por chave
+     nesta entrega, o caminho de correção é o `resetar_chaveamento` de sempre (modalidade
+     inteira).
+   - `services/chaveamento.py::gerar_fase_de_grupos` (novo) — mesmo esqueleto do bloco
+     `niveis_liga` de `gerar_chaveamento_confronto` (reaproveita `_gerar_pareamento`/
+     `_rodadas_necessarias` de `rodada.py`), só que agrupado por `chave_id` em vez de `nivel`;
+     idempotente (chave que já tem partida é pulada). Extraído `_obter_ou_criar_rodada` (antes uma
+     função aninhada só de `gerar_chaveamento_confronto`) pra nível de módulo, reaproveitado pelos
+     dois.
+   - **Achado central do desenho** (só apareceu ao encadear os testes, não era óbvio de antemão):
+     `criar_partida_manual` tinha a rodada-alvo **fixa** em `numero=1` e a checagem
+     `EQUIPE_JA_TEM_PARTIDA` olhava a **modalidade inteira** — isso bloquearia incorretamente uma
+     equipe que já jogou a fase de grupos (ela já tem partida, só que numa rodada anterior) de
+     entrar no mata-mata manual. Corrigido: rodada-alvo passou a ser calculada (maior
+     `Rodada.numero` com partida daquele nível, +1 — mas só avança se essa última rodada foi
+     `TODOS_CONTRA_TODOS`; se já for `MATA_MATA`, reaproveita o mesmo número, porque é outra
+     chamada manual ainda montando a mesma rodada), e a checagem de duplicata passou a filtrar só
+     pela rodada-alvo, não mais a modalidade toda. Efeito colateral bom, provado por teste
+     (`test_avancar_se_rodada_completa_funciona_sozinho_a_partir_da_segunda_rodada_pos_grupos`):
+     como a fase de grupos nunca aciona `avancar_se_rodada_completa` (só `MATA_MATA` aciona) e a
+     1ª rodada manual pós-grupos já nasce `MATA_MATA`, a partir da 2ª rodada (ex.: semifinal→final)
+     o avanço automático que já existia cuida sozinho — só a 1ª rodada pós-grupos precisa ser
+     montada na mão.
+   - `services/consolidacao.py` — extraído `_computar_stats_liga` (vitórias/empates/derrotas +
+     nota_final) do meio de `_classificacao_todos_contra_todos` sem mudar comportamento (coberto
+     pela suíte já existente, sem teste de regressão redundante); nova
+     `calcular_classificacao_chave(db, chave_id)` reaproveita esse helper + o mesmo desempate por
+     confronto direto, filtrando partidas por `Partida.chave_id` direto (mais simples que a
+     variante por nível, que precisa passar pela modalidade inteira).
+   - Endpoints novos (`api/v1/chave.py`, router registrado em `main.py`): CRUD de chave
+     (`POST/GET /modalidades/{id}/chaves`, `POST/DELETE /chaves/{id}/equipes[/{equipe_id}]`) e
+     `GET /chaves/{id}/classificacao` — todos `_PAPEIS_LEITURA`/`COORDENADOR`, **sem** `PUBLICO`
+     (o projeto mantém ranking fora do público de propósito desde a sessão anterior). Mais
+     `POST /modalidades/{id}/chaveamento/fase-de-grupos/gerar` em `chaveamento.py`.
+   - Frontend: `FaseDeGruposBuilder.tsx` (novo, mesmo esqueleto de estado/modal do
+     `ChaveamentoManualBuilder.tsx`) — criar chave, adicionar/remover equipe, "Gerar fase de
+     grupos"; botão novo "Fase de Grupos" em `RodadaListPage.tsx` ao lado de "Montar chaveamento
+     manual" (mesma condição de exibição — some só em `TODOS_CONTRA_TODOS` explícito).
+     `ChaveamentoManualBuilder.tsx` ganhou a mesma correção de rodada-alvo do backend (antes fixo
+     em `numero===1`), buscando partidas de **todas** as rodadas em vez de só a 1. `lib/fase-
+     chaveamento.ts::calcularTotalRodadasPorNivel` deixou de assumir "rodada 1 = início do
+     bracket" — agora acha, por nível, a primeira rodada cujas partidas são `MATA_MATA` (rodadas
+     antes dela podem ser fase de grupos); sem isso os rótulos "Final/Semifinal" saíam errados
+     pra qualquer nível que passasse por chave. `PontuarCombatePage.tsx::grupoDaPartida` passou a
+     rotular partida de fase de grupos pelo **nome da chave** (lookup vivo via
+     `GET .../chaves`, mesmo padrão de resolução de nome já usado pra equipe) em vez do rótulo
+     fixo "Fase de Grupos", com prioridade de ordenação baixa (aparece depois do mata-mata assim
+     que ele existir).
+   - Suíte: backend 530 (+35 dessa sessão), frontend 397 (+23), typecheck/lint/ruff limpos.
+     **Sem verificação ao vivo contra o banco compartilhado desta vez** — decisão consciente, pra
+     não sujar o evento real no meio do reimport da planilha que o usuário estava fazendo em
+     paralelo; a suíte automatizada já cobre a cadeia completa (chave → fase de grupos → mata-mata
+     manual → avanço automático) em nível de serviço.
+
+   **Import real da `LISTA_FINAL.xlsx`, montagem dos grupos e reversão da trava Sumô/Sumô RC**
+   (mesma data). Corrigido um bug real no `scripts/lista_2026/importar.py` no caminho: a
+   planilha final salva a coluna de nível como float (`"0.0"`, `"2.0"`) em vez do inteiro puro
+   da planilha anterior, e `int(nivel_bruto)` quebra nesse formato — trocado por
+   `int(float(nivel_bruto))`. Depois da correção: 135 equipes, 161 inscrições, 2 linhas
+   ignoradas de propósito, zero erro.
+
+   Configuração de formato aplicada por modalidade de confronto, via `PATCH /modalidades/{id}`
+   (override explícito de `formato_chaveamento`) quando a contagem real de equipes não bateria
+   com o que o usuário queria: Sumô RC 1,5 kg forçado `MATA_MATA`; Corrida de Carros Autônomos
+   forçado `TODOS_CONTRA_TODOS` (sem forçar, 6 equipes reais cairia em mata-mata pela regra
+   automática de contagem); Sumô 3 kg deixado automático (só 3 equipes, a regra de contagem já
+   resolve sozinha). Cabo de Guerra e Sumô (os "restantes", os que tinham gente demais pra
+   round-robin simples) ganharam fase de grupos de verdade: script avulso (`docker compose exec
+   -T api python3`, mesmo padrão de outras sessões) criou as chaves e distribuiu as equipes —
+   **primeira tentativa foi em ordem alfabética** (mais fácil de auditar visualmente), mas o
+   usuário pediu pra trocar por sorteio de verdade ("senão nego vai reclamar") — resetado via
+   `resetar_chaveamento` (zero lançamento em risco, só acabara de gerar) e remontado com
+   `random.shuffle` antes de distribuir round-robin nas chaves. Tamanho de grupo é decisão livre
+   do assistente (sem instrução numérica do usuário): alvo de ~4-5 equipes por chave, arredondado
+   pra cima quando sobra 1-2 equipes, sem nenhuma fórmula fixa — Cabo de Guerra nível 2 (14
+   equipes → 3 chaves de 5/5/4), nível 3 (22 → 5 chaves de 5/5/4/4/4), nível 4 (8 → 2 chaves de
+   4/4); Sumô nível 3 (11 → 3 chaves de 4/4/3), nível 4 (6 → 2 chaves de 3/3). Sumô nível 2 (só 4
+   equipes) ficou de fora de propósito — já vira todos-contra-todos sozinho pela regra de
+   contagem, grupo ali seria só burocracia extra.
+
+   **Selo visual de chave nas telas de combate** — pedido do usuário depois de montar os grupos
+   ("da uma informação visual... pra ficar melhor de ler"): sem isso, um nível com 5 chaves virava
+   uma lista corrida de 10 confrontos sem nenhuma pista de qual chave era qual.
+   `RodadaListPage.tsx::CombateRodada` passou a sub-agrupar `partidasDoNivel` por `chave_id`
+   (fallback pra lista plana quando nenhuma partida do nível tem chave — mata-mata automático
+   continua igual) com um rótulo pequeno (nome da chave, resolvido ao vivo via
+   `GET /modalidades/{id}/chaves`, nunca hardcoded) acima de cada bloco.
+   `ChaveamentoPage.tsx::ColunaRodada` ganhou o mesmo rótulo dentro de cada card de partida.
+   Confirmado ao vivo no navegador nas duas telas.
+
+   **Trava Sumô ↔ Sumô RC 1,5 kg removida** (`_recusar_se_par_conflitante_em_andamento` e
+   `_MODALIDADES_COMBATE_CONFLITANTE`, `services/chaveamento.py`) — essa regra existia desde uma
+   sessão anterior (parte deliberada do design: as duas modalidades competem com o mesmo robô
+   físico possível, e a trava impedia gerar o chaveamento de uma enquanto a outra tivesse combate
+   em aberto, pra nunca ter árbitro chamando a mesma equipe pras duas ao mesmo tempo). Bloqueou a
+   geração do Sumô RC 1,5 kg nesta sessão (Sumô já tinha fase de grupos aberta) — o usuário decidiu
+   que a trava atrapalha mais do que ajuda ("vai dar muita dor de cabeça"), porque ele quer montar
+   TODOS os chaveamentos com antecedência pra revisar antes do dia, e prefere resolver qualquer
+   choque de agenda manualmente no dia (árbitro chama a próxima equipe se a anterior estiver
+   competindo em outro lugar) em vez de o sistema bloquear a geração adiantada. Removida a função,
+   a constante, a chamada em `gerar_chaveamento_confronto`, o `try/except` que a engolia em
+   `db/seed.py::seed_rodadas` (virou dead code) e a exceção correspondente em
+   `test_seed.py::_qtd_rodadas_esperada_no_seed`; o teste que provava o bloqueio virou o teste que
+   prova o oposto (`test_gerar_chaveamento_confronto_permite_sumo_rc_mesmo_com_sumo_em_andamento`).
+   Se esse tipo de conflito de agenda (duas modalidades competindo pelo mesmo robô/equipe ao
+   mesmo tempo) precisar de alguma ajuda de sistema no futuro, é feature nova (ex.: aviso, não
+   bloqueio) — não reintroduzir a trava antiga.
+
+   **Ajustes de véspera (28/08/2026, véspera do evento)**: (1) grupos do Cabo de Guerra
+   reduzidos de 4-5 pra 3-4 equipes por chave (76 → 54 partidas) — coordenador achou o total
+   grande demais; grupo de 3 é o mínimo que ainda garante "pelo menos 2 jogos por equipe", Sumô
+   já estava nesse tamanho e não mudou. (2) Rodadas de todas as 4 modalidades individuais
+   geradas de uma vez (`POST /rodadas/gerar`) — Resgate no Plano/Alto Risco/Viagem também
+   tiveram `qtd_rodadas` reduzido de 3 pra 2 e `consolidacao` trocada pra `SOMA_RODADAS` (nota
+   final = soma das duas), igualando à Dança. (3) Criadas as 22 contas de staff reais a partir
+   de `pessoas.csv` (16 `ARBITRO`/"Juiz", 6 `COORDENADOR`/"Admin"), senha inicial `tjr2026` pra
+   todo mundo — a conta seed (`admin@tjr.app`) segue existindo à parte.
+
+   **Regra inviolável 10 removida** (arena obrigatória pra lançamento em modalidade INDIVIDUAL,
+   `EQUIPE_SEM_ARENA_ATRIBUIDA` em `services/lancamento.py::criar_lancamento`) — pedido direto do
+   coordenador na véspera: no ginásio real as arenas de uma modalidade são fisicamente
+   equivalentes, então a distinção "equipe tem arena atribuída nesta rodada" não carrega
+   informação nenhuma pra ele, só trava o card de pontuar sem necessidade. Removida a validação
+   no backend (teste que provava o bloqueio virou
+   `test_criar_lancamento_individual_funciona_mesmo_sem_arena_atribuida`, provando o oposto) e a
+   UI de bloqueio em `PontuarPage.tsx` — o card agora é **sempre** clicável; se existir
+   `Agendamento` pra aquela equipe/rodada, a arena/horário aparece como informação extra (não
+   mais como pré-requisito). **Decisão consciente de escopo**: não removi o resto do sistema de
+   arena/agendamento (models, migrations, tela "Horários", geração automática de horário) — só a
+   trava de bloqueio no fluxo de pontuar. Ficou como recurso morto/opcional, não uma regra
+   quebrada; se um dia fizer sentido tirar essa tela também, é decisão nova.
 
 ---
 

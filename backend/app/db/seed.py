@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import AppError
 from app.core.security import hash_senha
 from app.db.session import AsyncSessionLocal
 from app.models.agendamento import Agendamento
@@ -816,21 +815,11 @@ async def seed_rodadas(
     rodadas: list[Rodada] = []
     for modalidade in modalidades:
         if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
-            try:
-                rodadas.extend(
-                    await _obter_ou_gerar_chaveamento_confronto(
-                        db, modalidade.id, usuario_id=usuario_id
-                    )
+            rodadas.extend(
+                await _obter_ou_gerar_chaveamento_confronto(
+                    db, modalidade.id, usuario_id=usuario_id
                 )
-            except AppError as erro:
-                if erro.codigo != "MODALIDADE_CONFLITANTE_EM_ANDAMENTO":
-                    raise
-                # Sumo RC 1,5kg e Sumo 1,5kg tradicional nao podem ficar
-                # "abertos" ao mesmo tempo (mesmo robo fisico possivel) - o
-                # mesmo bloqueio do dia real (chaveamento.py) tambem vale
-                # aqui: o seed so deixa uma das duas pronta pra pontuar de
-                # cada vez, igual valeria em producao.
-                continue
+            )
         else:
             rodadas.extend(
                 await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id)

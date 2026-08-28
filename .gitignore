@@ -18,5 +18,7 @@ backend/scripts/credenciamento/saida_credenciais.csv
 backend/scripts/dados_teste/*.pdf
 /pessoas.csv
 /saida_credenciais.csv
+/*.xlsx
+backend/scripts/lista_2026/*.xlsx
 
 /certbot/

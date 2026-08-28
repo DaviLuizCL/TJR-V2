@@ -4,12 +4,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.models.agendamento import Agendamento
 from app.models.criterio import Criterio, CriterioTipo
 from app.models.equipe import Equipe
 from app.models.lancamento import Lancamento, LancamentoStatus
 from app.models.lancamento_item import LancamentoItem
-from app.models.modalidade import Modalidade, TipoDisputa
+from app.models.modalidade import Modalidade
 from app.models.rodada import Rodada
 from app.models.usuario import Usuario
 from app.schemas.lancamento import (
@@ -208,22 +207,6 @@ async def criar_lancamento(
             status_code=409,
             detalhes={"lancamento_id": str(duplicado.id)},
         )
-
-    if modalidade.tipo_disputa == TipoDisputa.INDIVIDUAL:
-        agendamento = await db.scalar(
-            select(Agendamento).where(
-                Agendamento.rodada_id == dto.rodada_id, Agendamento.equipe_id == dto.equipe_id
-            )
-        )
-        if agendamento is None:
-            raise AppError(
-                codigo="EQUIPE_SEM_ARENA_ATRIBUIDA",
-                mensagem=(
-                    "Esta equipe nao tem arena atribuida para esta rodada. "
-                    "Gere o horario da modalidade antes de lancar pontuacao."
-                ),
-                status_code=422,
-            )
 
     criterios_por_id = _criterios_por_id(ficha)
     _validar_itens_pertencem_a_ficha(dto.itens, criterios_por_id)

@@ -5,9 +5,14 @@ import { Link, useParams } from "react-router-dom";
 const MODOS_HORARIO = ["MANUAL", "AUTOMATICO"] as const;
 
 import { api, extrairErro } from "../../api/client";
-import { calcularTotalRodadasPorNivel, nomeFase } from "../../lib/fase-chaveamento";
+import {
+  calcularTotalRodadasPorNivel,
+  nomeFase,
+  primeiraRodadaMataMataPorNivel,
+} from "../../lib/fase-chaveamento";
 import { rotuloNivel } from "../../lib/nivel";
 import { ChaveamentoManualBuilder } from "./ChaveamentoManualBuilder";
+import { FaseDeGruposBuilder } from "./FaseDeGruposBuilder";
 
 interface ModalidadeInfo {
   id: string;
@@ -35,6 +40,7 @@ interface PartidaItem {
   status: string;
   nivel?: number | null;
   formato_chaveamento?: string;
+  chave_id?: string | null;
 }
 
 function formatarHorario(iso: string | null): string {
@@ -241,6 +247,8 @@ function CombateRodada({
   equipePorId,
   ultimaRodadaPorNivel,
   totalRodadasPorNivel,
+  inicioMataMataPorNivel,
+  chavePorId,
 }: {
   rodada: RodadaItem;
   eventoId: string;
@@ -248,6 +256,8 @@ function CombateRodada({
   equipePorId: Map<string, string>;
   ultimaRodadaPorNivel: Map<number, number>;
   totalRodadasPorNivel: Map<number, number>;
+  inicioMataMataPorNivel: Map<number, number>;
+  chavePorId: Map<string, string>;
 }) {
   const { data: partidas } = useQuery({
     queryKey: ["partidas-da-rodada", rodada.id],
@@ -285,9 +295,14 @@ function CombateRodada({
           // gravado no momento em que gerar_chaveamento_confronto decide,
           // por nivel) -- olhar a primeira partida basta.
           const ehBracket = partidasDoNivel[0]?.formato_chaveamento === "MATA_MATA";
+          // numero relativo ao inicio do mata-mata daquele nivel, nao o
+          // absoluto da modalidade -- depois de fase de grupos o bracket
+          // pode comecar numa rodada != 1 (ver lib/fase-chaveamento.ts).
+          const inicio = nivel != null ? inicioMataMataPorNivel.get(nivel) : undefined;
+          const numeroRelativo = inicio != null ? rodada.numero - inicio + 1 : rodada.numero;
           const fase =
             ehBracket && nivel != null
-              ? nomeFase(rodada.numero, totalRodadasPorNivel.get(nivel))
+              ? nomeFase(numeroRelativo, totalRodadasPorNivel.get(nivel))
               : null;
           const ehRodadaFinalDoNivel =
             ehBracket &&
@@ -308,25 +323,58 @@ function CombateRodada({
                   )}
                 </div>
               )}
-              <ul className="space-y-1">
-                {partidasDoNivel.map((partida) => (
-                  <PartidaLinha
-                    key={partida.id}
-                    partida={partida}
-                    eventoId={eventoId}
-                    modalidadeId={modalidadeId}
-                    rodadaId={rodada.id}
-                    equipePorId={equipePorId}
-                    rotuloVencedor={
-                      ehRodadaFinalDoNivel &&
-                      partida.status === "ENCERRADA" &&
-                      partida.vencedor_id
-                        ? `🏆 Campeão: ${equipePorId.get(partida.vencedor_id) ?? "?"}`
-                        : undefined
-                    }
-                  />
-                ))}
-              </ul>
+              {(() => {
+                function partidaLinha(partida: PartidaItem) {
+                  return (
+                    <PartidaLinha
+                      key={partida.id}
+                      partida={partida}
+                      eventoId={eventoId}
+                      modalidadeId={modalidadeId}
+                      rodadaId={rodada.id}
+                      equipePorId={equipePorId}
+                      rotuloVencedor={
+                        ehRodadaFinalDoNivel &&
+                        partida.status === "ENCERRADA" &&
+                        partida.vencedor_id
+                          ? `🏆 Campeão: ${equipePorId.get(partida.vencedor_id) ?? "?"}`
+                          : undefined
+                      }
+                    />
+                  );
+                }
+
+                // Partida de fase de grupos carrega chave_id -- separa em
+                // sub-blocos com o nome da chave por cima, pra ficar claro
+                // quem e de qual grupo (sem isso, um nivel com 5 chaves
+                // virava uma lista plana de 5+ confrontos sem nenhuma
+                // indicacao visual de qual e qual).
+                const gruposPorChave = new Map<string, PartidaItem[]>();
+                for (const partida of partidasDoNivel) {
+                  const chaveKey = partida.chave_id ?? "";
+                  if (!gruposPorChave.has(chaveKey)) gruposPorChave.set(chaveKey, []);
+                  gruposPorChave.get(chaveKey)!.push(partida);
+                }
+                const temChave = [...gruposPorChave.keys()].some((k) => k !== "");
+
+                if (!temChave) {
+                  return <ul className="space-y-1">{partidasDoNivel.map(partidaLinha)}</ul>;
+                }
+                return (
+                  <div className="space-y-2">
+                    {[...gruposPorChave.entries()].map(([chaveId, lista]) => (
+                      <div key={chaveId || "sem-chave"}>
+                        {chaveId && (
+                          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            {chavePorId.get(chaveId) ?? "Fase de Grupos"}
+                          </p>
+                        )}
+                        <ul className="space-y-1">{lista.map(partidaLinha)}</ul>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -376,6 +424,18 @@ export function RodadaListPage() {
   });
   const equipePorId = new Map((equipesTodas ?? []).map((e) => [e.id, e.nome]));
 
+  const { data: chavesTodas } = useQuery({
+    queryKey: ["chaves", "para-rodadas", modalidadeId],
+    queryFn: async () => {
+      const { data } = await api.GET("/api/v1/modalidades/{modalidade_id}/chaves", {
+        params: { path: { modalidade_id: modalidadeId! } },
+      });
+      return (data ?? []) as { id: string; nome: string }[];
+    },
+    enabled: isCombate,
+  });
+  const chavePorId = new Map((chavesTodas ?? []).map((c) => [c.id, c.nome]));
+
   const rodadasOrdenadas = [...(rodadas ?? [])].sort((a, b) => a.numero - b.numero);
   const partidasQueries = useQueries({
     queries: isCombate
@@ -398,10 +458,11 @@ export function RodadaListPage() {
   // verdade. Comparar so o vencedor_id com "quem e campeao" e um erro: o
   // proprio campeao tambem venceu rodadas anteriores, e aquelas partidas nao
   // podem herdar o troféu.
+  const rodadaPorId = new Map(rodadasOrdenadas.map((r) => [r.id, r]));
+  const todasPartidas = isCombate ? partidasQueries.flatMap((q) => q.data ?? []) : [];
+
   const ultimaRodadaPorNivel = new Map<number, number>();
   if (isCombate) {
-    const rodadaPorId = new Map(rodadasOrdenadas.map((r) => [r.id, r]));
-    const todasPartidas = partidasQueries.flatMap((q) => q.data ?? []);
     for (const partida of todasPartidas) {
       if (partida.nivel == null) continue;
       const numero = rodadaPorId.get(partida.rodada_id ?? "")?.numero;
@@ -413,16 +474,19 @@ export function RodadaListPage() {
   }
 
   let totalRodadasPorNivel = new Map<number, number>();
+  let inicioMataMataPorNivel = new Map<number, number>();
   if (isCombate) {
-    const rodada1Idx = rodadasOrdenadas.findIndex((r) => r.numero === 1);
-    const partidas1 = rodada1Idx >= 0 ? (partidasQueries[rodada1Idx]?.data ?? []) : [];
-    totalRodadasPorNivel = calcularTotalRodadasPorNivel(
-      partidas1.map((p) => ({ ...p, nivel: p.nivel ?? null })),
-    );
+    const partidasComNumero = todasPartidas.flatMap((p) => {
+      const numero = rodadaPorId.get(p.rodada_id ?? "")?.numero;
+      return numero == null ? [] : [{ ...p, nivel: p.nivel ?? null, numero }];
+    });
+    totalRodadasPorNivel = calcularTotalRodadasPorNivel(partidasComNumero);
+    inicioMataMataPorNivel = primeiraRodadaMataMataPorNivel(partidasComNumero);
   }
 
   const [erroChaveamento, setErroChaveamento] = useState<string | null>(null);
   const [mostrarChaveamentoManual, setMostrarChaveamentoManual] = useState(false);
+  const [mostrarFaseDeGrupos, setMostrarFaseDeGrupos] = useState(false);
 
   function onMudou() {
     void queryClient.invalidateQueries({ queryKey: ["rodadas", modalidadeId] });
@@ -471,13 +535,22 @@ export function RodadaListPage() {
               Gerar chaveamento
             </button>
             {modalidade.formato_chaveamento !== "TODOS_CONTRA_TODOS" && (
-              <button
-                type="button"
-                onClick={() => setMostrarChaveamentoManual(true)}
-                className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Montar chaveamento manual
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMostrarFaseDeGrupos(true)}
+                  className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                >
+                  Fase de Grupos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMostrarChaveamentoManual(true)}
+                  className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                >
+                  Montar chaveamento manual
+                </button>
+              </>
             )}
           </div>
         ) : (
@@ -504,6 +577,8 @@ export function RodadaListPage() {
               equipePorId={equipePorId}
               ultimaRodadaPorNivel={ultimaRodadaPorNivel}
               totalRodadasPorNivel={totalRodadasPorNivel}
+              inicioMataMataPorNivel={inicioMataMataPorNivel}
+              chavePorId={chavePorId}
             />
           ))}
         </ul>
@@ -527,6 +602,16 @@ export function RodadaListPage() {
           modalidadeId={modalidadeId!}
           onFechar={() => {
             setMostrarChaveamentoManual(false);
+            onMudou();
+          }}
+        />
+      )}
+
+      {mostrarFaseDeGrupos && (
+        <FaseDeGruposBuilder
+          modalidadeId={modalidadeId!}
+          onFechar={() => {
+            setMostrarFaseDeGrupos(false);
             onMudou();
           }}
         />

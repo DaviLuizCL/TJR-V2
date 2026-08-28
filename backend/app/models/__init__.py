@@ -1,6 +1,7 @@
 from app.models.agendamento import Agendamento
 from app.models.arena import Arena
 from app.models.audit_log import AuditLog
+from app.models.chave import Chave, ChaveEquipe
 from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo, ModificadorTipo
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
@@ -24,6 +25,8 @@ __all__ = [
     "Agendamento",
     "Arena",
     "AuditLog",
+    "Chave",
+    "ChaveEquipe",
     "CategoriaCriterio",
     "Criterio",
     "CriterioTipo",

@@ -33,6 +33,7 @@ interface MockConfig {
   partidasPorRodada?: Record<string, unknown[]>;
   equipes?: unknown[];
   formatoChaveamento?: string | null;
+  chaves?: { id: string; nome: string }[];
 }
 
 function mockGet(cfg: MockConfig = {}) {
@@ -65,6 +66,9 @@ function mockGet(cfg: MockConfig = {}) {
         data: { itens: equipes, total: equipes.length, page: 1, size: 200 },
         error: undefined,
       } as never;
+    }
+    if (path === "/api/v1/modalidades/{modalidade_id}/chaves") {
+      return { data: cfg.chaves ?? [], error: undefined } as never;
     }
     if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
       const params = opts as { params: { path: { rodada_id: string } } };
@@ -449,6 +453,81 @@ describe("PontuarCombatePage", () => {
     expect(await screen.findByRole("heading", { name: /fase de grupos/i })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^final$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /semifinal/i })).not.toBeInTheDocument();
+  });
+
+  it("partida de fase de grupos (com chave) mostra o nome da chave em vez do rotulo generico", async () => {
+    mockGet({
+      formatoChaveamento: "TODOS_CONTRA_TODOS",
+      chaves: [{ id: "chave-a", nome: "Chave A" }],
+      partidasPorRodada: {
+        "rod-1": [
+          {
+            id: "par-1",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            nivel: 1,
+            status: "AGENDADA",
+            criado_em: "2026-08-05T10:00:00Z",
+            chave_id: "chave-a",
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: /^chave a$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^fase de grupos$/i })).not.toBeInTheDocument();
+  });
+
+  it("mata-mata de 1 rodada que comeca so na rodada 2 (pos fase de grupos) mostra 'Final', nao 'Rodada 2'", async () => {
+    // Bug real achado testando ao vivo: nomeFase recebia o numero ABSOLUTO
+    // da rodada (2), nao o numero relativo ao inicio do mata-mata daquele
+    // nivel -- um bracket de 1 rodada so (2 equipes) que comeca na rodada 2
+    // calculava distancia negativa e caia no rotulo generico "Rodada 2".
+    mockGet({
+      rodadas: [
+        { id: "rod-1", numero: 1 },
+        { id: "rod-2", numero: 2 },
+      ],
+      chaves: [{ id: "chave-a", nome: "Chave A" }],
+      partidasPorRodada: {
+        "rod-1": [
+          {
+            id: "par-grupo",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: "eq-1",
+            nivel: 1,
+            status: "ENCERRADA",
+            criado_em: "2026-08-05T10:00:00Z",
+            chave_id: "chave-a",
+            formato_chaveamento: "TODOS_CONTRA_TODOS",
+          },
+        ],
+        "rod-2": [
+          {
+            id: "par-final",
+            rodada_id: "rod-2",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            nivel: 1,
+            status: "AGENDADA",
+            criado_em: "2026-08-06T10:00:00Z",
+            formato_chaveamento: "MATA_MATA",
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: /^final$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^rodada 2$/i })).not.toBeInTheDocument();
   });
 
   it("mostra 'Fase de Grupos' e 'Final' juntas quando niveis diferentes da mesma modalidade tem formato diferente", async () => {

@@ -5,6 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import AppError
+from app.models.chave import Chave, ChaveEquipe
 from app.models.equipe import Equipe
 from app.models.ficha import Ficha, FichaStatus
 from app.models.inscricao import Inscricao
@@ -184,21 +186,18 @@ def _ordenar_com_desempate_confronto_direto(
     return ordenados
 
 
-async def _classificacao_todos_contra_todos(
-    db: AsyncSession, modalidade: Modalidade, niveis: set[int]
+def _computar_stats_liga(
+    partidas: list[Partida],
+    equipe_ids: list[UUID],
+    pontos_vitoria: Decimal,
+    pontos_empate: Decimal,
 ) -> list[dict]:
-    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
-    # Filtra por equipe (nao por partida.nivel): fixture antiga pode deixar
-    # Partida.nivel em branco mesmo a equipe pertencendo a um nivel de
-    # verdade - a associacao equipe->nivel via Equipe.nivel e que manda, o
-    # loop de stats abaixo ja ignora partida cujas equipes nao estao aqui.
-    partidas = await _buscar_partidas_decididas(db, modalidade.id)
-    equipe_ids = [
-        eid
-        for eid in await _equipes_inscritas(db, modalidade.id)
-        if niveis_por_equipe.get(eid) in niveis
-    ]
-
+    """Vitorias/empates/derrotas + nota_final (pontos de liga) de cada equipe
+    a partir das partidas decididas informadas. Generico o bastante pra servir
+    tanto a liga por nivel inteiro (`_classificacao_todos_contra_todos`)
+    quanto a liga por chave (`calcular_classificacao_chave`) -- a diferenca
+    entre as duas e so QUAIS partidas/equipes chegam aqui.
+    """
     stats = {eid: {"vitorias": 0, "empates": 0, "derrotas": 0} for eid in equipe_ids}
     for partida in partidas:
         lados = [e for e in (partida.equipe_a_id, partida.equipe_b_id) if e is not None]
@@ -212,9 +211,6 @@ async def _classificacao_todos_contra_todos(
             else:
                 stats[equipe_id]["derrotas"] += 1
 
-    pontos_vitoria = Decimal(str(modalidade.pontos_vitoria))
-    pontos_empate = Decimal(str(modalidade.pontos_empate))
-
     resultados = []
     for equipe_id in equipe_ids:
         s = stats[equipe_id]
@@ -226,13 +222,81 @@ async def _classificacao_todos_contra_todos(
                 "vitorias": s["vitorias"],
                 "empates": s["empates"],
                 "derrotas": s["derrotas"],
-                "eliminado_por_equipe_id": None,
-                "formato_chaveamento": FormatoChaveamento.TODOS_CONTRA_TODOS,
             }
         )
+    return resultados
+
+
+async def _classificacao_todos_contra_todos(
+    db: AsyncSession, modalidade: Modalidade, niveis: set[int]
+) -> list[dict]:
+    niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
+    # Filtra por equipe (nao por partida.nivel): fixture antiga pode deixar
+    # Partida.nivel em branco mesmo a equipe pertencendo a um nivel de
+    # verdade - a associacao equipe->nivel via Equipe.nivel e que manda, o
+    # loop de stats dentro de _computar_stats_liga ja ignora partida cujas
+    # equipes nao estao aqui.
+    partidas = await _buscar_partidas_decididas(db, modalidade.id)
+    equipe_ids = [
+        eid
+        for eid in await _equipes_inscritas(db, modalidade.id)
+        if niveis_por_equipe.get(eid) in niveis
+    ]
+
+    pontos_vitoria = Decimal(str(modalidade.pontos_vitoria))
+    pontos_empate = Decimal(str(modalidade.pontos_empate))
+    resultados = [
+        {
+            **item,
+            "eliminado_por_equipe_id": None,
+            "formato_chaveamento": FormatoChaveamento.TODOS_CONTRA_TODOS,
+        }
+        for item in _computar_stats_liga(partidas, equipe_ids, pontos_vitoria, pontos_empate)
+    ]
 
     resultados = _ordenar_com_desempate_confronto_direto(resultados, partidas)
     return _atribuir_posicoes_por_nivel(resultados, niveis_por_equipe, lambda r: -r["nota_final"])
+
+
+async def calcular_classificacao_chave(db: AsyncSession, chave_id: UUID) -> list[dict]:
+    """Classificacao de uma unica Chave (fase de grupos): mesma logica de
+    pontos de liga que `_classificacao_todos_contra_todos`, so que escopada
+    direto por `Partida.chave_id` em vez de nivel+modalidade inteira -- a
+    chave ja e a unidade, entao numera posicao 1..N direto (nao precisa de
+    `_atribuir_posicoes_por_nivel`, que existe pra separar por nivel).
+    """
+    chave = await db.get(Chave, chave_id)
+    if chave is None:
+        raise AppError(
+            codigo="CHAVE_NAO_ENCONTRADA", mensagem="Chave nao encontrada.", status_code=404
+        )
+    modalidade = await db.get(Modalidade, chave.modalidade_id)
+
+    equipe_ids = list(
+        (await db.execute(select(ChaveEquipe.equipe_id).where(ChaveEquipe.chave_id == chave_id)))
+        .scalars()
+        .all()
+    )
+    partidas = list(
+        (
+            await db.execute(
+                select(Partida).where(
+                    Partida.chave_id == chave_id,
+                    Partida.status.in_((PartidaStatus.ENCERRADA, PartidaStatus.EMPATADA)),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    pontos_vitoria = Decimal(str(modalidade.pontos_vitoria))
+    pontos_empate = Decimal(str(modalidade.pontos_empate))
+    resultados = _computar_stats_liga(partidas, equipe_ids, pontos_vitoria, pontos_empate)
+    resultados = _ordenar_com_desempate_confronto_direto(resultados, partidas)
+    for posicao, resultado in enumerate(resultados, start=1):
+        resultado["posicao"] = posicao
+    return resultados
 
 
 async def _classificacao_bracket(

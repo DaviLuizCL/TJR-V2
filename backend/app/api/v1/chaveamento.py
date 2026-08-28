@@ -47,6 +47,22 @@ async def criar_partida_manual(
     return PartidaOut.model_validate(partida)
 
 
+@router.post(
+    "/modalidades/{modalidade_id}/chaveamento/fase-de-grupos/gerar",
+    response_model=list[RodadaOut],
+    status_code=201,
+)
+async def gerar_fase_de_grupos(
+    modalidade_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
+) -> list[RodadaOut]:
+    rodadas = await chaveamento_service.gerar_fase_de_grupos(
+        db, modalidade_id, usuario_id=usuario.id
+    )
+    return [RodadaOut.model_validate(r) for r in rodadas]
+
+
 @router.post("/modalidades/{modalidade_id}/chaveamento/reset", status_code=204)
 async def resetar_chaveamento(
     modalidade_id: UUID,

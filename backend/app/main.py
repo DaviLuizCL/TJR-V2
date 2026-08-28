@@ -8,6 +8,7 @@ from app.api.v1 import (
     agendamentos,
     arenas,
     auth,
+    chave,
     chaveamento,
     criterios,
     equipes,
@@ -48,6 +49,7 @@ app.include_router(grupos.router, prefix="/api/v1", tags=["grupos"])
 app.include_router(criterios.router, prefix="/api/v1", tags=["criterios"])
 app.include_router(ranking.router, prefix="/api/v1", tags=["ranking"])
 app.include_router(chaveamento.router, prefix="/api/v1", tags=["chaveamento"])
+app.include_router(chave.router, prefix="/api/v1", tags=["chave"])
 app.include_router(arenas.router, prefix="/api/v1", tags=["arenas"])
 app.include_router(agendamentos.router, prefix="/api/v1", tags=["agendamentos"])
 app.include_router(usuarios.router, prefix="/api/v1", tags=["usuarios"])

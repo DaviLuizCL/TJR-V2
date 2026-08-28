@@ -174,7 +174,10 @@ async def main(caminho_planilha: str) -> None:
                 continue
 
             try:
-                nivel_planilha = int(nivel_bruto)
+                # A planilha pode salvar a celula como float ("0.0", "2.0"
+                # -- LISTA_FINAL.xlsx faz isso, LISTA 2026.xlsx antiga nao),
+                # entao int() direto falha; passa por float() primeiro.
+                nivel_planilha = int(float(nivel_bruto))
             except ValueError:
                 erros.append(f"Linha {numero_linha}: nivel invalido '{nivel_bruto}'.")
                 continue

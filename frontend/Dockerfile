@@ -32,9 +32,22 @@ RUN npm run build
 # Estagio prod (default do build, sem --target): nginx servindo o bundle
 # estatico + proxy reverso de /api/ pra dentro da rede docker, pro servico
 # `api`. E o estagio usado pelo docker-compose.prod.yml.
+#
+# nginx.https.conf x nginx.http.conf: o entrypoint decide na hora de subir
+# (ver docker-entrypoint-tjr.sh) qual dos dois vira o default.conf de
+# verdade, checando se o certificado do Let's Encrypt ja existe no volume
+# montado em /etc/nginx/certs. Sem isso, subir num servidor sem certificado
+# ainda emitido derruba o nginx inteiro (ssl_certificate apontando pra
+# arquivo inexistente e erro fatal de configuracao, nao so um warning).
 FROM nginx:1.27-alpine AS prod
 
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.https.conf /etc/nginx/nginx.https.conf
+COPY nginx.http.conf /etc/nginx/nginx.http.conf
+COPY docker-entrypoint-tjr.sh /docker-entrypoint-tjr.sh
+RUN chmod +x /docker-entrypoint-tjr.sh
 
-EXPOSE 80
+EXPOSE 80 443
+
+ENTRYPOINT ["/docker-entrypoint-tjr.sh"]
+CMD ["nginx", "-g", "daemon off;"]

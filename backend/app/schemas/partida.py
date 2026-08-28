@@ -16,6 +16,7 @@ class PartidaOut(BaseModel):
     equipe_b_id: UUID | None
     vencedor_id: UUID | None
     nivel: int | None
+    chave_id: UUID | None
     formato_chaveamento: FormatoChaveamento
     status: PartidaStatus
     criado_em: datetime

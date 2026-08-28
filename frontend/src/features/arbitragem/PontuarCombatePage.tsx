@@ -2,7 +2,11 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
-import { calcularTotalRodadasPorNivel, nomeFase } from "../../lib/fase-chaveamento";
+import {
+  calcularTotalRodadasPorNivel,
+  nomeFase,
+  primeiraRodadaMataMataPorNivel,
+} from "../../lib/fase-chaveamento";
 import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeInfo {
@@ -32,6 +36,12 @@ interface PartidaItem {
   status: string;
   criado_em: string;
   formato_chaveamento?: string;
+  chave_id?: string | null;
+}
+
+interface ChaveItem {
+  id: string;
+  nome: string;
 }
 
 function corDaEquipe(partida: PartidaItem, equipeId: string): string {
@@ -77,6 +87,18 @@ export function PontuarCombatePage() {
   });
   const equipePorId = new Map((equipesTodas ?? []).map((e) => [e.id, e.nome]));
 
+  const { data: chavesTodas } = useQuery({
+    queryKey: ["chaves", "para-pontuar-combate", modalidadeId],
+    queryFn: async () => {
+      const { data } = await api.GET("/api/v1/modalidades/{modalidade_id}/chaves", {
+        params: { path: { modalidade_id: modalidadeId! } },
+      });
+      return (data ?? []) as ChaveItem[];
+    },
+    enabled: !!modalidadeId,
+  });
+  const chavePorId = new Map((chavesTodas ?? []).map((c) => [c.id, c.nome]));
+
   const partidasQueries = useQueries({
     queries: rodadasOrdenadas.map((rodada) => ({
       queryKey: ["partidas-da-rodada", rodada.id],
@@ -118,13 +140,25 @@ export function PontuarCombatePage() {
     (p) => nivelFiltro === "" || p.nivel === Number(nivelFiltro),
   );
 
-  const partidasRodada1 = todasPartidas.filter((p) => rodadaPorId.get(p.rodada_id)?.numero === 1);
-  const totalRodadasPorNivel = calcularTotalRodadasPorNivel(partidasRodada1);
+  const partidasComNumero = todasPartidas.map((p) => ({
+    ...p,
+    numero: rodadaPorId.get(p.rodada_id)?.numero ?? 0,
+  }));
+  const totalRodadasPorNivel = calcularTotalRodadasPorNivel(partidasComNumero);
+  const inicioMataMataPorNivel = primeiraRodadaMataMataPorNivel(partidasComNumero);
 
   function grupoDaPartida(partida: PartidaItem): { label: string; classes: string; ordem: number } {
+    // Partida de fase de grupos (Chave, criada por gerar_fase_de_grupos) --
+    // rotula pelo nome da chave, e fica sempre no fim (ordem alta): assim
+    // que o mata-mata pos-grupos existe, e ele que importa olhar primeiro.
+    if (partida.chave_id != null) {
+      const nomeChave = chavePorId.get(partida.chave_id) ?? "Fase de Grupos";
+      return { label: nomeChave, classes: CLASSES_FASE_NEUTRA, ordem: 1000 };
+    }
     // Formato e por partida (nivel), nao mais um campo unico da modalidade
     // inteira -- uma modalidade pode ter nivel em mata-mata e outro em
-    // todos-contra-todos ao mesmo tempo (gerar_chaveamento_confronto).
+    // todos-contra-todos ao mesmo tempo (gerar_chaveamento_confronto). Essa
+    // e a liga automatica por contagem (sem chave), continua ordem 0.
     if (partida.formato_chaveamento === "TODOS_CONTRA_TODOS") {
       return { label: "Fase de Grupos", classes: CLASSES_FASE_NEUTRA, ordem: 0 };
     }
@@ -133,12 +167,21 @@ export function PontuarCombatePage() {
       return { label: `Rodada ${numero}`, classes: CLASSES_FASE_NEUTRA, ordem: -numero };
     }
     const total = totalRodadasPorNivel.get(partida.nivel);
+    // numero e o ABSOLUTO da modalidade, mas nomeFase espera o numero
+    // RELATIVO ao inicio do mata-mata daquele nivel -- depois de uma fase de
+    // grupos, o bracket pode comecar numa rodada != 1 (ex.: grupos usam a
+    // rodada 1, mata-mata comeca na 2). Sem isso, um bracket de 1 rodada so
+    // que comeca na rodada 2 calcula distancia negativa e cai no fallback
+    // generico "Rodada 2" em vez de "Final" (bug real achado testando ao
+    // vivo com Cabo de Guerra).
+    const inicio = inicioMataMataPorNivel.get(partida.nivel);
+    const numeroRelativo = inicio != null ? numero - inicio + 1 : numero;
     // "ordem" tem que ficar numa escala unica (distancia ate a final), senao
     // uma secao sem nome (fallback "Rodada N", bracket grande demais) nao
     // intercala certo com as secoes nomeadas (Oitavas/Quartas/Semi/Final) -
     // regressao ja vista: "Oitavas" ficando depois de "Rodada 1" na tela.
-    const distancia = (total ?? 0) - numero;
-    const fase = nomeFase(numero, total);
+    const distancia = (total ?? 0) - numeroRelativo;
+    const fase = nomeFase(numeroRelativo, total);
     if (!fase) {
       return { label: `Rodada ${numero}`, classes: CLASSES_FASE_NEUTRA, ordem: distancia };
     }

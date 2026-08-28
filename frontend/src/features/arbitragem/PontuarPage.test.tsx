@@ -208,30 +208,21 @@ describe("PontuarPage", () => {
     );
   });
 
-  it("equipe sem arena atribuida na rodada pendente nao fica clicavel e mostra aviso", async () => {
+  it("equipe sem arena atribuida na rodada pendente continua clicavel (trava de arena removida)", async () => {
+    // Regra removida a pedido do coordenador (TJR 2026): na pratica as
+    // arenas de uma modalidade individual sao fisicamente equivalentes, e
+    // exigir agendamento formal antes de liberar o card so virou atrito.
+    // Ver historico em CLAUDE.md.
     mockGet({ agendamentos: [] });
 
     renderPage();
 
     const cardX = (await screen.findByText("Equipe X")).closest("li")!;
-    expect(within(cardX).queryByRole("link", { name: /rodada/i })).not.toBeInTheDocument();
-    expect(within(cardX).getByText(/sem arena atribu[ií]da/i)).toBeInTheDocument();
+    expect(within(cardX).getByRole("link", { name: /rodada/i })).toBeInTheDocument();
+    expect(within(cardX).queryByText(/sem arena atribu[ií]da/i)).not.toBeInTheDocument();
   });
 
-  it("card sem arena atribuida linka pra tela de horarios da modalidade", async () => {
-    mockGet({ agendamentos: [] });
-
-    renderPage();
-
-    const cardX = (await screen.findByText("Equipe X")).closest("li")!;
-    const linkHorarios = within(cardX).getByRole("link", { name: /gerar hor[aá]rio/i });
-    expect(linkHorarios).toHaveAttribute(
-      "href",
-      "/eventos/evt-1/modalidades/mod-1/horarios",
-    );
-  });
-
-  it("so a equipe sem arena atribuida fica bloqueada, as outras continuam normais", async () => {
+  it("todas as equipes ficam clicaveis mesmo com agendamento so pra algumas", async () => {
     mockGet({
       agendamentos: [
         { id: "ag-1", rodada_id: "rod-1", equipe_id: "eq-2", arena_id: "are-padrao", ordem_na_arena: 0, horario_inicio: "2026-08-10T08:00:00Z" },
@@ -241,10 +232,9 @@ describe("PontuarPage", () => {
     renderPage();
 
     const cardX = (await screen.findByText("Equipe X")).closest("li")!;
-    expect(within(cardX).getByText(/sem arena atribu[ií]da/i)).toBeInTheDocument();
+    expect(within(cardX).getByRole("link", { name: /rodada/i })).toBeInTheDocument();
 
     const cardY = screen.getByText("Equipe Y").closest("li")!;
-    expect(within(cardY).queryByText(/sem arena atribu[ií]da/i)).not.toBeInTheDocument();
     expect(within(cardY).getByRole("link", { name: /rodada/i })).toBeInTheDocument();
   });
 

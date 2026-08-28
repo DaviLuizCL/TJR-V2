@@ -209,7 +209,11 @@ describe("RodadaListPage", () => {
     );
   });
 
-  function mockGetChaveamento(rodadas: unknown[], partidasPorRodada: Record<string, unknown[]>) {
+  function mockGetChaveamento(
+    rodadas: unknown[],
+    partidasPorRodada: Record<string, unknown[]>,
+    chaves: unknown[] = [],
+  ) {
     vi.mocked(api.GET).mockImplementation(async (path: string, opts?: unknown) => {
       if (path === "/api/v1/modalidades/{modalidade_id}") {
         return {
@@ -238,14 +242,19 @@ describe("RodadaListPage", () => {
           error: undefined,
         } as never;
       }
+      if (path === "/api/v1/modalidades/{modalidade_id}/chaves") {
+        return { data: chaves, error: undefined } as never;
+      }
       if (path === "/api/v1/equipes") {
         return {
           data: {
             itens: [
               { id: "eq-1", nome: "Equipe A", nivel: 1, ativo: true },
               { id: "eq-2", nome: "Equipe B", nivel: 1, ativo: true },
+              { id: "eq-3", nome: "Equipe C", nivel: 1, ativo: true },
+              { id: "eq-4", nome: "Equipe D", nivel: 1, ativo: true },
             ],
-            total: 2,
+            total: 4,
             page: 1,
             size: 200,
           },
@@ -310,6 +319,121 @@ describe("RodadaListPage", () => {
 
     expect(
       await screen.findByRole("dialog", { name: /montar chaveamento manual/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("modalidade combate (formato automatico) tambem mostra 'Fase de Grupos'", async () => {
+    mockGetChaveamento([], {});
+
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /^fase de grupos$/i })).toBeInTheDocument();
+  });
+
+  it("todos-contra-todos nao mostra 'Fase de Grupos' (mesmo grupo do chaveamento manual)", async () => {
+    mockGetTodosContraTodos([], {});
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /^gerar chaveamento$/i });
+    expect(screen.queryByRole("button", { name: /^fase de grupos$/i })).not.toBeInTheDocument();
+  });
+
+  it("mata-mata de 1 rodada que comeca so na rodada 2 (pos fase de grupos) mostra 'Final', nao 'Rodada 2'", async () => {
+    // Mesmo bug de PontuarCombatePage.test.tsx, so que no card de rodada:
+    // nomeFase precisa do numero RELATIVO ao inicio do mata-mata daquele
+    // nivel, nao o numero absoluto da modalidade.
+    mockGetChaveamento(
+      [
+        { id: "rod-1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" },
+        { id: "rod-2", modalidade_id: "mod-1", numero: 2, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" },
+      ],
+      {
+        "rod-1": [
+          {
+            id: "par-grupo",
+            rodada_id: "rod-1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: "eq-1",
+            status: "ENCERRADA",
+            nivel: 1,
+            formato_chaveamento: "TODOS_CONTRA_TODOS",
+          },
+        ],
+        "rod-2": [
+          {
+            id: "par-final",
+            rodada_id: "rod-2",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            status: "AGENDADA",
+            nivel: 1,
+            formato_chaveamento: "MATA_MATA",
+          },
+        ],
+      },
+    );
+
+    renderPage();
+
+    // "Rodada 2" tambem aparece como titulo do card (sempre, correto) --
+    // o que prova o bug/fix e o SELO de fase (pill), que so existe quando
+    // nomeFase acerta o numero relativo.
+    expect(await screen.findByText("Final")).toBeInTheDocument();
+  });
+
+  it("partida de fase de grupos mostra o nome da chave, pra ficar facil de ler quem e de qual grupo", async () => {
+    mockGetChaveamento(
+      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
+      {
+        r1: [
+          {
+            id: "p1",
+            equipe_a_id: "eq-1",
+            equipe_b_id: "eq-2",
+            vencedor_id: null,
+            status: "AGENDADA",
+            nivel: 1,
+            formato_chaveamento: "TODOS_CONTRA_TODOS",
+            chave_id: "chave-a",
+          },
+          {
+            id: "p2",
+            equipe_a_id: "eq-3",
+            equipe_b_id: "eq-4",
+            vencedor_id: null,
+            status: "AGENDADA",
+            nivel: 1,
+            formato_chaveamento: "TODOS_CONTRA_TODOS",
+            chave_id: "chave-b",
+          },
+        ],
+      },
+      [
+        { id: "chave-a", modalidade_id: "mod-1", nivel: 1, nome: "Chave A", equipe_ids: ["eq-1", "eq-2"] },
+        { id: "chave-b", modalidade_id: "mod-1", nivel: 1, nome: "Chave B", equipe_ids: ["eq-3", "eq-4"] },
+      ],
+    );
+
+    renderPage();
+
+    expect(await screen.findByText("Chave A")).toBeInTheDocument();
+    expect(screen.getByText("Chave B")).toBeInTheDocument();
+    // As duas equipes da Chave A aparecem dentro da secao dela, nao da B.
+    const secaoA = screen.getByText("Chave A").closest("div")!;
+    expect(within(secaoA).getByText(/equipe a vs equipe b/i)).toBeInTheDocument();
+  });
+
+  it("clicar em 'Fase de Grupos' abre o construtor de chaves", async () => {
+    mockGetChaveamento([], {});
+
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /^fase de grupos$/i }));
+
+    expect(
+      await screen.findByRole("dialog", { name: /montar fase de grupos/i }),
     ).toBeInTheDocument();
   });
 

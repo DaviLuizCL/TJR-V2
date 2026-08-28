@@ -485,6 +485,96 @@ describe("ChaveamentoPage", () => {
     expect(await screen.findByText("Rodada 1")).toBeInTheDocument();
   });
 
+  it("partida de fase de grupos mostra o nome da chave no card, pra ficar facil de ler quem e de qual grupo", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [
+              {
+                id: "mod-1",
+                nome: "Cabo de Guerra",
+                tipo_disputa: "CONFRONTO",
+                formato_chaveamento: null,
+              },
+            ],
+            total: 1,
+            page: 1,
+            size: 200,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas") {
+        return {
+          data: { itens: [{ id: "rod-1", modalidade_id: "mod-1", numero: 1 }], total: 1, page: 1, size: 200 },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
+        return {
+          data: [
+            {
+              id: "p1",
+              equipe_a_id: "eq-1",
+              equipe_b_id: "eq-2",
+              vencedor_id: null,
+              status: "AGENDADA",
+              nivel: 1,
+              formato_chaveamento: "TODOS_CONTRA_TODOS",
+              chave_id: "chave-a",
+            },
+            {
+              id: "p2",
+              equipe_a_id: "eq-3",
+              equipe_b_id: "eq-4",
+              vencedor_id: null,
+              status: "AGENDADA",
+              nivel: 1,
+              formato_chaveamento: "TODOS_CONTRA_TODOS",
+              chave_id: "chave-b",
+            },
+          ],
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/equipes") {
+        return {
+          data: {
+            itens: [
+              { id: "eq-1", nome: "Equipe A", nivel: 1, ativo: true },
+              { id: "eq-2", nome: "Equipe B", nivel: 1, ativo: true },
+              { id: "eq-3", nome: "Equipe C", nivel: 1, ativo: true },
+              { id: "eq-4", nome: "Equipe D", nivel: 1, ativo: true },
+            ],
+            total: 4,
+            page: 1,
+            size: 200,
+          },
+          error: undefined,
+        } as never;
+      }
+      if (path === "/api/v1/modalidades/{modalidade_id}/chaves") {
+        return {
+          data: [
+            { id: "chave-a", modalidade_id: "mod-1", nivel: 1, nome: "Chave A", equipe_ids: ["eq-1", "eq-2"] },
+            { id: "chave-b", modalidade_id: "mod-1", nivel: 1, nome: "Chave B", equipe_ids: ["eq-3", "eq-4"] },
+          ],
+          error: undefined,
+        } as never;
+      }
+      return { data: undefined, error: undefined } as never;
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Chave A")).toBeInTheDocument();
+    expect(screen.getByText("Chave B")).toBeInTheDocument();
+    const cartaoA = screen.getByText("Chave A").closest("div")!;
+    expect(within(cartaoA).getByText("Equipe A")).toBeInTheDocument();
+    expect(within(cartaoA).getByText("Equipe B")).toBeInTheDocument();
+  });
+
   it("arbitro nao ve o botao de resetar chaveamento", async () => {
     mockRespostasComRodada();
     logarComo("ARBITRO");

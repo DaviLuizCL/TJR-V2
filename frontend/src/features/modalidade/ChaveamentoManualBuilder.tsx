@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, extrairErro } from "../../api/client";
@@ -27,6 +27,7 @@ interface PartidaItem {
   equipe_a_id: string;
   equipe_b_id: string | null;
   nivel: number | null;
+  formato_chaveamento?: string;
 }
 
 export function ChaveamentoManualBuilder({
@@ -70,18 +71,25 @@ export function ChaveamentoManualBuilder({
       return (data?.itens ?? []) as RodadaItem[];
     },
   });
-  const rodada1 = (rodadas ?? []).find((r) => r.numero === 1);
+  const rodadasOrdenadas = [...(rodadas ?? [])].sort((a, b) => a.numero - b.numero);
 
-  const { data: partidas } = useQuery({
-    queryKey: ["partidas", "chaveamento-manual-builder", rodada1?.id],
-    queryFn: async () => {
-      const { data } = await api.GET("/api/v1/rodadas/{rodada_id}/partidas", {
-        params: { path: { rodada_id: rodada1!.id } },
-      });
-      return (data ?? []) as PartidaItem[];
-    },
-    enabled: !!rodada1,
+  // Busca partidas de TODAS as rodadas (nao so a 1) -- precisa saber ate
+  // onde o nivel ja chegou (fase de grupos + mata-mata) pra calcular a
+  // rodada-alvo certa, igual o backend faz em criar_partida_manual.
+  const partidasQueries = useQueries({
+    queries: rodadasOrdenadas.map((rodada) => ({
+      queryKey: ["partidas", "chaveamento-manual-builder", rodada.id],
+      queryFn: async () => {
+        const { data } = await api.GET("/api/v1/rodadas/{rodada_id}/partidas", {
+          params: { path: { rodada_id: rodada.id } },
+        });
+        return (data ?? []) as PartidaItem[];
+      },
+    })),
   });
+  const todasPartidas = partidasQueries.flatMap((q, i) =>
+    (q.data ?? []).map((p) => ({ ...p, numero: rodadasOrdenadas[i].numero })),
+  );
 
   const equipePorId = new Map((equipes ?? []).map((e) => [e.id, e]));
   const idsInscritos = new Set((inscricoes ?? []).map((i) => i.equipe_id));
@@ -91,12 +99,31 @@ export function ChaveamentoManualBuilder({
   );
   const nivelAtivo = nivelSelecionado === "" ? niveis[0] : nivelSelecionado;
 
+  // Mesma regra de calculo de rodada-alvo do backend (criar_partida_manual):
+  // proxima rodada apos a ultima que esse nivel ja tem partida, MAS so
+  // avanca quando essa ultima foi fase de grupos (TODOS_CONTRA_TODOS) -- se
+  // ja for mata-mata (outra chamada manual ainda montando a mesma rodada),
+  // reaproveita o mesmo numero.
+  const partidasDoNivelTodas = todasPartidas.filter((p) => p.nivel === nivelAtivo);
+  const maiorNumero =
+    partidasDoNivelTodas.length > 0 ? Math.max(...partidasDoNivelTodas.map((p) => p.numero)) : null;
+  let numeroAlvo = 1;
+  if (maiorNumero != null) {
+    const naUltima = partidasDoNivelTodas.filter((p) => p.numero === maiorNumero);
+    const ultimaEhMataMata = naUltima.some((p) => p.formato_chaveamento === "MATA_MATA");
+    numeroAlvo = ultimaEhMataMata ? maiorNumero : maiorNumero + 1;
+  }
+
   const idsComPartida = new Set(
-    (partidas ?? []).flatMap((p) => [p.equipe_a_id, p.equipe_b_id].filter((x): x is string => !!x)),
+    todasPartidas
+      .filter((p) => p.numero === numeroAlvo)
+      .flatMap((p) => [p.equipe_a_id, p.equipe_b_id].filter((x): x is string => !!x)),
   );
   const equipesDoNivel = equipesDaModalidade.filter((e) => e.nivel === nivelAtivo);
   const elegiveis = equipesDoNivel.filter((e) => !idsComPartida.has(e.id));
-  const partidasDoNivel = (partidas ?? []).filter((p) => p.nivel === nivelAtivo);
+  const partidasDoNivel = todasPartidas.filter(
+    (p) => p.nivel === nivelAtivo && p.numero === numeroAlvo,
+  );
 
   async function invalidar() {
     await queryClient.invalidateQueries({ queryKey: ["rodadas", "chaveamento-manual-builder"] });

@@ -2,10 +2,11 @@ import json
 import random
 from uuid import UUID
 
-from sqlalchemy import delete, inspect, select
+from sqlalchemy import delete, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
+from app.models.chave import Chave, ChaveEquipe
 from app.models.equipe import Equipe
 from app.models.inscricao import Inscricao
 from app.models.lancamento import Lancamento, LancamentoStatus
@@ -22,17 +23,6 @@ from app.services.rodada import _gerar_pareamento, _rodadas_necessarias
 # vira mata-mata (regra combinada com o usuario pras modalidades de combate
 # do TJR 2026 - ver gerar_chaveamento_confronto).
 LIMITE_EQUIPES_TODOS_CONTRA_TODOS = 5
-
-# Par fixo (TJR 2026): Sumo RC 1,5kg e Sumo 1,5kg tradicional competem com o
-# mesmo robo fisico possivel. Confronto nao tem agenda de horario (o bracket
-# avanca dinamicamente conforme os resultados fecham, sem grade fixa como a
-# das modalidades INDIVIDUAL - ver agendamento.py), entao a unica forma de
-# garantir que as duas nunca ficam "abertas" ao mesmo tempo pro arbitro
-# pontuar e travar o INICIO da segunda ate a primeira encerrar de vez.
-_MODALIDADES_COMBATE_CONFLITANTE: dict[str, str] = {
-    "Sumô": "Sumô RC 1,5 kg",
-    "Sumô RC 1,5 kg": "Sumô",
-}
 
 
 def _dump(obj) -> dict:
@@ -174,12 +164,22 @@ async def criar_partida_manual(
     Pontuar de graca (PontuarCombatePage so olha pra Partida existente,
     nao pra como ela foi criada).
 
-    Sempre cria/reaproveita a Rodada numero=1 da modalidade -- esse fluxo e
-    so pra montar o inicio do chaveamento; rodadas seguintes continuam
-    100% automaticas via avancar_se_rodada_completa assim que as partidas
-    fecham. Convive com gerar_chaveamento_confronto: um nivel montado por
-    aqui fica de fora quando o automatico rodar pros demais niveis da
-    mesma modalidade (ver gerar_chaveamento_confronto).
+    A rodada-alvo e calculada, nao mais fixa em numero=1: e a rodada seguinte
+    a ultima que esse nivel ja tem partida, MAS so avanca de rodada quando
+    essa ultima rodada foi de fase de grupos (TODOS_CONTRA_TODOS) -- se ja
+    for uma rodada de mata-mata (outra chamada manual anterior, ainda
+    montando o mesmo mata-mata), reaproveita a mesma rodada em vez de abrir
+    outra. Isso cobre os dois casos reais: (a) nivel que nunca teve chave,
+    mata-mata 100% manual desde o inicio -- toda chamada cai na Rodada 1,
+    igual sempre foi; (b) nivel que passou por fase de grupos (rodadas 1..N
+    de TODOS_CONTRA_TODOS) -- a primeira chamada pos-grupos abre a Rodada
+    N+1 (o mata-mata), e as chamadas seguintes (outros pares da mesma
+    primeira rodada do mata-mata) reaproveitam essa Rodada N+1. Da segunda
+    rodada do mata-mata em diante (ex.: semifinal->final), o avanco
+    automatico (avancar_se_rodada_completa) cuida sozinho, sem precisar de
+    nova chamada manual. Convive com gerar_chaveamento_confronto: um nivel
+    montado por aqui fica de fora quando o automatico rodar pros demais
+    niveis da mesma modalidade (ver gerar_chaveamento_confronto).
     """
     modalidade = await obter_modalidade(db, modalidade_id)
     if modalidade.tipo_disputa != TipoDisputa.CONFRONTO:
@@ -219,12 +219,38 @@ async def criar_partida_manual(
                 status_code=422,
             )
 
+    nivel = equipe_a.nivel
+    maior_numero_do_nivel = await db.scalar(
+        select(func.max(Rodada.numero))
+        .select_from(Partida)
+        .join(Rodada, Partida.rodada_id == Rodada.id)
+        .where(Rodada.modalidade_id == modalidade_id, Partida.nivel == nivel)
+    )
+    if maior_numero_do_nivel is None:
+        numero_alvo = 1
+    else:
+        ultima_e_mata_mata = await db.scalar(
+            select(Partida.id)
+            .join(Rodada, Partida.rodada_id == Rodada.id)
+            .where(
+                Rodada.modalidade_id == modalidade_id,
+                Rodada.numero == maior_numero_do_nivel,
+                Partida.nivel == nivel,
+                Partida.formato_chaveamento == FormatoChaveamento.MATA_MATA,
+            )
+            .limit(1)
+        )
+        numero_alvo = (
+            maior_numero_do_nivel if ultima_e_mata_mata is not None else (maior_numero_do_nivel + 1)
+        )
+
+    rodada = await _obter_ou_criar_rodada(db, modalidade_id, numero_alvo, {})
+
     ids_envolvidos = [e.id for e in filter(None, [equipe_a, equipe_b])]
     ja_tem_partida = await db.scalar(
         select(Partida.id)
-        .join(Rodada, Partida.rodada_id == Rodada.id)
         .where(
-            Rodada.modalidade_id == modalidade_id,
+            Partida.rodada_id == rodada.id,
             (Partida.equipe_a_id.in_(ids_envolvidos) | Partida.equipe_b_id.in_(ids_envolvidos)),
         )
         .limit(1)
@@ -232,22 +258,9 @@ async def criar_partida_manual(
     if ja_tem_partida is not None:
         raise AppError(
             codigo="EQUIPE_JA_TEM_PARTIDA",
-            mensagem="Uma dessas equipes ja tem partida nesta modalidade.",
+            mensagem="Uma dessas equipes ja tem partida nesta rodada.",
             status_code=409,
         )
-
-    rodada = await db.scalar(
-        select(Rodada).where(Rodada.modalidade_id == modalidade_id, Rodada.numero == 1)
-    )
-    if rodada is None:
-        rodada = Rodada(
-            modalidade_id=modalidade_id,
-            numero=1,
-            modo_horario=ModoHorario.AUTOMATICO,
-            status=RodadaStatus.AGENDADA,
-        )
-        db.add(rodada)
-        await db.flush()
 
     partida = _criar_partida(rodada.id, equipe_a.id, equipe_b_id, equipe_a.nivel)
     db.add(partida)
@@ -266,39 +279,140 @@ async def criar_partida_manual(
     return partida
 
 
-async def _recusar_se_par_conflitante_em_andamento(
-    db: AsyncSession, modalidade: Modalidade
-) -> None:
-    nome_par = _MODALIDADES_COMBATE_CONFLITANTE.get(modalidade.nome)
-    if nome_par is None:
-        return
-
-    modalidade_par = await db.scalar(
-        select(Modalidade).where(
-            Modalidade.evento_id == modalidade.evento_id, Modalidade.nome == nome_par
+async def _obter_ou_criar_rodada(
+    db: AsyncSession, modalidade_id: UUID, numero: int, cache: dict[int, Rodada]
+) -> Rodada:
+    """Reaproveita a `Rodada` de `numero` se ja existir (cache local da chamada,
+    senao consulta o banco), ou cria uma nova -- e o que permite bracket, liga
+    e fase de grupos dividirem a mesma sequencia de `Rodada.numero` de uma
+    modalidade sem conflito (cada `Partida` carrega seu proprio nivel/chave).
+    """
+    rodada = cache.get(numero)
+    if rodada is None:
+        rodada = await db.scalar(
+            select(Rodada).where(Rodada.modalidade_id == modalidade_id, Rodada.numero == numero)
         )
-    )
-    if modalidade_par is None:
-        return
-
-    tem_partida_aberta = await db.scalar(
-        select(Partida.id)
-        .join(Rodada, Partida.rodada_id == Rodada.id)
-        .where(
-            Rodada.modalidade_id == modalidade_par.id,
-            Partida.status.in_((PartidaStatus.AGENDADA, PartidaStatus.EM_ANDAMENTO)),
+    if rodada is None:
+        rodada = Rodada(
+            modalidade_id=modalidade_id,
+            numero=numero,
+            modo_horario=ModoHorario.AUTOMATICO,
+            status=RodadaStatus.AGENDADA,
         )
-        .limit(1)
-    )
-    if tem_partida_aberta is not None:
+        db.add(rodada)
+        await db.flush()
+    cache[numero] = rodada
+    return rodada
+
+
+async def gerar_fase_de_grupos(
+    db: AsyncSession, modalidade_id: UUID, *, usuario_id: UUID
+) -> list[Rodada]:
+    """Gera o round-robin (mesmo metodo do circulo do returno normal,
+    `_gerar_pareamento`/`_rodadas_necessarias`) dentro de cada `Chave`
+    pendente da modalidade -- equivalente ao bloco `niveis_liga` de
+    `gerar_chaveamento_confronto`, so que agrupado por `chave_id` em vez de
+    `nivel`. Cada chave joga so contra si mesma (nunca cruza com outra
+    chave); a partida fica `formato_chaveamento=TODOS_CONTRA_TODOS` (chave e
+    fisicamente um returno pequeno) e carrega `chave_id` pra distinguir de
+    mata-mata (automatico ou manual) dentro da mesma modalidade.
+
+    Idempotente: chave que ja tem qualquer partida (chamada anterior) e
+    ignorada -- convive com o coordenador gerando aos poucos, conforme cria
+    novas chaves. Depois que a fase de grupos fecha, o mata-mata e montado na
+    mao via `criar_partida_manual` (ver docstring dela).
+    """
+    modalidade = await obter_modalidade(db, modalidade_id)
+    if modalidade.tipo_disputa != TipoDisputa.CONFRONTO:
         raise AppError(
-            codigo="MODALIDADE_CONFLITANTE_EM_ANDAMENTO",
-            mensagem=(
-                f"Finalize {nome_par} antes de iniciar {modalidade.nome} - as duas competem "
-                "com o mesmo tipo de robo e nao podem rodar ao mesmo tempo."
-            ),
+            codigo="MODALIDADE_NAO_E_CONFRONTO",
+            mensagem="Fase de grupos so pode ser gerada para modalidade de confronto.",
             status_code=422,
         )
+
+    chaves = list(
+        (await db.execute(select(Chave).where(Chave.modalidade_id == modalidade_id)))
+        .scalars()
+        .all()
+    )
+    if not chaves:
+        raise AppError(
+            codigo="NENHUMA_CHAVE_PENDENTE",
+            mensagem="Nenhuma chave cadastrada para esta modalidade.",
+            status_code=422,
+        )
+
+    chaves_com_partida = {
+        chave_id
+        for (chave_id,) in (
+            await db.execute(
+                select(Partida.chave_id)
+                .join(Rodada, Partida.rodada_id == Rodada.id)
+                .where(Rodada.modalidade_id == modalidade_id, Partida.chave_id.is_not(None))
+                .distinct()
+            )
+        ).all()
+    }
+    chaves_pendentes = [c for c in chaves if c.id not in chaves_com_partida]
+    if not chaves_pendentes:
+        raise AppError(
+            codigo="NENHUMA_CHAVE_PENDENTE",
+            mensagem="Todas as chaves desta modalidade ja tem partida gerada.",
+            status_code=422,
+        )
+
+    equipes_por_chave: dict[UUID, list[UUID]] = {}
+    for chave in chaves_pendentes:
+        ids = list(
+            (
+                await db.execute(
+                    select(ChaveEquipe.equipe_id).where(ChaveEquipe.chave_id == chave.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if len(ids) < 2:
+            raise AppError(
+                codigo="CHAVE_SEM_EQUIPES_SUFICIENTES",
+                mensagem=f"A chave '{chave.nome}' precisa de pelo menos 2 equipes.",
+                status_code=422,
+            )
+        equipes_por_chave[chave.id] = ids
+
+    nivel_por_chave = {chave.id: chave.nivel for chave in chaves_pendentes}
+    rodadas_por_numero: dict[int, Rodada] = {}
+    maximo = max(_rodadas_necessarias(len(ids)) for ids in equipes_por_chave.values())
+    for numero in range(1, maximo + 1):
+        rodada = await _obter_ou_criar_rodada(db, modalidade_id, numero, rodadas_por_numero)
+        for chave_id, ids in equipes_por_chave.items():
+            if numero > _rodadas_necessarias(len(ids)):
+                continue
+            for equipe_a_id, equipe_b_id in _gerar_pareamento(ids, numero):
+                db.add(
+                    Partida(
+                        rodada_id=rodada.id,
+                        equipe_a_id=equipe_a_id,
+                        equipe_b_id=equipe_b_id,
+                        nivel=nivel_por_chave[chave_id],
+                        chave_id=chave_id,
+                        formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+                        status=PartidaStatus.AGENDADA,
+                    )
+                )
+        await db.flush()
+
+    await registrar_audit_log(
+        db,
+        usuario_id=usuario_id,
+        entidade="modalidade",
+        entidade_id=modalidade_id,
+        acao="GERAR_FASE_DE_GRUPOS",
+        antes=None,
+        depois={"chaves": [str(c.id) for c in chaves_pendentes]},
+    )
+
+    return sorted(rodadas_por_numero.values(), key=lambda r: r.numero)
 
 
 async def gerar_chaveamento_confronto(
@@ -331,8 +445,6 @@ async def gerar_chaveamento_confronto(
             mensagem="Chaveamento so pode ser gerado para modalidade de confronto.",
             status_code=422,
         )
-
-    await _recusar_se_par_conflitante_em_andamento(db, modalidade)
 
     resultado = await db.execute(
         select(Inscricao.equipe_id, Equipe.nivel)
@@ -391,28 +503,8 @@ async def gerar_chaveamento_confronto(
 
     rodadas_por_numero: dict[int, Rodada] = {}
 
-    async def _rodada(numero: int) -> Rodada:
-        rodada = rodadas_por_numero.get(numero)
-        if rodada is None:
-            rodada = await db.scalar(
-                select(Rodada).where(
-                    Rodada.modalidade_id == modalidade_id, Rodada.numero == numero
-                )
-            )
-        if rodada is None:
-            rodada = Rodada(
-                modalidade_id=modalidade_id,
-                numero=numero,
-                modo_horario=ModoHorario.AUTOMATICO,
-                status=RodadaStatus.AGENDADA,
-            )
-            db.add(rodada)
-            await db.flush()
-        rodadas_por_numero[numero] = rodada
-        return rodada
-
     if niveis_bracket:
-        rodada1 = await _rodada(1)
+        rodada1 = await _obter_ou_criar_rodada(db, modalidade_id, 1, rodadas_por_numero)
         for nivel, ids in niveis_bracket.items():
             embaralhado = list(ids)
             random.shuffle(embaralhado)
@@ -423,7 +515,7 @@ async def gerar_chaveamento_confronto(
     if niveis_liga:
         maximo = max(_rodadas_necessarias(len(ids)) for ids in niveis_liga.values())
         for numero in range(1, maximo + 1):
-            rodada = await _rodada(numero)
+            rodada = await _obter_ou_criar_rodada(db, modalidade_id, numero, rodadas_por_numero)
             for nivel, ids in niveis_liga.items():
                 if numero > _rodadas_necessarias(len(ids)):
                     continue
@@ -735,12 +827,29 @@ async def resetar_chaveamento(
         .scalars()
         .all()
     )
+    chaves = list(
+        (await db.execute(select(Chave).where(Chave.modalidade_id == modalidade_id)))
+        .scalars()
+        .all()
+    )
+    chave_ids = [c.id for c in chaves]
+    chave_equipes = (
+        list(
+            (await db.execute(select(ChaveEquipe).where(ChaveEquipe.chave_id.in_(chave_ids))))
+            .scalars()
+            .all()
+        )
+        if chave_ids
+        else []
+    )
 
     snapshot = {
         "rodadas": [_dump(r) for r in rodadas],
         "partidas": [_dump(p) for p in partidas],
         "lancamentos": [_dump(lanc) for lanc in lancamentos],
         "itens": [_dump(item) for item in itens],
+        "chaves": [_dump(c) for c in chaves],
+        "chave_equipes": [_dump(ce) for ce in chave_equipes],
     }
 
     await registrar_audit_log(
@@ -757,5 +866,8 @@ async def resetar_chaveamento(
     await db.execute(delete(LancamentoItem).where(LancamentoItem.lancamento_id.in_(lancamento_ids)))
     await db.execute(delete(Lancamento).where(Lancamento.rodada_id.in_(rodada_ids)))
     await db.execute(delete(Partida).where(Partida.rodada_id.in_(rodada_ids)))
+    if chave_ids:
+        await db.execute(delete(ChaveEquipe).where(ChaveEquipe.chave_id.in_(chave_ids)))
+        await db.execute(delete(Chave).where(Chave.id.in_(chave_ids)))
     await db.execute(delete(Rodada).where(Rodada.modalidade_id == modalidade_id))
     await db.flush()

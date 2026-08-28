@@ -25,6 +25,7 @@ interface PartidaItem {
   status: string;
   nivel: number | null;
   formato_chaveamento?: string;
+  chave_id?: string | null;
 }
 
 function ladoClasses(vencedorId: string | null, equipeId: string): string {
@@ -35,10 +36,12 @@ function ColunaRodada({
   rodada,
   partidas,
   equipePorId,
+  chavePorId,
 }: {
   rodada: RodadaItem;
   partidas: PartidaItem[];
   equipePorId: Map<string, string>;
+  chavePorId: Map<string, string>;
 }) {
   return (
     <div className="w-64 shrink-0">
@@ -48,6 +51,11 @@ function ColunaRodada({
       <div className="space-y-3">
         {partidas.map((partida) => (
           <div key={partida.id} className="rounded border border-slate-200 bg-white p-3 text-sm">
+            {partida.chave_id != null && (
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                {chavePorId.get(partida.chave_id) ?? "Fase de Grupos"}
+              </p>
+            )}
             <p className={ladoClasses(partida.vencedor_id, partida.equipe_a_id)}>
               {equipePorId.get(partida.equipe_a_id) ?? "?"}
             </p>
@@ -208,6 +216,18 @@ export function ChaveamentoPage() {
   });
   const equipePorId = new Map((equipesTodas ?? []).map((e) => [e.id, e.nome]));
 
+  const { data: chavesTodas } = useQuery({
+    queryKey: ["chaves", "para-chaveamento", modalidadeAtivaId],
+    queryFn: async () => {
+      const { data } = await api.GET("/api/v1/modalidades/{modalidade_id}/chaves", {
+        params: { path: { modalidade_id: modalidadeAtivaId } },
+      });
+      return (data ?? []) as { id: string; nome: string }[];
+    },
+    enabled: !!modalidadeAtivaId,
+  });
+  const chavePorId = new Map((chavesTodas ?? []).map((c) => [c.id, c.nome]));
+
   const partidasPorRodada = new Map<string, PartidaItem[]>(
     rodadasOrdenadas.map((rodada, i) => [rodada.id, partidasQueries[i]?.data ?? []]),
   );
@@ -361,6 +381,7 @@ export function ChaveamentoPage() {
                   rodada={rodada}
                   partidas={partidas}
                   equipePorId={equipePorId}
+                  chavePorId={chavePorId}
                 />
               ))}
             </div>

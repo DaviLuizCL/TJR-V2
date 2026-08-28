@@ -871,14 +871,19 @@ async def test_gerar_chaveamento_confronto_recusa_se_ja_iniciado(db_session):
     assert exc_info.value.codigo == "CHAVEAMENTO_JA_INICIADO"
 
 
-async def test_gerar_chaveamento_confronto_recusa_iniciar_sumo_rc_com_sumo_em_andamento(
+async def test_gerar_chaveamento_confronto_permite_sumo_rc_mesmo_com_sumo_em_andamento(
     db_session,
 ):
     # Sumo RC 1,5kg e Sumo 1,5kg tradicional competem com o mesmo robo
-    # possivel - as duas nao podem estar "abertas" (com combate pendente) ao
-    # mesmo tempo, senao um arbitro pode chamar a mesma equipe pras duas
-    # modalidades no mesmo instante. Sem agenda de horario pro confronto,
-    # a trava e travar o INICIO da segunda ate a primeira fechar de vez.
+    # possivel - existia uma trava proibindo as duas ficarem "abertas" ao
+    # mesmo tempo, pensada pro dia real (arbitro podia chamar a mesma equipe
+    # pras duas modalidades no mesmo instante). Removida a pedido do
+    # coordenador: na pratica travar geracao antecipadamente so atrapalhava
+    # o planejamento (ele queria montar TODOS os chaveamentos com
+    # antecedencia pra revisar) - a estrategia combinada agora e resolver
+    # esse tipo de choque manualmente no dia (arbitro chama a proxima equipe
+    # se a anterior estiver competindo em outro lugar), nao via bloqueio de
+    # sistema. Ver historico em CLAUDE.md.
     coordenador = await _criar_coordenador(db_session, "c-conflito-sumo@tjr.app")
     sumo = await _criar_modalidade_confronto(db_session, nome="Sumô", formato=None)
     sumo_rc = await _criar_modalidade_confronto(
@@ -888,11 +893,11 @@ async def test_gerar_chaveamento_confronto_recusa_iniciar_sumo_rc_com_sumo_em_an
     await _inscrever_equipes(db_session, sumo_rc, coordenador, 3)
 
     await gerar_chaveamento_confronto(db_session, sumo.id, usuario_id=coordenador.id)
+    rodadas_rc = await gerar_chaveamento_confronto(
+        db_session, sumo_rc.id, usuario_id=coordenador.id
+    )
 
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_confronto(db_session, sumo_rc.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "MODALIDADE_CONFLITANTE_EM_ANDAMENTO"
+    assert rodadas_rc
 
 
 async def test_gerar_chaveamento_confronto_permite_sumo_rc_depois_do_sumo_encerrado(db_session):

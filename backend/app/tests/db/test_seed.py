@@ -643,12 +643,6 @@ def _qtd_rodadas_esperada_no_seed(modalidade: Modalidade) -> int:
     # circulo precisa pras equipes daquele nivel, nao mais o teto de
     # `qtd_rodadas` (o seed credencia 4 equipes por nivel em toda modalidade
     # de confronto, sempre <=5 -> sempre vira todos-contra-todos hoje).
-    if modalidade.nome == "Sumô RC 1,5 kg":
-        # Sumo RC e Sumo tradicional nao podem ficar abertos ao mesmo tempo
-        # (mesmo robo fisico possivel) - Sumo vem antes na ordem do seed e
-        # fica com combate pendente, entao Sumo RC e pulado (seed_rodadas
-        # engole o 422 MODALIDADE_CONFLITANTE_EM_ANDAMENTO de proposito).
-        return 0
     if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
         if modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA:
             return 1

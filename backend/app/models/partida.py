@@ -32,6 +32,13 @@ class Partida(TimestampedBase):
     nivel: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[PartidaStatus] = mapped_column(Enum(PartidaStatus, name="partida_status"))
 
+    # Preenchido so quando a partida veio da fase de grupos (round-robin
+    # dentro de uma Chave); None pra toda partida de mata-mata, automatica ou
+    # manual (ver services/chave.py e services/chaveamento.py::gerar_fase_de_grupos).
+    chave_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("chave.id"), nullable=True, index=True
+    )
+
     # Snapshot do formato usado pro nivel dessa partida no momento em que ela
     # foi criada (mesmo principio do criterio_snapshot em LancamentoItem):
     # antes, quem decidia mata-mata vs todos-contra-todos pra QUALQUER

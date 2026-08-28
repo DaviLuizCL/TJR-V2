@@ -402,7 +402,13 @@ async def test_criar_lancamento_com_criterio_fora_da_ficha_lanca_erro(db_session
     assert exc_info.value.codigo == "CRITERIO_NAO_PERTENCE_A_FICHA"
 
 
-async def test_criar_lancamento_individual_sem_arena_atribuida_lanca_erro(db_session):
+async def test_criar_lancamento_individual_funciona_mesmo_sem_arena_atribuida(db_session):
+    # Regra removida a pedido do coordenador (TJR 2026): na pratica, no dia
+    # do evento as arenas de uma modalidade individual sao fisicamente
+    # equivalentes, entao exigir agendamento formal (equipe+rodada+arena)
+    # antes de aceitar lancamento so virou friccao sem beneficio real. Ver
+    # historico em CLAUDE.md -- decisao consciente de reverter a regra
+    # inviolavel 10 antiga, nao um bug.
     modalidade = await _criar_modalidade(db_session)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade)
     rodada = await _criar_rodada(db_session, modalidade)
@@ -410,14 +416,11 @@ async def test_criar_lancamento_individual_sem_arena_atribuida_lanca_erro(db_ses
     arbitro = await _criar_arbitro(db_session)
     # nenhum Agendamento criado -- equipe nao foi atribuida a nenhuma arena nessa rodada
 
-    with pytest.raises(AppError) as exc_info:
-        await criar_lancamento(
-            db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
-        )
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
 
-    assert exc_info.value.codigo == "EQUIPE_SEM_ARENA_ATRIBUIDA"
-    resultado = await db_session.execute(select(Lancamento))
-    assert resultado.scalars().all() == []
+    assert lancamento.id is not None
 
 
 async def test_criar_lancamento_individual_com_arena_atribuida_funciona(db_session):

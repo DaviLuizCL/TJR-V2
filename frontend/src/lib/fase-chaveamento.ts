@@ -25,18 +25,56 @@ export function nomeFase(numero: number, totalRodadas: number | undefined): Fase
   return { nome: NOMES_FASE[distancia], classes: CLASSES_FASE[distancia] };
 }
 
+export interface PartidaParaFase {
+  nivel: number | null;
+  equipe_a_id: string;
+  equipe_b_id: string | null;
+  formato_chaveamento?: string;
+  numero: number;
+}
+
 /**
  * Quantas rodadas cada nivel precisa ate a final, a partir de quantas
- * equipes unicas apareceram na rodada 1 desse nivel (ceil(log2(equipes))).
- * Funciona com qualquer distribuicao de byes, ja que o numero de rodadas de
- * um bracket so depende da quantidade de equipes, nao de como os byes caem.
+ * equipes unicas apareceram na PRIMEIRA rodada MATA_MATA desse nivel
+ * (ceil(log2(equipes))). Funciona com qualquer distribuicao de byes, ja que
+ * o numero de rodadas de um bracket so depende da quantidade de equipes, nao
+ * de como os byes caem.
+ *
+ * Antes assumia que a rodada 1 da modalidade e sempre o inicio do bracket --
+ * deixou de valer com a fase de grupos (uma Chave joga TODOS_CONTRA_TODOS
+ * nas primeiras rodadas; o mata-mata so comeca depois, numa rodada
+ * qualquer). Por isso o calculo agora acha, por nivel, a rodada de menor
+ * `numero` cujas partidas sao `MATA_MATA`, e conta equipes so ali. Nivel que
+ * ainda nao teve nenhuma rodada MATA_MATA (so fase de grupos, ou nada ainda)
+ * simplesmente nao entra no resultado -- os chamadores ja tratam "sem total"
+ * caindo pro rotulo generico "Rodada N".
  */
-export function calcularTotalRodadasPorNivel(
-  partidasRodada1: { nivel: number | null; equipe_a_id: string; equipe_b_id: string | null }[],
-): Map<number, number> {
+/**
+ * Menor `numero` de rodada, por nivel, cujas partidas sao `MATA_MATA` -- o
+ * inicio "de verdade" do bracket daquele nivel. Antes da fase de grupos
+ * isso sempre coincidia com a rodada 1 (unico caso que existia); agora pode
+ * ser qualquer numero (rodadas anteriores foram fase de grupos). Nivel sem
+ * nenhuma rodada MATA_MATA ainda (so grupos, ou nada) nao entra no mapa.
+ */
+export function primeiraRodadaMataMataPorNivel(partidas: PartidaParaFase[]): Map<number, number> {
+  const resultado = new Map<number, number>();
+  for (const partida of partidas) {
+    if (partida.nivel == null || partida.formato_chaveamento !== "MATA_MATA") continue;
+    const atual = resultado.get(partida.nivel);
+    if (atual == null || partida.numero < atual) {
+      resultado.set(partida.nivel, partida.numero);
+    }
+  }
+  return resultado;
+}
+
+export function calcularTotalRodadasPorNivel(partidas: PartidaParaFase[]): Map<number, number> {
+  const inicioPorNivel = primeiraRodadaMataMataPorNivel(partidas);
+
   const equipesPorNivel = new Map<number, Set<string>>();
-  for (const partida of partidasRodada1) {
+  for (const partida of partidas) {
     if (partida.nivel == null) continue;
+    if (partida.numero !== inicioPorNivel.get(partida.nivel)) continue;
     if (!equipesPorNivel.has(partida.nivel)) equipesPorNivel.set(partida.nivel, new Set());
     equipesPorNivel.get(partida.nivel)!.add(partida.equipe_a_id);
     if (partida.equipe_b_id) equipesPorNivel.get(partida.nivel)!.add(partida.equipe_b_id);

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.security import hash_senha
 from app.models.agendamento import Agendamento
 from app.models.arena import Arena
+from app.models.chave import Chave, ChaveEquipe
 from app.models.criterio import CategoriaCriterio, Criterio, CriterioTipo
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
@@ -24,7 +25,7 @@ from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.inscricao import InscricaoCreate
 from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
-from app.services.consolidacao import calcular_classificacao
+from app.services.consolidacao import calcular_classificacao, calcular_classificacao_chave
 from app.services.ficha import depreciar_ficha, publicar_ficha
 from app.services.inscricao import criar_inscricao
 from app.services.lancamento import confirmar_lancamento, criar_lancamento
@@ -1026,3 +1027,109 @@ async def test_classificacao_confronto_usa_formato_por_nivel_no_mesmo_calculo(db
     assert _eliminado_por(resultados, equipe_d.id) == equipe_c.id
     assert _posicao(resultados, equipe_c.id) == 1
     assert _posicao(resultados, equipe_d.id) == 2
+
+
+# ---------- calcular_classificacao_chave (fase de grupos) ----------
+
+
+async def test_calcular_classificacao_chave_ordena_por_pontos_com_desempate_confronto_direto(
+    db_session,
+):
+    coordenador = await _criar_coordenador(db_session, "coord-chave-1@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session, formato=FormatoChaveamento.TODOS_CONTRA_TODOS
+    )
+    equipe_a = await _inscrever_equipe_generica(db_session, modalidade, "Equipe A", coordenador)
+    equipe_b = await _inscrever_equipe_generica(db_session, modalidade, "Equipe B", coordenador)
+    equipe_c = await _inscrever_equipe_generica(db_session, modalidade, "Equipe C", coordenador)
+    chave = Chave(modalidade_id=modalidade.id, nivel=1, nome="Chave A")
+    db_session.add(chave)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChaveEquipe(chave_id=chave.id, equipe_id=equipe_a.id),
+            ChaveEquipe(chave_id=chave.id, equipe_id=equipe_b.id),
+            ChaveEquipe(chave_id=chave.id, equipe_id=equipe_c.id),
+        ]
+    )
+    await db_session.flush()
+    rodada = await _criar_rodada_confronto(db_session, modalidade)
+
+    # A bate B, B bate C, A bate C -- A com 3 vitorias, isolado na frente.
+    for vencedor, perdedor in ((equipe_a, equipe_b), (equipe_b, equipe_c), (equipe_a, equipe_c)):
+        db_session.add(
+            Partida(
+                rodada_id=rodada.id,
+                equipe_a_id=vencedor.id,
+                equipe_b_id=perdedor.id,
+                vencedor_id=vencedor.id,
+                chave_id=chave.id,
+                formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+                status=PartidaStatus.ENCERRADA,
+            )
+        )
+    await db_session.flush()
+
+    resultados = await calcular_classificacao_chave(db_session, chave.id)
+
+    assert [r["equipe_id"] for r in resultados] == [equipe_a.id, equipe_b.id, equipe_c.id]
+    assert [r["posicao"] for r in resultados] == [1, 2, 3]
+    assert _vitorias(resultados, equipe_a.id) == 2
+    assert _vitorias(resultados, equipe_b.id) == 1
+    assert _vitorias(resultados, equipe_c.id) == 0
+
+
+async def test_calcular_classificacao_chave_ignora_partidas_de_outras_chaves(db_session):
+    coordenador = await _criar_coordenador(db_session, "coord-chave-2@tjr.app")
+    modalidade = await _criar_modalidade_confronto(
+        db_session, formato=FormatoChaveamento.TODOS_CONTRA_TODOS
+    )
+    equipe_a = await _inscrever_equipe_generica(db_session, modalidade, "Equipe A", coordenador)
+    equipe_b = await _inscrever_equipe_generica(db_session, modalidade, "Equipe B", coordenador)
+    equipe_c = await _inscrever_equipe_generica(db_session, modalidade, "Equipe C", coordenador)
+    equipe_d = await _inscrever_equipe_generica(db_session, modalidade, "Equipe D", coordenador)
+    chave_a = Chave(modalidade_id=modalidade.id, nivel=1, nome="Chave A")
+    chave_b = Chave(modalidade_id=modalidade.id, nivel=1, nome="Chave B")
+    db_session.add_all([chave_a, chave_b])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChaveEquipe(chave_id=chave_a.id, equipe_id=equipe_a.id),
+            ChaveEquipe(chave_id=chave_a.id, equipe_id=equipe_b.id),
+            ChaveEquipe(chave_id=chave_b.id, equipe_id=equipe_c.id),
+            ChaveEquipe(chave_id=chave_b.id, equipe_id=equipe_d.id),
+        ]
+    )
+    await db_session.flush()
+    rodada = await _criar_rodada_confronto(db_session, modalidade)
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_a.id,
+            equipe_b_id=equipe_b.id,
+            vencedor_id=equipe_a.id,
+            chave_id=chave_a.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    db_session.add(
+        Partida(
+            rodada_id=rodada.id,
+            equipe_a_id=equipe_c.id,
+            equipe_b_id=equipe_d.id,
+            vencedor_id=equipe_d.id,
+            chave_id=chave_b.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    await db_session.flush()
+
+    resultado_a = await calcular_classificacao_chave(db_session, chave_a.id)
+    resultado_b = await calcular_classificacao_chave(db_session, chave_b.id)
+
+    assert {r["equipe_id"] for r in resultado_a} == {equipe_a.id, equipe_b.id}
+    assert _vitorias(resultado_a, equipe_a.id) == 1
+    assert {r["equipe_id"] for r in resultado_b} == {equipe_c.id, equipe_d.id}
+    assert _vitorias(resultado_b, equipe_d.id) == 1

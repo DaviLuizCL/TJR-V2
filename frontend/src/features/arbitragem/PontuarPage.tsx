@@ -332,26 +332,11 @@ export function PontuarPage() {
             </>
           );
 
-          if (!agendamento) {
-            return (
-              <li key={equipe.id}>
-                <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4">
-                  {cabecalho}
-                  {corpo}
-                  <p className="mt-2 text-xs font-medium text-amber-800">
-                    ⚠ Sem arena atribuída para esta rodada
-                  </p>
-                  <Link
-                    to={`/eventos/${eventoId}/modalidades/${modalidadeId}/horarios`}
-                    className="mt-1 inline-block text-xs font-medium text-amber-900 underline"
-                  >
-                    Gerar horário →
-                  </Link>
-                </div>
-              </li>
-            );
-          }
-
+          // Trava de agendamento removida a pedido do coordenador (TJR 2026):
+          // na pratica as arenas de uma modalidade individual sao
+          // fisicamente equivalentes no dia do evento, entao o card fica
+          // sempre clicavel -- so mostra a arena/horario quando o
+          // agendamento existir (informativo, nao bloqueante).
           return (
             <li key={equipe.id}>
               <Link
@@ -360,10 +345,12 @@ export function PontuarPage() {
               >
                 {cabecalho}
                 {corpo}
-                <p className="mt-1 text-xs text-slate-500">
-                  {arenaPorId.get(agendamento.arena_id) ?? "Arena"} ·{" "}
-                  {formatarHorario(agendamento.horario_inicio)}
-                </p>
+                {agendamento && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {arenaPorId.get(agendamento.arena_id) ?? "Arena"} ·{" "}
+                    {formatarHorario(agendamento.horario_inicio)}
+                  </p>
+                )}
               </Link>
             </li>
           );

@@ -630,6 +630,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modalidades/{modalidade_id}/chaveamento/fase-de-grupos/gerar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Gerar Fase De Grupos */
+        post: operations["gerar_fase_de_grupos_api_v1_modalidades__modalidade_id__chaveamento_fase_de_grupos_gerar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modalidades/{modalidade_id}/chaveamento/reset": {
         parameters: {
             query?: never;
@@ -641,6 +658,75 @@ export interface paths {
         put?: never;
         /** Resetar Chaveamento */
         post: operations["resetar_chaveamento_api_v1_modalidades__modalidade_id__chaveamento_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modalidades/{modalidade_id}/chaves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar Chaves */
+        get: operations["listar_chaves_api_v1_modalidades__modalidade_id__chaves_get"];
+        put?: never;
+        /** Criar Chave */
+        post: operations["criar_chave_api_v1_modalidades__modalidade_id__chaves_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chaves/{chave_id}/equipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adicionar Equipe */
+        post: operations["adicionar_equipe_api_v1_chaves__chave_id__equipes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chaves/{chave_id}/equipes/{equipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remover Equipe */
+        delete: operations["remover_equipe_api_v1_chaves__chave_id__equipes__equipe_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chaves/{chave_id}/classificacao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Obter Classificacao Chave */
+        get: operations["obter_classificacao_chave_api_v1_chaves__chave_id__classificacao_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -869,6 +955,63 @@ export interface components {
          * @enum {string}
          */
         CategoriaCriterio: "PONTUACAO" | "PENALIDADE";
+        /** ChaveCreate */
+        ChaveCreate: {
+            /**
+             * Modalidade Id
+             * Format: uuid
+             */
+            modalidade_id: string;
+            /** Nivel */
+            nivel: number;
+            /** Nome */
+            nome: string;
+        };
+        /** ChaveEquipeCreate */
+        ChaveEquipeCreate: {
+            /**
+             * Equipe Id
+             * Format: uuid
+             */
+            equipe_id: string;
+        };
+        /** ChaveOut */
+        ChaveOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Modalidade Id
+             * Format: uuid
+             */
+            modalidade_id: string;
+            /** Nivel */
+            nivel: number;
+            /** Nome */
+            nome: string;
+            /** Equipe Ids */
+            equipe_ids: string[];
+        };
+        /** ClassificacaoChaveItem */
+        ClassificacaoChaveItem: {
+            /**
+             * Equipe Id
+             * Format: uuid
+             */
+            equipe_id: string;
+            /** Nota Final */
+            nota_final: number;
+            /** Vitorias */
+            vitorias: number;
+            /** Empates */
+            empates: number;
+            /** Derrotas */
+            derrotas: number;
+            /** Posicao */
+            posicao: number;
+        };
         /** ClassificacaoItemOut */
         ClassificacaoItemOut: {
             /**
@@ -1836,6 +1979,8 @@ export interface components {
             vencedor_id: string | null;
             /** Nivel */
             nivel: number | null;
+            /** Chave Id */
+            chave_id: string | null;
             formato_chaveamento: components["schemas"]["FormatoChaveamento"];
             status: components["schemas"]["PartidaStatus"];
             /**
@@ -3652,6 +3797,37 @@ export interface operations {
             };
         };
     };
+    gerar_fase_de_grupos_api_v1_modalidades__modalidade_id__chaveamento_fase_de_grupos_gerar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RodadaOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     resetar_chaveamento_api_v1_modalidades__modalidade_id__chaveamento_reset_post: {
         parameters: {
             query?: never;
@@ -3673,6 +3849,168 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_chaves_api_v1_modalidades__modalidade_id__chaves_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChaveOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    criar_chave_api_v1_modalidades__modalidade_id__chaves_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChaveCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChaveOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adicionar_equipe_api_v1_chaves__chave_id__equipes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chave_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChaveEquipeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remover_equipe_api_v1_chaves__chave_id__equipes__equipe_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chave_id: string;
+                equipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obter_classificacao_chave_api_v1_chaves__chave_id__classificacao_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chave_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificacaoChaveItem"][];
+                };
             };
             /** @description Validation Error */
             422: {
