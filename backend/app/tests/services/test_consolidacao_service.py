@@ -741,6 +741,76 @@ async def test_mata_mata_ranking_mostra_vitorias_derrotas_e_eliminado_por(db_ses
     assert _eliminado_por(resultados, equipe_d.id) == equipe_c.id
 
 
+# ---------- fase de grupos (chave) nao pode poluir eliminado_por do mata-mata ----------
+
+
+async def test_classificacao_bracket_ignora_derrota_de_fase_de_grupos_no_eliminado_por(db_session):
+    """Bug real achado na simulacao pre-evento (2026-08-28): campeao que
+    perdeu uma partida na FASE DE GRUPOS (round-robin dentro de uma chave,
+    onde perder nao elimina ninguem) aparecia no ranking com
+    eliminado_por_equipe_id apontando pro adversario daquela derrota de
+    grupo, porque _classificacao_bracket somava TODAS as partidas decididas
+    da modalidade (_buscar_partidas_decididas), sem distinguir fase de
+    grupos (TODOS_CONTRA_TODOS, com chave_id) de mata-mata de verdade.
+    """
+    coordenador = await _criar_coordenador(db_session, "coord-consolidacao-grupos-mm@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    campeao = await _inscrever_equipe_generica(db_session, modalidade, "Campeao", coordenador)
+    rival_grupo = await _inscrever_equipe_generica(db_session, modalidade, "Rival Grupo", coordenador)
+    rival_final = await _inscrever_equipe_generica(db_session, modalidade, "Rival Final", coordenador)
+
+    chave = Chave(modalidade_id=modalidade.id, nivel=1, nome="Chave A")
+    db_session.add(chave)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChaveEquipe(chave_id=chave.id, equipe_id=campeao.id),
+            ChaveEquipe(chave_id=chave.id, equipe_id=rival_grupo.id),
+        ]
+    )
+    await db_session.flush()
+
+    rodada_grupo = await _criar_rodada_confronto(db_session, modalidade, numero=1)
+    # Fase de grupos: Campeao PERDE pro Rival Grupo (nao elimina ninguem, e round-robin).
+    db_session.add(
+        Partida(
+            rodada_id=rodada_grupo.id,
+            equipe_a_id=campeao.id,
+            equipe_b_id=rival_grupo.id,
+            vencedor_id=rival_grupo.id,
+            nivel=1,
+            chave_id=chave.id,
+            formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    await db_session.flush()
+
+    # Mata-mata (montado manualmente pelo coordenador): Campeao vence a final de verdade.
+    rodada_final = await _criar_rodada_confronto(db_session, modalidade, numero=2)
+    db_session.add(
+        Partida(
+            rodada_id=rodada_final.id,
+            equipe_a_id=campeao.id,
+            equipe_b_id=rival_final.id,
+            vencedor_id=campeao.id,
+            nivel=1,
+            formato_chaveamento=FormatoChaveamento.MATA_MATA,
+            status=PartidaStatus.ENCERRADA,
+        )
+    )
+    await db_session.flush()
+
+    resultados = await calcular_classificacao(db_session, modalidade.id)
+
+    assert _eliminado_por(resultados, campeao.id) is None
+    assert _vitorias(resultados, campeao.id) == 1
+    assert _derrotas(resultados, campeao.id) == 0
+    assert _posicao(resultados, campeao.id) == 1
+
+    assert _eliminado_por(resultados, rival_final.id) == campeao.id
+
+
 # ---------- classificacao nao pode misturar niveis diferentes ----------
 
 

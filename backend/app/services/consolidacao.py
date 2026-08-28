@@ -54,7 +54,17 @@ async def _formato_por_nivel(
         .where(Rodada.modalidade_id == modalidade.id, Partida.nivel.is_not(None))
         .distinct()
     )
-    ja_decidido = dict(resultado.all())
+    # Um nivel que passou por fase de grupos (TODOS_CONTRA_TODOS, via chave) e
+    # depois mata-mata manual carrega os dois formatos ao mesmo tempo - o
+    # `.distinct()` acima pode devolver as duas linhas em qualquer ordem, entao
+    # nao da pra confiar num `dict()` (ultimo-vence e nao-deterministico). O
+    # mata-mata sempre manda quando presente: e a fase que decide quem avanca/
+    # e eliminado de verdade, o round-robin de grupo e so classificatorio.
+    ja_decidido: dict[int, FormatoChaveamento] = {}
+    for nivel, formato in resultado.all():
+        atual = ja_decidido.get(nivel)
+        if atual is None or formato == FormatoChaveamento.MATA_MATA:
+            ja_decidido[nivel] = formato
 
     contagem_por_nivel: dict[int, int] = defaultdict(int)
     for nivel in (await _equipes_por_nivel(db, modalidade.id)).values():
@@ -303,7 +313,16 @@ async def _classificacao_bracket(
     db: AsyncSession, modalidade: Modalidade, niveis: set[int]
 ) -> list[dict]:
     niveis_por_equipe = await _equipes_por_nivel(db, modalidade.id)
-    partidas = await _buscar_partidas_decididas(db, modalidade.id)
+    # So partidas do mata-mata de verdade contam pra vitorias/derrotas/eliminado_por
+    # aqui - partida de fase de grupos (round-robin dentro de uma chave) nao
+    # elimina ninguem, sua classificacao propria vive em calcular_classificacao_chave.
+    # Sem esse filtro, uma derrota de grupo sobrescrevia eliminado_por ate de quem
+    # depois venceu o mata-mata inteiro (bug real achado em simulacao).
+    partidas = [
+        p
+        for p in await _buscar_partidas_decididas(db, modalidade.id)
+        if p.formato_chaveamento == FormatoChaveamento.MATA_MATA
+    ]
     equipe_ids = [
         eid
         for eid in await _equipes_inscritas(db, modalidade.id)
