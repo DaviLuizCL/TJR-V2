@@ -484,7 +484,6 @@ export function RodadaListPage() {
     inicioMataMataPorNivel = primeiraRodadaMataMataPorNivel(partidasComNumero);
   }
 
-  const [erroChaveamento, setErroChaveamento] = useState<string | null>(null);
   const [mostrarChaveamentoManual, setMostrarChaveamentoManual] = useState(false);
   const [mostrarFaseDeGrupos, setMostrarFaseDeGrupos] = useState(false);
 
@@ -494,18 +493,6 @@ export function RodadaListPage() {
 
   async function gerarRodadas() {
     await api.POST("/api/v1/rodadas/gerar", { body: { modalidade_id: modalidadeId! } });
-    onMudou();
-  }
-
-  async function gerarChaveamento() {
-    setErroChaveamento(null);
-    const { error } = await api.POST("/api/v1/chaveamento/gerar", {
-      body: { modalidade_id: modalidadeId! },
-    });
-    if (error) {
-      setErroChaveamento(extrairErro(error).mensagem);
-      return;
-    }
     onMudou();
   }
 
@@ -527,13 +514,6 @@ export function RodadaListPage() {
         <h1 className="text-2xl font-semibold text-slate-800">Rodadas de {modalidade.nome}</h1>
         {isCombate ? (
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={gerarChaveamento}
-              className="rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white"
-            >
-              Gerar chaveamento
-            </button>
             {modalidade.formato_chaveamento !== "TODOS_CONTRA_TODOS" && (
               <>
                 <button
@@ -563,8 +543,6 @@ export function RodadaListPage() {
           </button>
         )}
       </div>
-
-      {erroChaveamento && <p className="mb-4 text-sm text-red-600">{erroChaveamento}</p>}
 
       {isCombate ? (
         <ul className="space-y-2">

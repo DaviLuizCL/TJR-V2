@@ -265,12 +265,15 @@ describe("RodadaListPage", () => {
     });
   }
 
-  it("modalidade de confronto com chaveamento (mata-mata) sem rodada ainda mostra 'Gerar chaveamento'", async () => {
+  it("modalidade de confronto nao mostra mais 'Gerar chaveamento' (removido do front; so fase de grupos ou manual)", async () => {
     mockGetChaveamento([], {});
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: /^gerar chaveamento$/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /montar chaveamento manual/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^gerar chaveamento$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^gerar rodadas$/i })).not.toBeInTheDocument();
   });
 
@@ -289,13 +292,13 @@ describe("RodadaListPage", () => {
 
     renderPage();
 
-    await screen.findByRole("button", { name: /^gerar chaveamento$/i });
+    await screen.findByRole("heading", { name: /^rodadas de/i });
     expect(
       screen.queryByRole("button", { name: /montar chaveamento manual/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("'Gerar chaveamento' e 'Montar chaveamento manual' continuam visiveis mesmo com rodada 1 ja existindo (nivel montado na mao, outro pendente do automatico)", async () => {
+  it("'Montar chaveamento manual' continua visivel mesmo com rodada 1 ja existindo (nivel montado na mao, outro pendente do automatico)", async () => {
     mockGetChaveamento(
       [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
       { r1: [{ id: "p1", equipe_a_id: "eq-1", equipe_b_id: "eq-2", vencedor_id: null, status: "AGENDADA", nivel: 2 }] },
@@ -303,9 +306,8 @@ describe("RodadaListPage", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: /^gerar chaveamento$/i })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /montar chaveamento manual/i }),
+      await screen.findByRole("button", { name: /montar chaveamento manual/i }),
     ).toBeInTheDocument();
   });
 
@@ -335,7 +337,7 @@ describe("RodadaListPage", () => {
 
     renderPage();
 
-    await screen.findByRole("button", { name: /^gerar chaveamento$/i });
+    await screen.findByRole("heading", { name: /^rodadas de/i });
     expect(screen.queryByRole("button", { name: /^fase de grupos$/i })).not.toBeInTheDocument();
   });
 
@@ -435,48 +437,6 @@ describe("RodadaListPage", () => {
     expect(
       await screen.findByRole("dialog", { name: /montar fase de grupos/i }),
     ).toBeInTheDocument();
-  });
-
-  it("clicar em 'Gerar chaveamento' chama o endpoint de chaveamento", async () => {
-    mockGetChaveamento([], {});
-    vi.mocked(api.POST).mockResolvedValue({
-      data: { id: "r1", modalidade_id: "mod-1", numero: 1, status: "AGENDADA" },
-      error: undefined,
-    } as never);
-
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: /^gerar chaveamento$/i }));
-
-    await waitFor(() =>
-      expect(api.POST).toHaveBeenCalledWith(
-        "/api/v1/chaveamento/gerar",
-        expect.objectContaining({ body: { modalidade_id: "mod-1" } }),
-      ),
-    );
-  });
-
-  it("mostra a mensagem de erro quando gerar chaveamento falha (ex.: modalidade conflitante em andamento)", async () => {
-    mockGetChaveamento([], {});
-    vi.mocked(api.POST).mockResolvedValue({
-      data: undefined,
-      error: {
-        erro: {
-          codigo: "MODALIDADE_CONFLITANTE_EM_ANDAMENTO",
-          mensagem:
-            "Finalize Sumô antes de iniciar Sumô RC 1,5 kg - as duas competem com o mesmo tipo de robo.",
-        },
-      },
-    } as never);
-
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: /^gerar chaveamento$/i }));
-
-    // extrairErro esta mockado globalmente neste arquivo (linha 12) pra
-    // sempre devolver a mensagem generica -- o que importa aqui e provar
-    // que a tela realmente mostra a mensagem de erro que o backend devolve
-    // (ex.: MODALIDADE_CONFLITANTE_EM_ANDAMENTO), nao o parsing em si (isso
-    // ja e coberto em client.test.ts).
-    expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
   });
 
   it("chaveamento ja gerado mostra as partidas de cada rodada com o vencedor quando decidido", async () => {
@@ -789,12 +749,15 @@ describe("RodadaListPage", () => {
     });
   }
 
-  it("modalidade de confronto todos-contra-todos tambem mostra 'Gerar chaveamento' (ponto de entrada unico pra CONFRONTO)", async () => {
+  it("modalidade de confronto todos-contra-todos nao mostra nenhum botao de chaveamento (removido do front; endpoint segue existindo no backend)", async () => {
     mockGetTodosContraTodos([], {});
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: /^gerar chaveamento$/i })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: /^rodadas de/i });
+    expect(screen.queryByRole("button", { name: /^gerar chaveamento$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^fase de grupos$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /montar chaveamento manual/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^gerar rodadas$/i })).not.toBeInTheDocument();
   });
 
