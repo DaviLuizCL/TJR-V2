@@ -575,6 +575,23 @@ async def test_seed_modalidades_individual_tem_duracao_e_pausa_configuradas(db_s
         assert modalidade.pausa_entre_rodadas_seg is not None
 
 
+async def test_seed_modalidades_individuais_usam_soma_rodadas(db_session):
+    # As 4 modalidades INDIVIDUAL rodam so 2 rodadas cada (qtd_rodadas=2,
+    # ajuste de vespera do TJR 2026) e a nota final soma as duas -- decisao
+    # tomada e ja aplicada em producao (Modalidade.consolidacao), documentada
+    # no CLAUDE.md. Antes desta correcao, so "Danca" tinha SOMA_RODADAS no
+    # seed.py; Resgate no Plano/Alto Risco/Viagem tinham ficado presas em
+    # IGNORA_MENOR_NOTA (herdado de quando eram 3 rodadas) -- nenhum teste
+    # cobria o campo, entao o seed.py divergiu silenciosamente do banco real.
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    individuais = [m for m in modalidades if m.tipo_disputa == TipoDisputa.INDIVIDUAL]
+    assert len(individuais) == 4
+    for modalidade in individuais:
+        assert modalidade.consolidacao == Consolidacao.SOMA_RODADAS, modalidade.nome
+
+
 _MODALIDADES_ARENA_POR_NIVEL = {"Resgate no Plano", "Resgate de Alto Risco"}
 
 
