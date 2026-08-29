@@ -28,10 +28,12 @@ interface EquipeItem {
 
 function EquipeEditForm({
   equipe,
+  salvando,
   onSalvar,
   onCancelar,
 }: {
   equipe: EquipeItem;
+  salvando: boolean;
   onSalvar: (dados: { nome: string; nivel: number }) => void;
   onCancelar: () => void;
 }) {
@@ -71,9 +73,10 @@ function EquipeEditForm({
       <button
         type="button"
         onClick={() => onSalvar({ nome, nivel })}
-        className="rounded bg-slate-800 px-3 py-1 text-sm text-white"
+        disabled={salvando}
+        className="rounded bg-slate-800 px-3 py-1 text-sm text-white disabled:opacity-60"
       >
-        Salvar
+        {salvando ? "Salvando..." : "Salvar"}
       </button>
       <button
         type="button"
@@ -186,6 +189,13 @@ export function EquipeListPage() {
   const [filtroModalidadeId, setFiltroModalidadeId] = useState<string>("");
   const [buscaNome, setBuscaNome] = useState<string>("");
   const [equipeEditandoId, setEquipeEditandoId] = useState<string | null>(null);
+  // Qual equipe tem um PATCH em voo agora. Serve pra desabilitar o botao e
+  // avisar que algo esta acontecendo: na rede do ginasio a chamada leva
+  // segundos, e sem sinal nenhum o coordenador clica de novo (o audit_log do
+  // dia do TJR 2026 registrou o mesmo `{ativo: false}` repetido pra mesma
+  // equipe, sempre `antes=false, depois=false`).
+  const [equipeEmAlteracaoId, setEquipeEmAlteracaoId] = useState<string | null>(null);
+  const [erroLista, setErroLista] = useState<string | null>(null);
   const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   const { data: modalidades } = useQuery({
@@ -297,20 +307,65 @@ export function EquipeListPage() {
   }
 
   async function alternarAtivo(equipe: EquipeItem) {
-    await api.PATCH("/api/v1/equipes/{equipe_id}", {
-      params: { path: { equipe_id: equipe.id } },
-      body: { ativo: !equipe.ativo },
-    });
-    await invalidar();
+    if (equipeEmAlteracaoId) return;
+    setErroLista(null);
+    setEquipeEmAlteracaoId(equipe.id);
+
+    let resposta;
+    try {
+      resposta = await api.PATCH("/api/v1/equipes/{equipe_id}", {
+        params: { path: { equipe_id: equipe.id } },
+        body: { ativo: !equipe.ativo },
+      });
+    } finally {
+      setEquipeEmAlteracaoId(null);
+    }
+
+    const { data, error } = resposta;
+    if (error || !data) {
+      const acao = equipe.ativo ? "desativar" : "ativar";
+      setErroLista(`Não foi possível ${acao} a equipe: ${extrairErro(error).mensagem}`);
+      return;
+    }
+
+    // Reflete o resultado na hora, com o que o proprio PATCH devolveu, em vez de
+    // esperar o refetch da lista inteira (136 equipes no evento real) -- era essa
+    // espera que fazia a tela parecer travada. O refetch continua acontecendo,
+    // mas em segundo plano: nem o selo nem o botao ficam presos a ele.
+    queryClient.setQueriesData<EquipeItem[]>({ queryKey: ["equipes"] }, (anterior) =>
+      anterior?.map((item) => (item.id === equipe.id ? { ...item, ativo: data.ativo } : item)),
+    );
+    void invalidar();
   }
 
   async function salvarEdicao(equipeId: string, dados: { nome: string; nivel: number }) {
-    await api.PATCH("/api/v1/equipes/{equipe_id}", {
-      params: { path: { equipe_id: equipeId } },
-      body: dados,
-    });
+    if (equipeEmAlteracaoId) return;
+    setErroLista(null);
+    setEquipeEmAlteracaoId(equipeId);
+
+    let resposta;
+    try {
+      resposta = await api.PATCH("/api/v1/equipes/{equipe_id}", {
+        params: { path: { equipe_id: equipeId } },
+        body: dados,
+      });
+    } finally {
+      setEquipeEmAlteracaoId(null);
+    }
+
+    const { data, error } = resposta;
+    if (error || !data) {
+      setErroLista(`Não foi possível salvar a equipe: ${extrairErro(error).mensagem}`);
+      return;
+    }
+
+    queryClient.setQueriesData<EquipeItem[]>({ queryKey: ["equipes"] }, (anterior) =>
+      anterior?.map((item) =>
+        item.id === equipeId ? { ...item, nome: data.nome, nivel: data.nivel } : item,
+      ),
+    );
     setEquipeEditandoId(null);
-    await invalidar();
+    void invalidar();
   }
 
   return (
@@ -383,6 +438,12 @@ export function EquipeListPage() {
           <p className="text-slate-500">Nenhuma equipe encontrada para essa busca.</p>
         )}
 
+        {erroLista && (
+          <p role="alert" className="mb-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {erroLista}
+          </p>
+        )}
+
         <ul className="space-y-2">
           {dataFiltrada?.map((equipe) => (
             <li
@@ -393,6 +454,7 @@ export function EquipeListPage() {
                 <>
                   <EquipeEditForm
                     equipe={equipe}
+                    salvando={equipeEmAlteracaoId === equipe.id}
                     onSalvar={(dados) => salvarEdicao(equipe.id, dados)}
                     onCancelar={() => setEquipeEditandoId(null)}
                   />
@@ -451,9 +513,16 @@ export function EquipeListPage() {
                         <button
                           type="button"
                           onClick={() => alternarAtivo(equipe)}
-                          className="text-sm font-medium text-slate-700 underline"
+                          disabled={equipeEmAlteracaoId === equipe.id}
+                          className="text-sm font-medium text-slate-700 underline disabled:no-underline disabled:opacity-60"
                         >
-                          {equipe.ativo ? "Desativar" : "Ativar"}
+                          {equipeEmAlteracaoId === equipe.id
+                            ? equipe.ativo
+                              ? "Desativando..."
+                              : "Ativando..."
+                            : equipe.ativo
+                              ? "Desativar"
+                              : "Ativar"}
                         </button>
                       )}
                     </div>

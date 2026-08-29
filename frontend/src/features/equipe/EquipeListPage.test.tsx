@@ -377,6 +377,132 @@ describe("EquipeListPage", () => {
     );
   });
 
+  // Bug real de campo (dia do TJR 2026): com a rede do ginasio, o PATCH demora
+  // 1-3s e a tela nao dava sinal nenhum de que algo estava acontecendo -- o
+  // coordenador clicava de novo, e o audit_log de producao registrou o mesmo
+  // `{ativo: false}` varias vezes seguidas pra mesma equipe.
+  it("nao dispara um segundo PATCH enquanto o primeiro ainda esta em voo", async () => {
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+    let resolverPatch: (valor: unknown) => void = () => {};
+    vi.mocked(api.PATCH).mockReturnValue(
+      new Promise((resolve) => {
+        resolverPatch = resolve;
+      }) as never,
+    );
+
+    renderPage();
+
+    const botao = await screen.findByRole("button", { name: /desativar/i });
+    await userEvent.click(botao);
+
+    const emAndamento = await screen.findByRole("button", { name: /desativando/i });
+    expect(emAndamento).toBeDisabled();
+
+    await userEvent.click(emAndamento);
+    await userEvent.click(emAndamento);
+
+    resolverPatch({
+      data: { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: false },
+      error: undefined,
+    });
+
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalledTimes(1));
+  });
+
+  it("mostra a equipe como inativa assim que o PATCH responde, sem esperar o refetch da lista", async () => {
+    // O primeiro GET responde normal (monta a tela); o refetch disparado depois
+    // do PATCH fica pendurado de proposito, simulando a lista das 136 equipes
+    // reais demorando na rede do ginasio. O selo tem que mudar com a resposta do
+    // proprio PATCH, sem depender desse refetch.
+    //
+    // (Nao se testa aqui "o valor do PATCH sobrevive a um refetch que traz outro
+    // valor": o servidor e a fonte da verdade, entao dado fresco da listagem tem
+    // que vencer mesmo. O que o bug de campo exigia era so nao esperar por ele.)
+    const equipeAtiva = { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true };
+    let chamadasEquipes = 0;
+    vi.mocked(api.GET).mockImplementation(async (path: unknown) => {
+      if (path === "/api/v1/equipes") {
+        chamadasEquipes += 1;
+        if (chamadasEquipes > 1) return new Promise(() => {}) as never;
+        return { data: { itens: [equipeAtiva], total: 1, page: 1, size: 50 }, error: undefined } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+    vi.mocked(api.PATCH).mockResolvedValue({
+      data: { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: false },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /desativar/i }));
+
+    expect(await screen.findByText(/inativa/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^ativar$/i })).toBeInTheDocument();
+  });
+
+  it("mostra erro na tela quando o PATCH de desativar falha", async () => {
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+    vi.mocked(api.PATCH).mockResolvedValue({
+      data: undefined,
+      error: { erro: { codigo: "QUALQUER", mensagem: "falhou" } },
+    } as never);
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /desativar/i }));
+
+    expect(await screen.findByText(/não foi possível/i)).toBeInTheDocument();
+    // sem mudanca otimista: a equipe continua ativa, porque o servidor recusou
+    expect(screen.getByText(/^Ativa$/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /desativar/i })).toBeEnabled();
+  });
+
+  // Mesmo defeito do botao de desativar, na mesma tela: o audit_log de producao
+  // do dia do evento tem 5 PATCH de renomear a mesma equipe em 400ms.
+  it("nao dispara um segundo PATCH de salvar enquanto o primeiro ainda esta em voo", async () => {
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+    let resolverPatch: (valor: unknown) => void = () => {};
+    vi.mocked(api.PATCH).mockReturnValue(
+      new Promise((resolve) => {
+        resolverPatch = resolve;
+      }) as never,
+    );
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /editar/i }));
+    await userEvent.click(screen.getByRole("button", { name: /salvar/i }));
+
+    const emAndamento = await screen.findByRole("button", { name: /salvando/i });
+    expect(emAndamento).toBeDisabled();
+
+    await userEvent.click(emAndamento);
+    await userEvent.click(emAndamento);
+
+    resolverPatch({
+      data: { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true },
+      error: undefined,
+    });
+
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalledTimes(1));
+  });
+
   it("arbitro nao ve o formulario de criar equipe nem os botoes de editar/ativar", async () => {
     logarComo("ARBITRO");
     mockGetEquipes({
