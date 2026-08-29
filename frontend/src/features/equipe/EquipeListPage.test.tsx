@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -409,6 +409,34 @@ describe("EquipeListPage", () => {
     resolverPatch({
       data: { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: false },
       error: undefined,
+    });
+
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalledTimes(1));
+  });
+
+  // Verificado ao vivo contra producao: o `disabled` sozinho nao basta. Cliques
+  // no mesmo tick (fila da rede do ginasio liberando de uma vez -- o audit_log
+  // tem 3 PATCH em 4ms) acontecem antes do React re-renderizar, entao a guarda
+  // por estado ainda deixa todos passarem. Tem que ser trava sincrona.
+  it("ignora cliques repetidos disparados no mesmo instante", async () => {
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+    vi.mocked(api.PATCH).mockReturnValue(new Promise(() => {}) as never);
+
+    renderPage();
+
+    const botao = await screen.findByRole("button", { name: /desativar/i });
+    // Clique nativo em sequencia, dentro do mesmo tick e sem flush do React
+    // entre eles -- e o que o navegador faz de verdade (`fireEvent` re-renderiza
+    // a cada chamada, o que esconderia justamente o caso que quebrou em campo).
+    await act(async () => {
+      botao.click();
+      botao.click();
+      botao.click();
     });
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalledTimes(1));

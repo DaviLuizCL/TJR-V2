@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { z } from "zod";
@@ -195,6 +195,12 @@ export function EquipeListPage() {
   // dia do TJR 2026 registrou o mesmo `{ativo: false}` repetido pra mesma
   // equipe, sempre `antes=false, depois=false`).
   const [equipeEmAlteracaoId, setEquipeEmAlteracaoId] = useState<string | null>(null);
+  // Trava sincrona, alem do estado acima. Cliques no mesmo tick (a fila da rede
+  // do ginasio liberando de uma vez) acontecem todos antes do React
+  // re-renderizar, entao o `disabled` -- e qualquer guarda que leia estado --
+  // ainda deixaria os repetidos passarem. Verificado ao vivo: 4 cliques em
+  // rajada viravam 4 PATCH mesmo com o botao ja "desabilitado".
+  const alteracaoEmVooRef = useRef(false);
   const [erroLista, setErroLista] = useState<string | null>(null);
   const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
@@ -307,7 +313,8 @@ export function EquipeListPage() {
   }
 
   async function alternarAtivo(equipe: EquipeItem) {
-    if (equipeEmAlteracaoId) return;
+    if (alteracaoEmVooRef.current) return;
+    alteracaoEmVooRef.current = true;
     setErroLista(null);
     setEquipeEmAlteracaoId(equipe.id);
 
@@ -318,6 +325,7 @@ export function EquipeListPage() {
         body: { ativo: !equipe.ativo },
       });
     } finally {
+      alteracaoEmVooRef.current = false;
       setEquipeEmAlteracaoId(null);
     }
 
@@ -339,7 +347,8 @@ export function EquipeListPage() {
   }
 
   async function salvarEdicao(equipeId: string, dados: { nome: string; nivel: number }) {
-    if (equipeEmAlteracaoId) return;
+    if (alteracaoEmVooRef.current) return;
+    alteracaoEmVooRef.current = true;
     setErroLista(null);
     setEquipeEmAlteracaoId(equipeId);
 
@@ -350,6 +359,7 @@ export function EquipeListPage() {
         body: dados,
       });
     } finally {
+      alteracaoEmVooRef.current = false;
       setEquipeEmAlteracaoId(null);
     }
 
