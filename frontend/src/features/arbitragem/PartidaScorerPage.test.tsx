@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { PartidaScorerPage } from "./PartidaScorerPage";
 
 vi.mock("../../api/client", () => ({
@@ -244,8 +245,17 @@ function mockGet(cfg: MockConfig = {}) {
   });
 }
 
+function logarComo(papel: string | null) {
+  useAuthStore.setState({
+    accessToken: papel ? "tok" : null,
+    refreshToken: papel ? "tok" : null,
+    usuario: papel ? { id: "u1", nome: "Usuario", email: "u@tjr.app", papel } : null,
+  } as never);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  logarComo("ARBITRO");
 });
 
 describe("PartidaScorerPage - ficha com um criterio booleano", () => {
@@ -1084,3 +1094,127 @@ describe("PartidaScorerPage - ficha com criterio nao suportado pelo scorer inlin
     expect(link.getAttribute("href")).toContain("partidaId=par-1");
   });
 });
+
+describe("PartidaScorerPage - correcao de combate pelo coordenador", () => {
+  function lanc(id: string, equipe: string, tentativa: number, total: number, revision = 1) {
+    return {
+      id,
+      equipe_id: equipe,
+      tentativa,
+      partida_id: "par-1",
+      status: "CONFIRMADO",
+      total,
+      revision,
+    };
+  }
+
+  const DECIDIDA_1_COMBATE = {
+    partida: { status: "ENCERRADA", vencedor_id: "eq-1" },
+    tentativasPorRodada: 1,
+    lancamentos: [lanc("l-a", "eq-1", 1, 1, 1), lanc("l-b", "eq-2", 1, 0, 2)],
+  };
+
+  function mockCorrigirOk() {
+    vi.mocked(api.POST).mockResolvedValue({ data: {}, error: undefined } as never);
+  }
+
+  function chamadasDeCorrecao() {
+    const chamadas = vi.mocked(api.POST).mock.calls as unknown as [string, unknown][];
+    return chamadas
+      .filter(([path]) => path === "/api/v1/lancamentos/{lancamento_id}/corrigir")
+      .map(([, opts]) => opts as { params: { path: { lancamento_id: string } }; body: unknown });
+  }
+
+  it("arbitro nao ve 'Corrigir' em combate decidido", async () => {
+    mockGet(DECIDIDA_1_COMBATE);
+    renderPage();
+
+    await screen.findByText(/combate 1/i);
+    expect(screen.queryByRole("button", { name: /corrigir/i })).not.toBeInTheDocument();
+  });
+
+  it("coordenador corrige combate booleano trocando o vencedor", async () => {
+    logarComo("COORDENADOR");
+    mockGet(DECIDIDA_1_COMBATE);
+    mockCorrigirOk();
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /corrigir combate 1/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Equipe Y" }));
+
+    await waitFor(() => expect(chamadasDeCorrecao()).toHaveLength(2));
+    const [a, b] = chamadasDeCorrecao();
+    expect(a.params.path.lancamento_id).toBe("l-a");
+    expect(a.body).toMatchObject({
+      revision: 1,
+      itens: [{ criterio_id: "crit-1", ocorrencias: 0 }],
+    });
+    expect(b.params.path.lancamento_id).toBe("l-b");
+    expect(b.body).toMatchObject({
+      revision: 2,
+      itens: [{ criterio_id: "crit-1", ocorrencias: 1 }],
+    });
+    expect(api.POST).not.toHaveBeenCalledWith("/api/v1/lancamentos", expect.anything());
+  });
+
+  it("coordenador corrige combate de escala", async () => {
+    logarComo("COORDENADOR");
+    mockGet({ ...DECIDIDA_1_COMBATE, ficha: FICHA_ESCALA });
+    mockCorrigirOk();
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /corrigir combate 1/i }));
+    const [fossoA] = screen.getAllByRole("button", { name: /arrasto pro fosso/i });
+    await userEvent.click(fossoA);
+
+    await waitFor(() => expect(chamadasDeCorrecao()).toHaveLength(2));
+    const porId = Object.fromEntries(
+      chamadasDeCorrecao().map((c) => [c.params.path.lancamento_id, c.body]),
+    );
+    expect(porId["l-a"]).toMatchObject({ itens: [{ criterio_id: "crit-2", valor: 2 }] });
+    expect(porId["l-b"]).toMatchObject({ itens: [{ criterio_id: "crit-2", valor: 0 }] });
+  });
+
+  it("correcao de ficha com varios criterios manda todos os criterios (zerados inclusive)", async () => {
+    logarComo("COORDENADOR");
+    mockGet({ ...DECIDIDA_1_COMBATE, ficha: FICHA_MULTI });
+    mockCorrigirOk();
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /corrigir combate 1/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar/i }));
+
+    await waitFor(() => expect(chamadasDeCorrecao()).toHaveLength(2));
+    const corpoA = chamadasDeCorrecao()[0].body as { itens: { criterio_id: string }[] };
+    expect(corpoA.itens.map((i) => i.criterio_id).sort()).toEqual(["crit-3", "crit-4", "crit-4b"]);
+  });
+
+  it("combate extra de desempate ja lancado aparece e tambem pode ser corrigido", async () => {
+    logarComo("COORDENADOR");
+    mockGet({
+      partida: { status: "ENCERRADA", vencedor_id: "eq-1" },
+      tentativasPorRodada: 2,
+      lancamentos: [
+        lanc("l-a1", "eq-1", 1, 1),
+        lanc("l-b1", "eq-2", 1, 0),
+        lanc("l-a2", "eq-1", 2, 0),
+        lanc("l-b2", "eq-2", 2, 1),
+        lanc("l-a3", "eq-1", 3, 1),
+        lanc("l-b3", "eq-2", 3, 0),
+      ],
+    });
+    mockCorrigirOk();
+    renderPage();
+
+    expect(await screen.findByText(/combate extra/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /corrigir combate extra/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Equipe Y" }));
+
+    await waitFor(() => expect(chamadasDeCorrecao()).toHaveLength(2));
+    expect(chamadasDeCorrecao().map((c) => c.params.path.lancamento_id).sort()).toEqual([
+      "l-a3",
+      "l-b3",
+    ]);
+  });
+});
+

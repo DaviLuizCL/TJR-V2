@@ -118,6 +118,12 @@ async def criar_partida_manual(
         )
 
     for equipe in filter(None, [equipe_a, equipe_b]):
+        if not equipe.presente:
+            raise AppError(
+                codigo="EQUIPE_AUSENTE",
+                mensagem=f"A equipe '{equipe.nome}' esta marcada como ausente.",
+                status_code=422,
+            )
         inscrita = await db.scalar(
             select(Inscricao).where(
                 Inscricao.equipe_id == equipe.id, Inscricao.modalidade_id == modalidade_id
@@ -203,7 +209,7 @@ async def registrar_resultado_lancamento(
         return
 
     partida = await db.get(Partida, lancamento.partida_id)
-    if partida is None or partida.status in (PartidaStatus.ENCERRADA, PartidaStatus.EMPATADA):
+    if partida is None:
         return
     if partida.equipe_b_id is None:
         return
@@ -281,37 +287,40 @@ async def registrar_resultado_lancamento(
             elif total_b_desempate > total_a_desempate:
                 pontuacao_b += 1
 
+    # Recalcula sempre, inclusive com a partida ja decidida: uma correcao de
+    # lancamento (coordenador) pode trocar o vencedor, virar empate (fase de
+    # grupos -> EMPATADA) ou reabrir uma eliminatoria (empate -> espera o
+    # combate extra de desempate). So grava/audita quando o estado muda.
     if pontuacao_a == pontuacao_b:
-        if not eh_todos_contra_todos:
-            return
-        partida.status = PartidaStatus.EMPATADA
-        await db.flush()
-        await registrar_audit_log(
-            db,
-            usuario_id=usuario_id,
-            entidade="partida",
-            entidade_id=partida.id,
-            acao="EMPATAR",
-            antes=None,
-            depois={"status": "EMPATADA", "pontuacao_a": pontuacao_a, "pontuacao_b": pontuacao_b},
-        )
+        novo_status = PartidaStatus.EMPATADA if eh_todos_contra_todos else PartidaStatus.AGENDADA
+        vencedor_id = None
+    else:
+        novo_status = PartidaStatus.ENCERRADA
+        vencedor_id = equipe_a_id if pontuacao_a > pontuacao_b else equipe_b_id
+
+    if partida.status == novo_status and partida.vencedor_id == vencedor_id:
         return
 
-    vencedor_id = equipe_a_id if pontuacao_a > pontuacao_b else equipe_b_id
-
-    partida.status = PartidaStatus.ENCERRADA
+    antes = {"status": partida.status.value, "vencedor_id": partida.vencedor_id}
+    partida.status = novo_status
     partida.vencedor_id = vencedor_id
     await db.flush()
 
+    acao = {
+        PartidaStatus.ENCERRADA: "ENCERRAR",
+        PartidaStatus.EMPATADA: "EMPATAR",
+        PartidaStatus.AGENDADA: "REABRIR",
+    }[novo_status]
     await registrar_audit_log(
         db,
         usuario_id=usuario_id,
         entidade="partida",
         entidade_id=partida.id,
-        acao="ENCERRAR",
-        antes=None,
+        acao=acao,
+        antes=json.loads(json.dumps(antes, default=str)),
         depois={
-            "vencedor_id": str(vencedor_id),
+            "status": novo_status.value,
+            "vencedor_id": str(vencedor_id) if vencedor_id else None,
             "pontuacao_a": pontuacao_a,
             "pontuacao_b": pontuacao_b,
         },

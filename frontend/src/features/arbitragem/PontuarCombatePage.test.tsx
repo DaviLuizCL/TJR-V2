@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { PontuarCombatePage } from "./PontuarCombatePage";
 
 vi.mock("../../api/client", () => ({
@@ -86,8 +87,28 @@ function mockGet(cfg: MockConfig = {}) {
   });
 }
 
+function logarComo(papel: string) {
+  useAuthStore.setState({
+    accessToken: "tok",
+    refreshToken: "tok",
+    usuario: { id: "u1", nome: "Usuario Teste", email: "user@tjr.app", papel },
+  });
+}
+
+const PARTIDA_ENCERRADA = {
+  id: "par-1",
+  rodada_id: "rod-1",
+  equipe_a_id: "eq-1",
+  equipe_b_id: "eq-2",
+  vencedor_id: "eq-1",
+  nivel: 1,
+  status: "ENCERRADA",
+  criado_em: "2026-08-05T10:00:00Z",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  logarComo("ARBITRO");
 });
 
 describe("PontuarCombatePage", () => {
@@ -700,5 +721,39 @@ describe("PontuarCombatePage", () => {
       "href",
       "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/partidas/par-1/pontuar?nivel=1",
     );
+  });
+
+  it("coordenador ve 'Corrigir' na partida ja decidida, levando pra tela da partida", async () => {
+    logarComo("COORDENADOR");
+    mockGet({ partidasPorRodada: { "rod-1": [PARTIDA_ENCERRADA] } });
+
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /corrigir/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/partidas/par-1/pontuar",
+    );
+  });
+
+  it("arbitro nao ve 'Corrigir' em partida decidida", async () => {
+    mockGet({ partidasPorRodada: { "rod-1": [PARTIDA_ENCERRADA] } });
+
+    renderPage();
+
+    await screen.findByText(/vencedor: equipe x/i);
+    expect(screen.queryByRole("link", { name: /corrigir/i })).not.toBeInTheDocument();
+  });
+
+  it("bye nao tem 'Corrigir' (nao houve combate)", async () => {
+    logarComo("COORDENADOR");
+    mockGet({
+      partidasPorRodada: { "rod-1": [{ ...PARTIDA_ENCERRADA, equipe_b_id: null }] },
+    });
+
+    renderPage();
+
+    await screen.findByText(/\(bye\)/i);
+    expect(screen.queryByRole("link", { name: /corrigir/i })).not.toBeInTheDocument();
   });
 });

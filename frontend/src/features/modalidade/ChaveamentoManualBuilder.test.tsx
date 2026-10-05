@@ -29,6 +29,7 @@ function mockDados(partidasExistentes: Record<string, unknown>[] = []) {
             { id: "eq-a", nome: "Equipe A", nivel: 2, ativo: true },
             { id: "eq-b", nome: "Equipe B", nivel: 2, ativo: true },
             { id: "eq-c", nome: "Equipe C", nivel: 2, ativo: true },
+            { id: "eq-x", nome: "Equipe Ausente", nivel: 2, ativo: true, presente: false },
             { id: "eq-d", nome: "Equipe D", nivel: 3, ativo: true },
             { id: "eq-e", nome: "Equipe E", nivel: 3, ativo: true },
           ],
@@ -50,6 +51,7 @@ function mockDados(partidasExistentes: Record<string, unknown>[] = []) {
             { equipe_id: "eq-a", modalidade_id: "mod-1" },
             { equipe_id: "eq-b", modalidade_id: "mod-1" },
             { equipe_id: "eq-c", modalidade_id: "mod-1" },
+            { equipe_id: "eq-x", modalidade_id: "mod-1" },
             { equipe_id: "eq-d", modalidade_id: "mod-1" },
             { equipe_id: "eq-e", modalidade_id: "mod-1" },
           ],
@@ -105,6 +107,18 @@ describe("ChaveamentoManualBuilder", () => {
     await within(selectA).findByText("Equipe A");
     expect(within(selectA).getByText("Equipe B")).toBeInTheDocument();
     expect(within(selectA).queryByText("Equipe D")).not.toBeInTheDocument();
+  });
+
+  it("equipe marcada como ausente nao aparece nas opcoes", async () => {
+    mockDados();
+    renderBuilder();
+
+    const selectA = screen.getByLabelText(/equipe a/i);
+    await within(selectA).findByText("Equipe A");
+    expect(within(selectA).queryByText("Equipe Ausente")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText(/equipe b/i)).queryByText("Equipe Ausente"),
+    ).not.toBeInTheDocument();
   });
 
   it("comeca na ultima rodada que ja existe", async () => {

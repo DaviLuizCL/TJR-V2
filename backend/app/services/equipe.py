@@ -11,7 +11,12 @@ from app.services.audit import registrar_audit_log
 
 
 def _serializar(equipe: Equipe) -> dict:
-    return {"nome": equipe.nome, "nivel": equipe.nivel, "ativo": equipe.ativo}
+    return {
+        "nome": equipe.nome,
+        "nivel": equipe.nivel,
+        "ativo": equipe.ativo,
+        "presente": equipe.presente,
+    }
 
 
 async def criar_equipe(db: AsyncSession, dto: EquipeCreate, *, usuario_id: UUID) -> Equipe:

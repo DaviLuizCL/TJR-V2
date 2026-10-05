@@ -24,6 +24,7 @@ interface EquipeItem {
   nome: string;
   nivel: number;
   ativo: boolean;
+  presente?: boolean;
 }
 
 function EquipeEditForm({
@@ -346,6 +347,38 @@ export function EquipeListPage() {
     void invalidar();
   }
 
+  // Mesma trava/feedback do alternarAtivo: rede do ginasio, clique repetido.
+  async function alternarPresenca(equipe: EquipeItem) {
+    if (alteracaoEmVooRef.current) return;
+    alteracaoEmVooRef.current = true;
+    setErroLista(null);
+    setEquipeEmAlteracaoId(equipe.id);
+
+    let resposta;
+    try {
+      resposta = await api.PATCH("/api/v1/equipes/{equipe_id}", {
+        params: { path: { equipe_id: equipe.id } },
+        body: { presente: equipe.presente === false },
+      });
+    } finally {
+      alteracaoEmVooRef.current = false;
+      setEquipeEmAlteracaoId(null);
+    }
+
+    const { data, error } = resposta;
+    if (error || !data) {
+      setErroLista(`Não foi possível alterar a presença: ${extrairErro(error).mensagem}`);
+      return;
+    }
+
+    queryClient.setQueriesData<EquipeItem[]>({ queryKey: ["equipes"] }, (anterior) =>
+      anterior?.map((item) =>
+        item.id === equipe.id ? { ...item, presente: data.presente } : item,
+      ),
+    );
+    void invalidar();
+  }
+
   async function salvarEdicao(equipeId: string, dados: { nome: string; nivel: number }) {
     if (alteracaoEmVooRef.current) return;
     alteracaoEmVooRef.current = true;
@@ -504,6 +537,11 @@ export function EquipeListPage() {
                       >
                         {equipe.ativo ? "Ativa" : "Inativa"}
                       </span>
+                      {equipe.presente === false && (
+                        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+                          Ausente
+                        </span>
+                      )}
                       <Link
                         to={`/equipes/${equipe.id}/submissoes`}
                         className="text-sm font-medium text-slate-700 underline"
@@ -533,6 +571,16 @@ export function EquipeListPage() {
                             : equipe.ativo
                               ? "Desativar"
                               : "Ativar"}
+                        </button>
+                      )}
+                      {ehCoordenador && (
+                        <button
+                          type="button"
+                          onClick={() => alternarPresenca(equipe)}
+                          disabled={equipeEmAlteracaoId === equipe.id}
+                          className="text-sm font-medium text-slate-700 underline disabled:no-underline disabled:opacity-60"
+                        >
+                          {equipe.presente === false ? "Marcar presente" : "Marcar ausente"}
                         </button>
                       )}
                     </div>

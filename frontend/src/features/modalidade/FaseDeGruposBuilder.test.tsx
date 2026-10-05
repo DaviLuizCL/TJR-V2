@@ -29,8 +29,9 @@ function mockDados(chaves: Record<string, unknown>[] = []) {
             { id: "eq-a", nome: "Equipe A", nivel: 1, ativo: true },
             { id: "eq-b", nome: "Equipe B", nivel: 1, ativo: true },
             { id: "eq-c", nome: "Equipe C", nivel: 1, ativo: true },
+            { id: "eq-x", nome: "Equipe Ausente", nivel: 1, ativo: true, presente: false },
           ],
-          total: 3,
+          total: 4,
           page: 1,
           size: 1000,
         },
@@ -44,8 +45,9 @@ function mockDados(chaves: Record<string, unknown>[] = []) {
             { equipe_id: "eq-a", modalidade_id: "mod-1" },
             { equipe_id: "eq-b", modalidade_id: "mod-1" },
             { equipe_id: "eq-c", modalidade_id: "mod-1" },
+            { equipe_id: "eq-x", modalidade_id: "mod-1" },
           ],
-          total: 3,
+          total: 4,
           page: 1,
           size: 1000,
         },
@@ -104,6 +106,8 @@ describe("FaseDeGruposBuilder", () => {
     // eq-a ja esta na chave, so eq-b e eq-c ficam disponiveis pra adicionar
     expect(within(selectAdicionar).queryByText("Equipe A")).not.toBeInTheDocument();
     expect(within(selectAdicionar).getByText("Equipe B")).toBeInTheDocument();
+    // equipe ausente nao entra em chave
+    expect(within(selectAdicionar).queryByText("Equipe Ausente")).not.toBeInTheDocument();
 
     await userEvent.selectOptions(selectAdicionar, "eq-b");
     await userEvent.click(screen.getByRole("button", { name: /^adicionar$/i }));

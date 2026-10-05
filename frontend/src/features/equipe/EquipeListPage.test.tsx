@@ -531,6 +531,77 @@ describe("EquipeListPage", () => {
     await waitFor(() => expect(api.PATCH).toHaveBeenCalledTimes(1));
   });
 
+  it("coordenador marca uma equipe presente como ausente", async () => {
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true, presente: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+    vi.mocked(api.PATCH).mockResolvedValue({
+      data: { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true, presente: false },
+      error: undefined,
+    } as never);
+
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /marcar ausente/i }));
+
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith(
+        "/api/v1/equipes/{equipe_id}",
+        expect.objectContaining({
+          params: { path: { equipe_id: "eq1" } },
+          body: { presente: false },
+        }),
+      ),
+    );
+  });
+
+  it("equipe ausente mostra o selo 'Ausente' e permite marcar presente de novo", async () => {
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true, presente: false }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+    vi.mocked(api.PATCH).mockResolvedValue({
+      data: { id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true, presente: true },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    expect(await screen.findByText("Ausente")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /marcar presente/i }));
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith(
+        "/api/v1/equipes/{equipe_id}",
+        expect.objectContaining({ body: { presente: true } }),
+      ),
+    );
+  });
+
+  it("marcar ausente tambem ignora cliques repetidos no mesmo instante", async () => {
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true, presente: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+    vi.mocked(api.PATCH).mockReturnValue(new Promise(() => {}) as never);
+
+    renderPage();
+
+    const botao = await screen.findByRole("button", { name: /marcar ausente/i });
+    await act(async () => {
+      botao.click();
+      botao.click();
+      botao.click();
+    });
+
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalledTimes(1));
+  });
+
   it("arbitro nao ve o formulario de criar equipe nem os botoes de editar/ativar", async () => {
     logarComo("ARBITRO");
     mockGetEquipes({
@@ -547,6 +618,7 @@ describe("EquipeListPage", () => {
     expect(screen.queryByLabelText(/nome da equipe/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^editar$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /desativar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /marcar ausente/i })).not.toBeInTheDocument();
     // leitura continua liberada
     expect(screen.getByRole("link", { name: /submiss/i })).toBeInTheDocument();
   });

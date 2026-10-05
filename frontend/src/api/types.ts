@@ -1154,6 +1154,8 @@ export interface components {
             nivel: number;
             /** Ativo */
             ativo: boolean;
+            /** Presente */
+            presente: boolean;
             /**
              * Criado Em
              * Format: date-time
@@ -1173,6 +1175,8 @@ export interface components {
             nivel?: number | null;
             /** Ativo */
             ativo?: boolean | null;
+            /** Presente */
+            presente?: boolean | null;
         };
         /** EventoCreate */
         EventoCreate: {

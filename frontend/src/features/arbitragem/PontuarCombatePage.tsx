@@ -2,6 +2,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import {
   calcularTotalRodadasPorNivel,
   nomeFase,
@@ -53,6 +54,7 @@ export function PontuarCombatePage() {
   const { eventoId, modalidadeId } = useParams<{ eventoId: string; modalidadeId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const nivelFiltro = searchParams.get("nivel") ?? "";
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   const { data: modalidade } = useQuery({
     queryKey: ["modalidade", modalidadeId],
@@ -303,11 +305,21 @@ export function PontuarCombatePage() {
                   </>
                 );
 
+                const linkPartida = `/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${partida.rodada_id}/partidas/${partida.id}/pontuar${nivelFiltro ? `?nivel=${nivelFiltro}` : ""}`;
+
                 if (decidida) {
                   return (
                     <li key={partida.id}>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 opacity-80">
-                        {corpo}
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <div className="opacity-80">{corpo}</div>
+                        {ehCoordenador && partida.equipe_b_id && (
+                          <Link
+                            to={linkPartida}
+                            className="mt-2 inline-block text-sm font-medium text-slate-700 underline"
+                          >
+                            Corrigir
+                          </Link>
+                        )}
                       </div>
                     </li>
                   );
@@ -316,7 +328,7 @@ export function PontuarCombatePage() {
                 return (
                   <li key={partida.id}>
                     <Link
-                      to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${partida.rodada_id}/partidas/${partida.id}/pontuar${nivelFiltro ? `?nivel=${nivelFiltro}` : ""}`}
+                      to={linkPartida}
                       className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
                     >
                       {corpo}

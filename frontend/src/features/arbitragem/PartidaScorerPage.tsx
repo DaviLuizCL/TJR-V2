@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { randomUUID } from "../../lib/uuid";
 
 interface PartidaItem {
@@ -54,6 +55,7 @@ interface LancamentoItem {
   partida_id: string | null;
   status: string;
   total: number;
+  revision: number;
 }
 
 interface ItemEnvio {
@@ -275,6 +277,10 @@ export function PartidaScorerPage() {
 
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState<number | null>(null);
+  // Combates (tentativas) que o coordenador reabriu pra corrigir: o envio
+  // vira POST /corrigir nos lancamentos ja confirmados em vez de pular.
+  const [corrigindo, setCorrigindo] = useState<Set<number>>(new Set());
+  const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
   const { data: partidas } = useQuery({
     queryKey: ["partidas-da-rodada", rodadaId],
@@ -406,6 +412,14 @@ export function PartidaScorerPage() {
     }
   }
 
+  // Combate extra ja registrado continua visivel (e corrigivel) mesmo depois
+  // que a partida fechou - senao um ponto de ouro errado nao teria correcao.
+  const temCombateExtraLancado =
+    !!partida &&
+    lancamentosDaPartida.some(
+      (l) => l.tentativa === tentativaDesempate && l.status === "CONFIRMADO",
+    );
+
   async function enviarCombate(
     tentativa: number,
     lados: { equipeId: string; itens: ItemEnvio[] }[],
@@ -421,7 +435,27 @@ export function PartidaScorerPage() {
       // que ja foi criado ou ja foi confirmado - o backend recusa duplicata
       // (LANCAMENTO_JA_EXISTE) e sem isso o retry ficava travado pra sempre.
       const existente = lancamentoExistente(lado.equipeId, tentativa);
-      if (existente?.status === "CONFIRMADO") continue;
+      if (existente?.status === "CONFIRMADO") {
+        if (!corrigindo.has(tentativa)) continue;
+        const { error: erroCorrigir } = await api.POST(
+          "/api/v1/lancamentos/{lancamento_id}/corrigir",
+          {
+            params: { path: { lancamento_id: existente.id } },
+            body: {
+              revision: existente.revision,
+              justificativa: "Correção do coordenador na tela do combate",
+              itens: lado.itens,
+            } as never,
+          },
+        );
+        await queryClient.invalidateQueries({ queryKey: ["lancamentos-da-rodada", rodadaId] });
+        if (erroCorrigir) {
+          setErro(extrairErro(erroCorrigir).mensagem);
+          setEnviando(null);
+          return;
+        }
+        continue;
+      }
 
       let lancamentoId = existente?.id;
       if (!lancamentoId) {
@@ -458,6 +492,11 @@ export function PartidaScorerPage() {
     }
 
     setEnviando(null);
+    setCorrigindo((atual) => {
+      const proximo = new Set(atual);
+      proximo.delete(tentativa);
+      return proximo;
+    });
     await queryClient.invalidateQueries({ queryKey: ["partidas-da-rodada", rodadaId] });
 
     const partidasAtualizadas = queryClient.getQueryData<PartidaItem[]>([
@@ -510,10 +549,218 @@ export function PartidaScorerPage() {
 
   function enviarMultiCriterio(tentativa: number, itensA: ItemEnvio[], itensB: ItemEnvio[]) {
     if (!partida) return;
+    if (corrigindo.has(tentativa)) {
+      // Correcao precisa mandar todos os criterios da ficha (o backend recusa
+      // omitir criterio que o lancamento original tinha): o que nao foi
+      // marcado vai zerado.
+      const completar = (itens: ItemEnvio[]) =>
+        criterios.map(
+          (c) =>
+            itens.find((i) => i.criterio_id === c.id) ?? {
+              criterio_id: c.id,
+              ocorrencias: 0,
+            },
+        );
+      itensA = completar(itensA);
+      itensB = completar(itensB);
+    }
     void enviarCombate(tentativa, [
       { equipeId: partida.equipe_a_id, itens: itensA },
       ...(partida.equipe_b_id ? [{ equipeId: partida.equipe_b_id, itens: itensB }] : []),
     ]);
+  }
+
+  function iniciarCorrecao(tentativa: number) {
+    setCorrigindo((atual) => new Set(atual).add(tentativa));
+  }
+
+  function cancelarCorrecao(tentativa: number) {
+    setCorrigindo((atual) => {
+      const proximo = new Set(atual);
+      proximo.delete(tentativa);
+      return proximo;
+    });
+  }
+
+  // Botoes de lancamento de um combate. `desempate` = combate extra (ponto de
+  // ouro): sem opcao de empate.
+  function renderControles(
+    tentativa: number,
+    desempate: boolean,
+    nomeA: string,
+    nomeB: string | null,
+  ) {
+    const valoresNaoZero = valoresOrdenados.filter((v) => v !== 0);
+    const permiteEmpate = !desempate && valoresOrdenados.includes(0);
+
+    if (criterioUnico?.tipo === "BOOLEANO") {
+      const botoes = (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={enviando === tentativa}
+            onClick={() => enviarBooleano(tentativa, "A")}
+            className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+          >
+            {nomeA}
+          </button>
+          <button
+            type="button"
+            disabled={enviando === tentativa}
+            onClick={() => enviarBooleano(tentativa, "B")}
+            className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+          >
+            {nomeB}
+          </button>
+          {!desempate && (
+            <button
+              type="button"
+              disabled={enviando === tentativa}
+              onClick={() => enviarBooleano(tentativa, "EMPATE")}
+              className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
+            >
+              Empate
+            </button>
+          )}
+        </div>
+      );
+      if (desempate) return botoes;
+      return (
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-500">Defina o vencedor</p>
+          {botoes}
+        </div>
+      );
+    }
+
+    if (criterioUnico?.tipo === "ESCALA") {
+      const coluna = (lado: "A" | "B", nome: string | null) => (
+        <div>
+          <p className="mb-1 text-xs text-slate-600">{nome}</p>
+          <div className="flex flex-col gap-2">
+            {valoresNaoZero.map((v) => (
+              <button
+                key={v}
+                type="button"
+                disabled={enviando === tentativa}
+                onClick={() => enviarEscala(tentativa, lado, v)}
+                className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {rotuloEscala(criterioUnico.nome, v)}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+      if (desempate) {
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            {coluna("A", nomeA)}
+            {coluna("B", nomeB)}
+          </div>
+        );
+      }
+      return (
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-500">Defina o resultado</p>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+            {coluna("A", nomeA)}
+            {permiteEmpate && (
+              <button
+                type="button"
+                disabled={enviando === tentativa}
+                onClick={() => enviarEscala(tentativa, "EMPATE")}
+                className="min-h-12 rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
+              >
+                Empate
+              </button>
+            )}
+            {coluna("B", nomeB)}
+          </div>
+        </div>
+      );
+    }
+
+    if (suportaScorerInline(criterios)) {
+      return (
+        <MultiCriterioScorer
+          criterios={criterios}
+          nomeA={nomeA}
+          nomeB={nomeB}
+          desabilitado={enviando === tentativa}
+          onRegistrar={(itensA, itensB) => enviarMultiCriterio(tentativa, itensA, itensB)}
+        />
+      );
+    }
+
+    return (
+      <Link
+        to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodadaId}/lancamentos/novo?partidaId=${partidaId}`}
+        className="text-sm font-medium text-slate-700 underline"
+      >
+        Lançar pela ficha completa →
+      </Link>
+    );
+  }
+
+  // Combate ja decidido: placar colorido + (coordenador) botao de corrigir,
+  // que reabre os mesmos controles do lancamento.
+  function renderCombate(
+    tentativa: number,
+    desempate: boolean,
+    nomeA: string,
+    nomeB: string | null,
+  ) {
+    if (!partida) return null;
+    const lancA = lancamentoConfirmado(partida.equipe_a_id, tentativa);
+    const lancB = partida.equipe_b_id
+      ? lancamentoConfirmado(partida.equipe_b_id, tentativa)
+      : undefined;
+    const decidido = !!lancA && !!lancB;
+
+    if (!decidido) return renderControles(tentativa, desempate, nomeA, nomeB);
+
+    if (corrigindo.has(tentativa)) {
+      return (
+        <div>
+          <p className="mb-2 text-xs font-medium text-amber-700">Corrigindo este combate</p>
+          {renderControles(tentativa, desempate, nomeA, nomeB)}
+          <button
+            type="button"
+            onClick={() => cancelarCorrecao(tentativa)}
+            className="mt-2 text-sm font-medium text-slate-600 underline"
+          >
+            Cancelar correção
+          </button>
+        </div>
+      );
+    }
+
+    // Lancamento corrigido no fluxo generico (sem scorer inline) nao cabe aqui.
+    const podeCorrigir = ehCoordenador && !!(criterioUnico || suportaScorerInline(criterios));
+
+    return (
+      <>
+        <p className="text-sm font-medium">
+          <span className={corResultado(lancA!.total, lancB!.total, "A")}>{nomeA}</span>
+          {" vs "}
+          <span className={corResultado(lancA!.total, lancB!.total, "B")}>{nomeB}</span>
+        </p>
+        {!desempate && lancA!.total === lancB!.total && (
+          <p className="mt-1 text-xs text-slate-500">Empate</p>
+        )}
+        {podeCorrigir && (
+          <button
+            type="button"
+            aria-label={desempate ? "Corrigir combate extra" : `Corrigir combate ${tentativa}`}
+            onClick={() => iniciarCorrecao(tentativa)}
+            className="mt-2 text-sm font-medium text-slate-700 underline"
+          >
+            Corrigir
+          </button>
+        )}
+      </>
+    );
   }
 
   const carregando =
@@ -575,233 +822,20 @@ export function PartidaScorerPage() {
       )}
 
       <ul className="space-y-3">
-        {tentativasArr.map(
-          (tentativa) => {
-            const lancA = lancamentoConfirmado(partida.equipe_a_id, tentativa);
-            const lancB = partida.equipe_b_id
-              ? lancamentoConfirmado(partida.equipe_b_id, tentativa)
-              : undefined;
-            const decidido = !!lancA && !!lancB;
-            const valoresNaoZero = valoresOrdenados.filter((v) => v !== 0);
-            const permiteEmpate = valoresOrdenados.includes(0);
-
-            return (
-              <li key={tentativa} className="rounded-lg border border-slate-200 bg-white p-4">
-                <p className="mb-2 text-sm font-semibold text-slate-700">Combate {tentativa}</p>
-
-                {decidido ? (
-                  <>
-                    <p className="text-sm font-medium">
-                      <span className={corResultado(lancA!.total, lancB!.total, "A")}>
-                        {nomeA}
-                      </span>
-                      {" vs "}
-                      <span className={corResultado(lancA!.total, lancB!.total, "B")}>
-                        {nomeB}
-                      </span>
-                    </p>
-                    {lancA!.total === lancB!.total && (
-                      <p className="mt-1 text-xs text-slate-500">Empate</p>
-                    )}
-                  </>
-                ) : criterioUnico?.tipo === "BOOLEANO" ? (
-                  <div>
-                    <p className="mb-2 text-xs font-medium text-slate-500">Defina o vencedor</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={enviando === tentativa}
-                        onClick={() => enviarBooleano(tentativa, "A")}
-                        className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                      >
-                        {nomeA}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={enviando === tentativa}
-                        onClick={() => enviarBooleano(tentativa, "B")}
-                        className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                      >
-                        {nomeB}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={enviando === tentativa}
-                        onClick={() => enviarBooleano(tentativa, "EMPATE")}
-                        className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
-                      >
-                        Empate
-                      </button>
-                    </div>
-                  </div>
-                ) : criterioUnico?.tipo === "ESCALA" ? (
-                  <div>
-                    <p className="mb-2 text-xs font-medium text-slate-500">Defina o resultado</p>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                      <div>
-                        <p className="mb-1 text-xs text-slate-600">{nomeA}</p>
-                        <div className="flex flex-col gap-2">
-                          {valoresNaoZero.map((v) => (
-                            <button
-                              key={v}
-                              type="button"
-                              disabled={enviando === tentativa}
-                              onClick={() => enviarEscala(tentativa, "A", v)}
-                              className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                            >
-                              {rotuloEscala(criterioUnico.nome, v)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      {permiteEmpate && (
-                        <button
-                          type="button"
-                          disabled={enviando === tentativa}
-                          onClick={() => enviarEscala(tentativa, "EMPATE")}
-                          className="min-h-12 rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
-                        >
-                          Empate
-                        </button>
-                      )}
-                      <div>
-                        <p className="mb-1 text-xs text-slate-600">{nomeB}</p>
-                        <div className="flex flex-col gap-2">
-                          {valoresNaoZero.map((v) => (
-                            <button
-                              key={v}
-                              type="button"
-                              disabled={enviando === tentativa}
-                              onClick={() => enviarEscala(tentativa, "B", v)}
-                              className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                            >
-                              {rotuloEscala(criterioUnico.nome, v)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : suportaScorerInline(criterios) ? (
-                  <MultiCriterioScorer
-                    criterios={criterios}
-                    nomeA={nomeA}
-                    nomeB={nomeB}
-                    desabilitado={enviando === tentativa}
-                    onRegistrar={(itensA, itensB) =>
-                      enviarMultiCriterio(tentativa, itensA, itensB)
-                    }
-                  />
-                ) : (
-                  <Link
-                    to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodadaId}/lancamentos/novo?partidaId=${partidaId}`}
-                    className="text-sm font-medium text-slate-700 underline"
-                  >
-                    Lançar pela ficha completa →
-                  </Link>
-                )}
-              </li>
-            );
-          },
-        )}
+        {tentativasArr.map((tentativa) => (
+          <li key={tentativa} className="rounded-lg border border-slate-200 bg-white p-4">
+            <p className="mb-2 text-sm font-semibold text-slate-700">Combate {tentativa}</p>
+            {renderCombate(tentativa, false, nomeA, nomeB)}
+          </li>
+        ))}
       </ul>
 
-      {empateTecnico &&
-        (() => {
-          const lancA = lancamentoConfirmado(partida.equipe_a_id, tentativaDesempate);
-          const lancB = partida.equipe_b_id
-            ? lancamentoConfirmado(partida.equipe_b_id, tentativaDesempate)
-            : undefined;
-          const decidido = !!lancA && !!lancB;
-          const valoresNaoZero = valoresOrdenados.filter((v) => v !== 0);
-
-          return (
-            <div className="mt-4 rounded-lg border-2 border-amber-300 bg-white p-4">
-              <p className="mb-2 text-sm font-semibold text-amber-700">
-                Combate extra (desempate)
-              </p>
-
-              {decidido ? (
-                <p className="text-sm font-medium">
-                  <span className={corResultado(lancA!.total, lancB!.total, "A")}>{nomeA}</span>
-                  {" vs "}
-                  <span className={corResultado(lancA!.total, lancB!.total, "B")}>{nomeB}</span>
-                </p>
-              ) : criterioUnico?.tipo === "BOOLEANO" ? (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={enviando === tentativaDesempate}
-                    onClick={() => enviarBooleano(tentativaDesempate, "A")}
-                    className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                  >
-                    {nomeA}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={enviando === tentativaDesempate}
-                    onClick={() => enviarBooleano(tentativaDesempate, "B")}
-                    className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                  >
-                    {nomeB}
-                  </button>
-                </div>
-              ) : criterioUnico?.tipo === "ESCALA" ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="mb-1 text-xs text-slate-600">{nomeA}</p>
-                    <div className="flex flex-col gap-2">
-                      {valoresNaoZero.map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          disabled={enviando === tentativaDesempate}
-                          onClick={() => enviarEscala(tentativaDesempate, "A", v)}
-                          className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                        >
-                          {rotuloEscala(criterioUnico.nome, v)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-1 text-xs text-slate-600">{nomeB}</p>
-                    <div className="flex flex-col gap-2">
-                      {valoresNaoZero.map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          disabled={enviando === tentativaDesempate}
-                          onClick={() => enviarEscala(tentativaDesempate, "B", v)}
-                          className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
-                        >
-                          {rotuloEscala(criterioUnico.nome, v)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : suportaScorerInline(criterios) ? (
-                <MultiCriterioScorer
-                  criterios={criterios}
-                  nomeA={nomeA}
-                  nomeB={nomeB}
-                  desabilitado={enviando === tentativaDesempate}
-                  onRegistrar={(itensA, itensB) =>
-                    enviarMultiCriterio(tentativaDesempate, itensA, itensB)
-                  }
-                />
-              ) : (
-                <Link
-                  to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodadaId}/lancamentos/novo?partidaId=${partidaId}`}
-                  className="text-sm font-medium text-slate-700 underline"
-                >
-                  Lançar pela ficha completa →
-                </Link>
-              )}
-            </div>
-          );
-        })()}
+      {(empateTecnico || temCombateExtraLancado) && (
+        <div className="mt-4 rounded-lg border-2 border-amber-300 bg-white p-4">
+          <p className="mb-2 text-sm font-semibold text-amber-700">Combate extra (desempate)</p>
+          {renderCombate(tentativaDesempate, true, nomeA, nomeB)}
+        </div>
+      )}
     </main>
   );
 }

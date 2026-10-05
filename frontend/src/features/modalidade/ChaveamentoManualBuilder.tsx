@@ -12,6 +12,7 @@ interface EquipeItem {
   id: string;
   nome: string;
   nivel: number;
+  presente?: boolean;
 }
 
 interface InscricaoItem {
@@ -112,7 +113,9 @@ export function ChaveamentoManualBuilder({
       .flatMap((p) => [p.equipe_a_id, p.equipe_b_id].filter((x): x is string => !!x)),
   );
   const equipesDoNivel = equipesDaModalidade.filter((e) => e.nivel === nivelAtivo);
-  const elegiveis = equipesDoNivel.filter((e) => !idsComPartida.has(e.id));
+  const elegiveis = equipesDoNivel.filter(
+    (e) => !idsComPartida.has(e.id) && e.presente !== false,
+  );
   const partidasDoNivel = todasPartidas.filter(
     (p) => p.nivel === nivelAtivo && p.numero === numeroAlvo,
   );

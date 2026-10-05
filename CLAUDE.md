@@ -1418,7 +1418,22 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
    `"invertido"` — soma se o árbitro marcar os dois. Só no seed: produção ainda tem a ficha
    publicada antiga (ficha publicada é imutável → aplicar lá exige nova versão).
 
-   Outros feedbacks do evento, **ainda não implementados**: corrigir combate decidido errado
-   pelo árbitro (hoje não tem tela; endpoint de correção existe no backend) e marcar presença da
-   equipe antes de montar o chaveamento.
+   **Mesma sessão, os outros dois feedbacks do evento:**
+   - **Correção de combate já decidido** (juiz apertou errado). Bug de backend achado no caminho:
+     `registrar_resultado_lancamento` saía cedo quando a partida já estava `ENCERRADA`/`EMPATADA`,
+     então `POST /lancamentos/{id}/corrigir` mudava o total mas nunca o vencedor. Agora recalcula
+     sempre e só grava/audita quando muda: pode trocar vencedor, virar `EMPATADA` (fase de grupos)
+     ou reabrir (`AGENDADA`, ação `REABRIR`) uma eliminatória que ficou empatada, esperando o ponto
+     de ouro. Front: `PontuarCombatePage` mostra link "Corrigir" (só `COORDENADOR`, nunca em bye)
+     no card de partida decidida; `PartidaScorerPage` ganhou botão "Corrigir" por combate decidido
+     (inclusive o combate extra, que agora continua visível depois que a partida fecha) que reabre
+     os mesmos controles e envia `/corrigir` com a `revision` atual. Ficha com vários critérios
+     manda todos os critérios na correção (zerados inclusive), porque o backend recusa omitir
+     critério. Ficha que cai no formulário genérico (sem scorer inline) não tem botão de corrigir
+     nessa tela.
+   - **Presença da equipe** — `Equipe.presente` (bool, default `true`, migration `e37fd78112f0`),
+     editável via `PATCH /equipes/{id}`; `EquipeListPage` tem "Marcar ausente/presente" (só
+     coordenador) e selo "Ausente". Equipe ausente some das opções do `ChaveamentoManualBuilder` e
+     do seletor de adicionar em chave (`FaseDeGruposBuilder`), e `criar_partida_manual` recusa com
+     `422 EQUIPE_AUSENTE`. Presença é por equipe, não por modalidade.
 

@@ -137,9 +137,7 @@ async def test_listar_equipes_filtra_por_modalidade(client, db_session):
         headers=headers,
     )
 
-    resposta = await client.get(
-        f"/api/v1/equipes?modalidade_id={modalidade_a.id}", headers=headers
-    )
+    resposta = await client.get(f"/api/v1/equipes?modalidade_id={modalidade_a.id}", headers=headers)
 
     assert resposta.status_code == 200
     corpo = resposta.json()
@@ -183,3 +181,28 @@ async def test_atualizar_equipe_desativa(client, db_session):
 
     assert resposta.status_code == 200
     assert resposta.json()["ativo"] is False
+
+
+async def test_equipe_nasce_presente(client, db_session):
+    headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-equipes-pres1@tjr.app"
+    )
+
+    criada = await client.post("/api/v1/equipes", json=_payload(), headers=headers)
+
+    assert criada.json()["presente"] is True
+
+
+async def test_marcar_equipe_como_ausente(client, db_session):
+    headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, "coord-equipes-pres2@tjr.app"
+    )
+    criada = await client.post("/api/v1/equipes", json=_payload(), headers=headers)
+    equipe_id = criada.json()["id"]
+
+    resposta = await client.patch(
+        f"/api/v1/equipes/{equipe_id}", json={"presente": False}, headers=headers
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["presente"] is False

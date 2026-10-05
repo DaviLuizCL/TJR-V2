@@ -8,6 +8,7 @@ interface EquipeItem {
   id: string;
   nome: string;
   nivel: number;
+  presente?: boolean;
 }
 
 interface InscricaoItem {
@@ -87,7 +88,7 @@ export function FaseDeGruposBuilder({
   const idsJaEmChave = new Set((chaves ?? []).flatMap((c) => c.equipe_ids));
   const chavesDoNivel = (chaves ?? []).filter((c) => c.nivel === nivelAtivo);
   const equipesSemChaveDoNivel = equipesDaModalidade.filter(
-    (e) => e.nivel === nivelAtivo && !idsJaEmChave.has(e.id),
+    (e) => e.nivel === nivelAtivo && !idsJaEmChave.has(e.id) && e.presente !== false,
   );
 
   // Sem isso o coordenador nao tem como saber quem ficou em 1o/2o de cada

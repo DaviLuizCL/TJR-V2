@@ -16,6 +16,7 @@ class EquipeUpdate(BaseModel):
     nome: NomeObrigatorio | None = None
     nivel: int | None = Field(default=None, ge=1, le=4)
     ativo: bool | None = None
+    presente: bool | None = None
 
 
 class EquipeOut(BaseModel):
@@ -25,5 +26,6 @@ class EquipeOut(BaseModel):
     nome: str
     nivel: int
     ativo: bool
+    presente: bool
     criado_em: datetime
     atualizado_em: datetime

@@ -29,7 +29,7 @@ from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.chave import ChaveCreate
 from app.schemas.inscricao import InscricaoCreate
-from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
+from app.schemas.lancamento import ItemLancamentoInput, LancamentoCorrigir, LancamentoCreate
 from app.services.chave import adicionar_equipe, criar_chave
 from app.services.chaveamento import (
     criar_partida_manual,
@@ -37,7 +37,11 @@ from app.services.chaveamento import (
     resetar_chaveamento,
 )
 from app.services.inscricao import criar_inscricao
-from app.services.lancamento import confirmar_lancamento, criar_lancamento
+from app.services.lancamento import (
+    confirmar_lancamento,
+    corrigir_lancamento,
+    criar_lancamento,
+)
 
 
 async def _criar_coordenador(db_session, email="coord-chaveamento@tjr.app") -> Usuario:
@@ -515,6 +519,27 @@ async def test_criar_partida_manual_recusa_equipe_que_ja_tem_partida(db_session)
         )
 
     assert exc_info.value.codigo == "EQUIPE_JA_TEM_PARTIDA"
+
+
+async def test_criar_partida_manual_recusa_equipe_ausente(db_session):
+    coordenador = await _criar_coordenador(db_session, "cp15@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session)
+    a, b = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    b.presente = False
+    await db_session.flush()
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_partida_manual(
+            db_session,
+            modalidade.id,
+            a.id,
+            b.id,
+            rodada_numero=1,
+            formato=ELIMINATORIA,
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "EQUIPE_AUSENTE"
 
 
 async def test_criar_partida_manual_recusa_modalidade_individual(db_session):
@@ -1363,3 +1388,98 @@ async def test_resetar_chaveamento_apaga_tudo_e_grava_snapshot_no_audit_log(db_s
     assert len(log.antes["partidas"]) == 2
     assert len(log.antes["lancamentos"]) == 1
     assert len(log.antes["itens"]) == 1
+
+
+# ---------- correcao de combate ja decidido ----------
+
+
+async def _partida_com_um_combate(db_session, sufixo, formato):
+    coordenador = await _criar_coordenador(db_session, f"corr-c{sufixo}@tjr.app")
+    arbitro = await _criar_arbitro(db_session, f"corr-a{sufixo}@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    a, b = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+    partida = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=1,
+        formato=formato,
+        usuario_id=coordenador.id,
+    )
+    rodada = await db_session.get(Rodada, partida.rodada_id)
+    return coordenador, arbitro, ficha, criterio, rodada, partida, a, b
+
+
+async def _corrigir(db_session, lancamento, criterio, ocorrencias, coordenador):
+    return await corrigir_lancamento(
+        db_session,
+        lancamento.id,
+        LancamentoCorrigir(
+            revision=lancamento.revision,
+            justificativa="juiz apertou errado",
+            itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=ocorrencias)],
+        ),
+        usuario_id=coordenador.id,
+    )
+
+
+async def test_corrigir_combate_inverte_o_vencedor_da_partida_ja_encerrada(db_session):
+    coord, arbitro, ficha, criterio, rodada, partida, a, b = await _partida_com_um_combate(
+        db_session, 1, ELIMINATORIA
+    )
+    lanc_a = await _lancar_e_confirmar(db_session, ficha, rodada, a, criterio, partida, arbitro, 1)
+    await _lancar_e_confirmar(db_session, ficha, rodada, b, criterio, partida, arbitro, 5)
+    assert (await db_session.get(Partida, partida.id)).vencedor_id == b.id
+
+    await _corrigir(db_session, lanc_a, criterio, 9, coord)
+
+    corrigida = await db_session.get(Partida, partida.id)
+    assert corrigida.status == PartidaStatus.ENCERRADA
+    assert corrigida.vencedor_id == a.id
+
+
+async def test_corrigir_combate_eliminatorio_pra_empate_reabre_a_partida(db_session):
+    # Eliminatoria nao aceita empate: volta a ficar aberta, esperando o
+    # combate extra de desempate.
+    coord, arbitro, ficha, criterio, rodada, partida, a, b = await _partida_com_um_combate(
+        db_session, 2, ELIMINATORIA
+    )
+    await _lancar_e_confirmar(db_session, ficha, rodada, a, criterio, partida, arbitro, 1)
+    lanc_b = await _lancar_e_confirmar(db_session, ficha, rodada, b, criterio, partida, arbitro, 5)
+
+    await _corrigir(db_session, lanc_b, criterio, 1, coord)
+
+    corrigida = await db_session.get(Partida, partida.id)
+    assert corrigida.status == PartidaStatus.AGENDADA
+    assert corrigida.vencedor_id is None
+
+
+async def test_corrigir_combate_de_fase_de_grupos_pra_empate_marca_empatada(db_session):
+    coord, arbitro, ficha, criterio, rodada, partida, a, b = await _partida_com_um_combate(
+        db_session, 3, FASE_DE_GRUPOS
+    )
+    await _lancar_e_confirmar(db_session, ficha, rodada, a, criterio, partida, arbitro, 1)
+    lanc_b = await _lancar_e_confirmar(db_session, ficha, rodada, b, criterio, partida, arbitro, 5)
+
+    await _corrigir(db_session, lanc_b, criterio, 1, coord)
+
+    corrigida = await db_session.get(Partida, partida.id)
+    assert corrigida.status == PartidaStatus.EMPATADA
+    assert corrigida.vencedor_id is None
+
+
+async def test_corrigir_combate_de_partida_empatada_decide_o_vencedor(db_session):
+    coord, arbitro, ficha, criterio, rodada, partida, a, b = await _partida_com_um_combate(
+        db_session, 4, FASE_DE_GRUPOS
+    )
+    await _lancar_e_confirmar(db_session, ficha, rodada, a, criterio, partida, arbitro, 2)
+    lanc_b = await _lancar_e_confirmar(db_session, ficha, rodada, b, criterio, partida, arbitro, 2)
+    assert (await db_session.get(Partida, partida.id)).status == PartidaStatus.EMPATADA
+
+    await _corrigir(db_session, lanc_b, criterio, 3, coord)
+
+    corrigida = await db_session.get(Partida, partida.id)
+    assert corrigida.status == PartidaStatus.ENCERRADA
+    assert corrigida.vencedor_id == b.id
