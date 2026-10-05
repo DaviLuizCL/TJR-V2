@@ -13,6 +13,7 @@ from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
 from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
+from app.models.inscricao import Inscricao
 from app.models.lancamento import Lancamento
 from app.models.lancamento_item import LancamentoItem
 from app.models.modalidade import (
@@ -26,21 +27,17 @@ from app.models.modalidade import (
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
+from app.schemas.chave import ChaveCreate
 from app.schemas.inscricao import InscricaoCreate
 from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
-from app.schemas.modalidade import ModalidadeUpdate
+from app.services.chave import adicionar_equipe, criar_chave
 from app.services.chaveamento import (
-    avancar_se_rodada_completa,
     criar_partida_manual,
-    gerar_chaveamento_confronto,
-    gerar_chaveamento_inicial,
     registrar_resultado_lancamento,
     resetar_chaveamento,
 )
 from app.services.inscricao import criar_inscricao
 from app.services.lancamento import confirmar_lancamento, criar_lancamento
-from app.services.modalidade import atualizar_modalidade
-from app.services.rodada import gerar_rodadas
 
 
 async def _criar_coordenador(db_session, email="coord-chaveamento@tjr.app") -> Usuario:
@@ -158,6 +155,39 @@ async def _criar_ficha_com_criterio(db_session, modalidade, coordenador) -> tupl
     return ficha, criterio
 
 
+ELIMINATORIA = FormatoChaveamento.MATA_MATA
+FASE_DE_GRUPOS = FormatoChaveamento.TODOS_CONTRA_TODOS
+
+
+async def _montar_rodada_1(db_session, modalidade_id, *, usuario_id) -> Rodada:
+    """Monta a Rodada 1 na mao (eliminatoria), pareando as inscritas de cada
+    nivel em ordem de inscricao - so setup de teste, o sistema nao gera
+    chaveamento sozinho.
+    """
+    resultado = await db_session.execute(
+        select(Inscricao.equipe_id, Equipe.nivel)
+        .join(Equipe, Inscricao.equipe_id == Equipe.id)
+        .where(Inscricao.modalidade_id == modalidade_id)
+        .order_by(Inscricao.criado_em)
+    )
+    por_nivel: dict[int, list] = {}
+    for equipe_id, nivel in resultado.all():
+        por_nivel.setdefault(nivel, []).append(equipe_id)
+    partida = None
+    for ids in por_nivel.values():
+        for i in range(0, len(ids) - 1, 2):
+            partida = await criar_partida_manual(
+                db_session,
+                modalidade_id,
+                ids[i],
+                ids[i + 1],
+                rodada_numero=1,
+                formato=ELIMINATORIA,
+                usuario_id=usuario_id,
+            )
+    return await db_session.get(Rodada, partida.rodada_id)
+
+
 async def _lancar_e_confirmar(
     db_session, ficha, rodada, equipe, criterio, partida, arbitro, ocorrencias, tentativa=1
 ):
@@ -174,135 +204,208 @@ async def _lancar_e_confirmar(
     return await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
 
 
-# ---------- gerar_chaveamento_inicial ----------
-
-
-async def test_gerar_chaveamento_recusa_modalidade_individual(db_session):
-    coordenador = await _criar_coordenador(db_session, "c1@tjr.app")
-    evento = Evento(
-        nome="E",
-        ano=2026,
-        data_inicio=date(2026, 3, 10),
-        data_fim=date(2026, 3, 12),
-        status=EventoStatus.RASCUNHO,
-    )
-    db_session.add(evento)
-    await db_session.flush()
-    modalidade = Modalidade(
-        evento_id=evento.id,
-        nome="Individual",
-        tipo_disputa=TipoDisputa.INDIVIDUAL,
-        niveis_aplicaveis=[1],
-        ficha_unica_entre_niveis=True,
-        qtd_rodadas=1,
-        consolidacao=Consolidacao.SOMA_RODADAS,
-        status=ModalidadeStatus.PUBLICADA,
-    )
-    db_session.add(modalidade)
-    await db_session.flush()
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "MODALIDADE_NAO_E_CONFRONTO"
-
-
-async def test_gerar_chaveamento_recusa_formato_todos_contra_todos(db_session):
-    coordenador = await _criar_coordenador(db_session, "c2@tjr.app")
-    modalidade = await _criar_modalidade_confronto(
-        db_session, formato=FormatoChaveamento.TODOS_CONTRA_TODOS
-    )
-    await _inscrever_equipes(db_session, modalidade, coordenador, 4)
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "FORMATO_CHAVEAMENTO_INVALIDO_PARA_GERAR"
-
-
-async def test_gerar_chaveamento_recusa_menos_de_duas_equipes(db_session):
-    coordenador = await _criar_coordenador(db_session, "c3@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session)
-    await _inscrever_equipes(db_session, modalidade, coordenador, 1)
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "EQUIPES_INSUFICIENTES"
-
-
-async def test_gerar_chaveamento_recusa_se_ja_iniciado(db_session):
-    coordenador = await _criar_coordenador(db_session, "c4@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session)
-    await _inscrever_equipes(db_session, modalidade, coordenador, 4)
-    await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "CHAVEAMENTO_JA_INICIADO"
-
-
-async def test_gerar_chaveamento_com_numero_par_nao_gera_bye(db_session):
-    coordenador = await _criar_coordenador(db_session, "c5@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session)
-    equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
-    equipe_ids = {e.id for e in equipes}
-
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert rodada.numero == 1
-    from app.services.partida import listar_partidas_por_rodada
-
-    partidas = await listar_partidas_por_rodada(db_session, rodada.id)
-    assert len(partidas) == 2
-    todos_participantes = set()
-    for p in partidas:
-        assert p.equipe_b_id is not None
-        assert p.status == PartidaStatus.AGENDADA
-        assert p.vencedor_id is None
-        todos_participantes.add(p.equipe_a_id)
-        todos_participantes.add(p.equipe_b_id)
-    assert todos_participantes == equipe_ids
-
-
-async def test_gerar_chaveamento_com_numero_impar_da_bye_automatico(db_session):
-    coordenador = await _criar_coordenador(db_session, "c6@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session)
-    await _inscrever_equipes(db_session, modalidade, coordenador, 3)
-
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    partidas = await listar_partidas_por_rodada(db_session, rodada.id)
-    assert len(partidas) == 2
-    byes = [p for p in partidas if p.equipe_b_id is None]
-    assert len(byes) == 1
-    assert byes[0].status == PartidaStatus.ENCERRADA
-    assert byes[0].vencedor_id == byes[0].equipe_a_id
-
-
 # ---------- criar_partida_manual ----------
 
 
-async def test_criar_partida_manual_cria_partida_na_rodada_1(db_session):
+async def test_criar_partida_manual_cria_partida_na_rodada_informada(db_session):
     coordenador = await _criar_coordenador(db_session, "cp1@tjr.app")
     modalidade = await _criar_modalidade_confronto(db_session)
     a, b = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
 
     partida = await criar_partida_manual(
-        db_session, modalidade.id, a.id, b.id, usuario_id=coordenador.id
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=3,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
     )
 
     assert partida.equipe_a_id == a.id
     assert partida.equipe_b_id == b.id
     assert partida.nivel == a.nivel
     assert partida.status == PartidaStatus.AGENDADA
-
     rodada = await db_session.get(Rodada, partida.rodada_id)
-    assert rodada.numero == 1
+    assert rodada.numero == 3
     assert rodada.modalidade_id == modalidade.id
+
+
+async def test_criar_partida_manual_reaproveita_rodada_de_mesmo_numero(db_session):
+    coordenador = await _criar_coordenador(db_session, "cp3@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session)
+    a, b, c, d = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
+
+    p1 = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=2,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
+    )
+    p2 = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        c.id,
+        d.id,
+        rodada_numero=2,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
+    )
+
+    assert p1.rodada_id == p2.rodada_id
+
+
+async def test_criar_partida_manual_grava_o_tipo_escolhido_na_partida(db_session):
+    coordenador = await _criar_coordenador(db_session, "cp9@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    a, b, c, d = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
+
+    grupos = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=1,
+        formato=FASE_DE_GRUPOS,
+        usuario_id=coordenador.id,
+    )
+    eliminatoria = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        c.id,
+        d.id,
+        rodada_numero=1,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
+    )
+
+    assert grupos.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS
+    assert eliminatoria.formato_chaveamento == FormatoChaveamento.MATA_MATA
+
+
+async def test_criar_partida_manual_permite_mesma_equipe_em_rodadas_diferentes(db_session):
+    # Semifinal/final montadas na mao: a equipe ja jogou a rodada 1 (ate com
+    # partida ainda aberta) e entra de novo na rodada 2.
+    coordenador = await _criar_coordenador(db_session, "cp10@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session)
+    a, b, c = await _inscrever_equipes(db_session, modalidade, coordenador, 3)
+    await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=1,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
+    )
+
+    partida = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        c.id,
+        rodada_numero=2,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
+    )
+
+    assert (await db_session.get(Rodada, partida.rodada_id)).numero == 2
+
+
+async def test_criar_partida_manual_fase_de_grupos_recusa_bye(db_session):
+    coordenador = await _criar_coordenador(db_session, "cp11@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session)
+    (a,) = await _inscrever_equipes(db_session, modalidade, coordenador, 1)
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_partida_manual(
+            db_session,
+            modalidade.id,
+            a.id,
+            None,
+            rodada_numero=1,
+            formato=FASE_DE_GRUPOS,
+            usuario_id=coordenador.id,
+        )
+
+    assert exc_info.value.codigo == "BYE_SO_EM_ELIMINATORIA"
+
+
+async def test_criar_partida_manual_fase_de_grupos_preenche_chave_das_duas_equipes(db_session):
+    coordenador = await _criar_coordenador(db_session, "cp12@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    a, b = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    chave = await criar_chave(
+        db_session,
+        ChaveCreate(modalidade_id=modalidade.id, nivel=1, nome="Chave A"),
+        usuario_id=coordenador.id,
+    )
+    await adicionar_equipe(db_session, chave.id, a.id, usuario_id=coordenador.id)
+    await adicionar_equipe(db_session, chave.id, b.id, usuario_id=coordenador.id)
+
+    partida = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=1,
+        formato=FASE_DE_GRUPOS,
+        usuario_id=coordenador.id,
+    )
+
+    assert partida.chave_id == chave.id
+
+
+async def test_criar_partida_manual_sem_chave_em_comum_fica_sem_chave(db_session):
+    coordenador = await _criar_coordenador(db_session, "cp13@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    a, b = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    chave = await criar_chave(
+        db_session,
+        ChaveCreate(modalidade_id=modalidade.id, nivel=1, nome="Chave A"),
+        usuario_id=coordenador.id,
+    )
+    await adicionar_equipe(db_session, chave.id, a.id, usuario_id=coordenador.id)
+
+    partida = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=1,
+        formato=FASE_DE_GRUPOS,
+        usuario_id=coordenador.id,
+    )
+
+    assert partida.chave_id is None
+
+
+async def test_criar_partida_manual_eliminatoria_nunca_carrega_chave(db_session):
+    coordenador = await _criar_coordenador(db_session, "cp14@tjr.app")
+    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
+    a, b = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    chave = await criar_chave(
+        db_session,
+        ChaveCreate(modalidade_id=modalidade.id, nivel=1, nome="Chave A"),
+        usuario_id=coordenador.id,
+    )
+    await adicionar_equipe(db_session, chave.id, a.id, usuario_id=coordenador.id)
+    await adicionar_equipe(db_session, chave.id, b.id, usuario_id=coordenador.id)
+
+    partida = await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=1,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
+    )
+
+    assert partida.chave_id is None
 
 
 async def test_criar_partida_manual_com_uma_equipe_so_e_bye(db_session):
@@ -311,23 +414,18 @@ async def test_criar_partida_manual_com_uma_equipe_so_e_bye(db_session):
     (a,) = await _inscrever_equipes(db_session, modalidade, coordenador, 1)
 
     partida = await criar_partida_manual(
-        db_session, modalidade.id, a.id, None, usuario_id=coordenador.id
+        db_session,
+        modalidade.id,
+        a.id,
+        None,
+        rodada_numero=1,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
     )
 
     assert partida.equipe_b_id is None
     assert partida.status == PartidaStatus.ENCERRADA
     assert partida.vencedor_id == a.id
-
-
-async def test_criar_partida_manual_reaproveita_a_mesma_rodada_1_a_cada_chamada(db_session):
-    coordenador = await _criar_coordenador(db_session, "cp3@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session)
-    a, b, c, d = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
-
-    p1 = await criar_partida_manual(db_session, modalidade.id, a.id, b.id, usuario_id=coordenador.id)
-    p2 = await criar_partida_manual(db_session, modalidade.id, c.id, d.id, usuario_id=coordenador.id)
-
-    assert p1.rodada_id == p2.rodada_id
 
 
 async def test_criar_partida_manual_recusa_niveis_diferentes(db_session):
@@ -337,7 +435,15 @@ async def test_criar_partida_manual_recusa_niveis_diferentes(db_session):
     a, b = equipes
 
     with pytest.raises(AppError) as exc_info:
-        await criar_partida_manual(db_session, modalidade.id, a.id, b.id, usuario_id=coordenador.id)
+        await criar_partida_manual(
+            db_session,
+            modalidade.id,
+            a.id,
+            b.id,
+            rodada_numero=1,
+            formato=ELIMINATORIA,
+            usuario_id=coordenador.id,
+        )
 
     assert exc_info.value.codigo == "NIVEIS_INCOMPATIVEIS"
 
@@ -352,7 +458,13 @@ async def test_criar_partida_manual_recusa_equipe_nao_inscrita(db_session):
 
     with pytest.raises(AppError) as exc_info:
         await criar_partida_manual(
-            db_session, modalidade.id, a.id, fora.id, usuario_id=coordenador.id
+            db_session,
+            modalidade.id,
+            a.id,
+            fora.id,
+            rodada_numero=1,
+            formato=ELIMINATORIA,
+            usuario_id=coordenador.id,
         )
 
     assert exc_info.value.codigo == "EQUIPE_NAO_INSCRITA"
@@ -364,7 +476,15 @@ async def test_criar_partida_manual_recusa_mesma_equipe_nos_dois_lados(db_sessio
     (a,) = await _inscrever_equipes(db_session, modalidade, coordenador, 1)
 
     with pytest.raises(AppError) as exc_info:
-        await criar_partida_manual(db_session, modalidade.id, a.id, a.id, usuario_id=coordenador.id)
+        await criar_partida_manual(
+            db_session,
+            modalidade.id,
+            a.id,
+            a.id,
+            rodada_numero=1,
+            formato=ELIMINATORIA,
+            usuario_id=coordenador.id,
+        )
 
     assert exc_info.value.codigo == "EQUIPES_IGUAIS"
 
@@ -373,10 +493,26 @@ async def test_criar_partida_manual_recusa_equipe_que_ja_tem_partida(db_session)
     coordenador = await _criar_coordenador(db_session, "cp7@tjr.app")
     modalidade = await _criar_modalidade_confronto(db_session)
     a, b, c = await _inscrever_equipes(db_session, modalidade, coordenador, 3)
-    await criar_partida_manual(db_session, modalidade.id, a.id, b.id, usuario_id=coordenador.id)
+    await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        a.id,
+        b.id,
+        rodada_numero=1,
+        formato=ELIMINATORIA,
+        usuario_id=coordenador.id,
+    )
 
     with pytest.raises(AppError) as exc_info:
-        await criar_partida_manual(db_session, modalidade.id, a.id, c.id, usuario_id=coordenador.id)
+        await criar_partida_manual(
+            db_session,
+            modalidade.id,
+            a.id,
+            c.id,
+            rodada_numero=1,
+            formato=ELIMINATORIA,
+            usuario_id=coordenador.id,
+        )
 
     assert exc_info.value.codigo == "EQUIPE_JA_TEM_PARTIDA"
 
@@ -410,67 +546,16 @@ async def test_criar_partida_manual_recusa_modalidade_individual(db_session):
 
     with pytest.raises(AppError) as exc_info:
         await criar_partida_manual(
-            db_session, modalidade.id, equipe.id, None, usuario_id=coordenador.id
+            db_session,
+            modalidade.id,
+            equipe.id,
+            None,
+            rodada_numero=1,
+            formato=ELIMINATORIA,
+            usuario_id=coordenador.id,
         )
 
     assert exc_info.value.codigo == "MODALIDADE_NAO_E_CONFRONTO"
-
-
-# ---------- gerar_chaveamento_confronto com nivel ja montado na mao ----------
-
-
-async def test_gerar_chaveamento_confronto_pula_nivel_ja_montado_manualmente(db_session):
-    # Cenario real do TJR 2026: nivel pequeno (<=5) continua automatico
-    # (todos-contra-todos), nivel grande (>5) o coordenador monta partida
-    # por partida na mao antes de rodar o automatico pros demais.
-    coordenador = await _criar_coordenador(db_session, "c-misto1@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, niveis_aplicaveis=[1, 2], formato=None)
-    equipes = await _inscrever_equipes_por_nivel(
-        db_session, modalidade, coordenador, [1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
-    )
-    nivel_1 = [e for e in equipes if e.nivel == 1]
-    nivel_2 = [e for e in equipes if e.nivel == 2]  # 6 equipes: viraria mata-mata automatico
-
-    # Coordenador monta o nivel 2 na mao, partida por partida.
-    await criar_partida_manual(
-        db_session, modalidade.id, nivel_2[0].id, nivel_2[1].id, usuario_id=coordenador.id
-    )
-    await criar_partida_manual(
-        db_session, modalidade.id, nivel_2[2].id, nivel_2[3].id, usuario_id=coordenador.id
-    )
-
-    # Roda o automatico: so deve gerar o nivel 1 (<=5, todos-contra-todos),
-    # sem reclamar que "ja iniciado" e sem tocar no nivel 2.
-    await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    rodada1 = await db_session.scalar(
-        select(Rodada).where(Rodada.modalidade_id == modalidade.id, Rodada.numero == 1)
-    )
-    partidas = await listar_partidas_por_rodada(db_session, rodada1.id)
-
-    partidas_nivel_1 = [p for p in partidas if p.nivel == 1]
-    partidas_nivel_2 = [p for p in partidas if p.nivel == 2]
-    assert len(partidas_nivel_1) == 2
-    assert {p.equipe_a_id for p in partidas_nivel_1} | {p.equipe_b_id for p in partidas_nivel_1} == {
-        e.id for e in nivel_1
-    }
-    # nivel 2 continua exatamente como o coordenador montou (2 partidas manuais,
-    # 2 equipes de fora que ele ainda nao chaveou).
-    assert len(partidas_nivel_2) == 2
-
-
-async def test_gerar_chaveamento_confronto_recusa_se_todos_os_niveis_ja_tem_partida(db_session):
-    coordenador = await _criar_coordenador(db_session, "c-misto2@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
-    a, b = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
-    await criar_partida_manual(db_session, modalidade.id, a.id, b.id, usuario_id=coordenador.id)
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "CHAVEAMENTO_JA_INICIADO"
 
 
 # ---------- registrar_resultado_lancamento + avancar_se_rodada_completa (integracao) ----------
@@ -482,7 +567,7 @@ async def test_confirmar_os_dois_lancamentos_fecha_a_partida_com_vencedor(db_ses
     modalidade = await _criar_modalidade_confronto(db_session)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -506,7 +591,7 @@ async def test_empate_nao_fecha_a_partida(db_session):
     modalidade = await _criar_modalidade_confronto(db_session)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -521,20 +606,18 @@ async def test_empate_nao_fecha_a_partida(db_session):
     assert partida_final.vencedor_id is None
 
 
-async def test_mata_mata_avanca_pareando_vencedores_em_ordem(db_session):
+async def test_fechar_todas_as_partidas_da_eliminatoria_nao_gera_proxima_rodada(db_session):
+    # Chaveamento 100% manual: semifinal/final sao montadas pelo coordenador,
+    # o sistema nunca cria rodada/partida sozinho quando uma rodada fecha.
     coordenador = await _criar_coordenador(db_session, "c10@tjr.app")
     arbitro = await _criar_arbitro(db_session, "a10@tjr.app")
     modalidade = await _criar_modalidade_confronto(db_session)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada1 = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada1 = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
-    partidas1 = await listar_partidas_por_rodada(db_session, rodada1.id)
-    assert len(partidas1) == 2
-
-    vencedores_esperados = []
-    for partida in partidas1:
+    for partida in await listar_partidas_por_rodada(db_session, rodada1.id):
         equipe_a = next(e for e in equipes if e.id == partida.equipe_a_id)
         equipe_b = next(e for e in equipes if e.id == partida.equipe_b_id)
         await _lancar_e_confirmar(
@@ -543,44 +626,13 @@ async def test_mata_mata_avanca_pareando_vencedores_em_ordem(db_session):
         await _lancar_e_confirmar(
             db_session, ficha, rodada1, equipe_b, criterio, partida, arbitro, 5
         )
-        vencedores_esperados.append(equipe_b.id)
 
-    # O avanco ja aconteceu sozinho, disparado de dentro de _lancar_e_confirmar
-    # (confirmar_lancamento -> registrar_resultado_lancamento) assim que a
-    # ultima partida da rodada fechou - sem clique nem chamada manual nenhuma,
-    # igual ao caminho real do arbitro. Chamar avancar_se_rodada_completa de
-    # novo aqui e um no-op idempotente (nao ha mais nada pra avancar).
-    rodada2 = await db_session.scalar(
-        select(Rodada).where(Rodada.modalidade_id == modalidade.id, Rodada.numero == 2)
+    partidas = await listar_partidas_por_rodada(db_session, rodada1.id)
+    assert all(p.status == PartidaStatus.ENCERRADA for p in partidas)
+    resultado = await db_session.execute(
+        select(Rodada).where(Rodada.modalidade_id == modalidade.id)
     )
-    assert rodada2 is not None
-    partidas2 = await listar_partidas_por_rodada(db_session, rodada2.id)
-    assert len(partidas2) == 1
-    assert {partidas2[0].equipe_a_id, partidas2[0].equipe_b_id} == set(vencedores_esperados)
-
-    assert (
-        await avancar_se_rodada_completa(db_session, rodada1.id, usuario_id=coordenador.id) is None
-    )
-
-
-async def test_mata_mata_final_nao_gera_proxima_rodada(db_session):
-    coordenador = await _criar_coordenador(db_session, "c11@tjr.app")
-    arbitro = await _criar_arbitro(db_session, "a11@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session)
-    equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
-    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada1 = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-    from app.services.partida import listar_partidas_por_rodada
-
-    partida = (await listar_partidas_por_rodada(db_session, rodada1.id))[0]
-    equipe_a = next(e for e in equipes if e.id == partida.equipe_a_id)
-    equipe_b = next(e for e in equipes if e.id == partida.equipe_b_id)
-    await _lancar_e_confirmar(db_session, ficha, rodada1, equipe_a, criterio, partida, arbitro, 1)
-    await _lancar_e_confirmar(db_session, ficha, rodada1, equipe_b, criterio, partida, arbitro, 5)
-
-    proxima = await avancar_se_rodada_completa(db_session, rodada1.id, usuario_id=coordenador.id)
-
-    assert proxima is None
+    assert [r.numero for r in resultado.scalars().all()] == [1]
 
 
 async def test_todos_contra_todos_com_vencedor_fecha_partida_sem_avancar_rodada(db_session):
@@ -726,303 +778,6 @@ async def test_registrar_resultado_ignora_lancamento_sem_partida(db_session):
 # ---------- separacao do chaveamento por nivel ----------
 
 
-async def test_gerar_chaveamento_separa_por_nivel(db_session):
-    coordenador = await _criar_coordenador(db_session, "c18@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, niveis_aplicaveis=[1, 2])
-    equipes = await _inscrever_equipes_por_nivel(db_session, modalidade, coordenador, [1, 1, 2, 2])
-    nivel_por_equipe = {e.id: e.nivel for e in equipes}
-
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    partidas = await listar_partidas_por_rodada(db_session, rodada.id)
-    assert len(partidas) == 2
-    for partida in partidas:
-        nivel_a = nivel_por_equipe[partida.equipe_a_id]
-        nivel_b = nivel_por_equipe[partida.equipe_b_id]
-        assert nivel_a == nivel_b
-        assert partida.nivel == nivel_a
-
-
-async def test_gerar_chaveamento_nivel_com_uma_equipe_nao_gera_partida(db_session):
-    coordenador = await _criar_coordenador(db_session, "c19@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, niveis_aplicaveis=[1, 2])
-    equipes = await _inscrever_equipes_por_nivel(db_session, modalidade, coordenador, [1, 1, 2])
-    equipe_solitaria = next(e for e in equipes if e.nivel == 2)
-
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    partidas = await listar_partidas_por_rodada(db_session, rodada.id)
-    assert len(partidas) == 1
-    participantes = {partidas[0].equipe_a_id, partidas[0].equipe_b_id}
-    assert equipe_solitaria.id not in participantes
-
-
-async def test_gerar_chaveamento_confronto_decide_formato_por_nivel_pela_contagem(db_session):
-    # Regra real (LISTA 2026): dentro da MESMA modalidade, nivel com <=5
-    # equipes vira todos-contra-todos, nivel com 6+ vira mata-mata -
-    # modalidade.formato_chaveamento=None e o sinal de "decida sozinho".
-    coordenador = await _criar_coordenador(db_session, "c-auto1@tjr.app")
-    modalidade = await _criar_modalidade_confronto(
-        db_session, formato=None, niveis_aplicaveis=[1, 2]
-    )
-    await _inscrever_equipes_por_nivel(
-        db_session, modalidade, coordenador, [1, 1, 1, 2, 2, 2, 2, 2, 2]
-    )
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    rodadas = await gerar_chaveamento_confronto(
-        db_session, modalidade.id, usuario_id=coordenador.id
-    )
-
-    todas_partidas = []
-    for rodada in rodadas:
-        todas_partidas.extend(await listar_partidas_por_rodada(db_session, rodada.id))
-
-    partidas_nivel_1 = [p for p in todas_partidas if p.nivel == 1]
-    partidas_nivel_2 = [p for p in todas_partidas if p.nivel == 2]
-
-    assert partidas_nivel_1
-    assert all(
-        p.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS for p in partidas_nivel_1
-    )
-    assert partidas_nivel_2
-    assert all(p.formato_chaveamento == FormatoChaveamento.MATA_MATA for p in partidas_nivel_2)
-    # nivel 1 (returno com 3 equipes) precisa de mais de 1 rodada.
-    assert len({p.rodada_id for p in partidas_nivel_1}) > 1
-    # nivel 2 (bracket) so gera a rodada de saida, o resto e dinamico.
-    assert len({p.rodada_id for p in partidas_nivel_2}) == 1
-
-
-async def test_gerar_chaveamento_confronto_override_manual_ignora_contagem(db_session):
-    coordenador = await _criar_coordenador(db_session, "c-auto2@tjr.app")
-    modalidade = await _criar_modalidade_confronto(
-        db_session, formato=FormatoChaveamento.MATA_MATA, niveis_aplicaveis=[1]
-    )
-    # 3 equipes cairia em todos-contra-todos pela regra automatica, mas o
-    # campo explicito da modalidade forca mata-mata mesmo assim.
-    await _inscrever_equipes_por_nivel(db_session, modalidade, coordenador, [1, 1, 1])
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    rodadas = await gerar_chaveamento_confronto(
-        db_session, modalidade.id, usuario_id=coordenador.id
-    )
-    partidas = await listar_partidas_por_rodada(db_session, rodadas[0].id)
-
-    assert partidas
-    assert all(p.formato_chaveamento == FormatoChaveamento.MATA_MATA for p in partidas)
-
-
-async def test_gerar_chaveamento_confronto_recusa_modalidade_individual(db_session):
-    coordenador = await _criar_coordenador(db_session, "c-auto3@tjr.app")
-    evento = Evento(
-        nome="E-auto",
-        ano=2026,
-        data_inicio=date(2026, 3, 10),
-        data_fim=date(2026, 3, 12),
-        status=EventoStatus.RASCUNHO,
-    )
-    db_session.add(evento)
-    await db_session.flush()
-    modalidade = Modalidade(
-        evento_id=evento.id,
-        nome="Individual",
-        tipo_disputa=TipoDisputa.INDIVIDUAL,
-        niveis_aplicaveis=[1],
-        ficha_unica_entre_niveis=True,
-        qtd_rodadas=1,
-        consolidacao=Consolidacao.SOMA_RODADAS,
-        status=ModalidadeStatus.PUBLICADA,
-    )
-    db_session.add(modalidade)
-    await db_session.flush()
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "MODALIDADE_NAO_E_CONFRONTO"
-
-
-async def test_gerar_chaveamento_confronto_recusa_equipes_insuficientes(db_session):
-    coordenador = await _criar_coordenador(db_session, "c-auto4@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
-    await _inscrever_equipes(db_session, modalidade, coordenador, 1)
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "EQUIPES_INSUFICIENTES"
-
-
-async def test_gerar_chaveamento_confronto_recusa_se_ja_iniciado(db_session):
-    coordenador = await _criar_coordenador(db_session, "c-auto5@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, formato=None)
-    await _inscrever_equipes(db_session, modalidade, coordenador, 3)
-    await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    with pytest.raises(AppError) as exc_info:
-        await gerar_chaveamento_confronto(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    assert exc_info.value.codigo == "CHAVEAMENTO_JA_INICIADO"
-
-
-async def test_gerar_chaveamento_confronto_permite_sumo_rc_mesmo_com_sumo_em_andamento(
-    db_session,
-):
-    # Sumo RC 1,5kg e Sumo 1,5kg tradicional competem com o mesmo robo
-    # possivel - existia uma trava proibindo as duas ficarem "abertas" ao
-    # mesmo tempo, pensada pro dia real (arbitro podia chamar a mesma equipe
-    # pras duas modalidades no mesmo instante). Removida a pedido do
-    # coordenador: na pratica travar geracao antecipadamente so atrapalhava
-    # o planejamento (ele queria montar TODOS os chaveamentos com
-    # antecedencia pra revisar) - a estrategia combinada agora e resolver
-    # esse tipo de choque manualmente no dia (arbitro chama a proxima equipe
-    # se a anterior estiver competindo em outro lugar), nao via bloqueio de
-    # sistema. Ver historico em CLAUDE.md.
-    coordenador = await _criar_coordenador(db_session, "c-conflito-sumo@tjr.app")
-    sumo = await _criar_modalidade_confronto(db_session, nome="Sumô", formato=None)
-    sumo_rc = await _criar_modalidade_confronto(
-        db_session, nome="Sumô RC 1,5 kg", evento_id=sumo.evento_id, formato=None
-    )
-    await _inscrever_equipes(db_session, sumo, coordenador, 3)
-    await _inscrever_equipes(db_session, sumo_rc, coordenador, 3)
-
-    await gerar_chaveamento_confronto(db_session, sumo.id, usuario_id=coordenador.id)
-    rodadas_rc = await gerar_chaveamento_confronto(
-        db_session, sumo_rc.id, usuario_id=coordenador.id
-    )
-
-    assert rodadas_rc
-
-
-async def test_gerar_chaveamento_confronto_permite_sumo_rc_depois_do_sumo_encerrado(db_session):
-    coordenador = await _criar_coordenador(db_session, "c-conflito-sumo2@tjr.app")
-    arbitro = await _criar_arbitro(db_session, "a-conflito-sumo2@tjr.app")
-    sumo = await _criar_modalidade_confronto(
-        db_session, nome="Sumô", formato=FormatoChaveamento.TODOS_CONTRA_TODOS
-    )
-    sumo_rc = await _criar_modalidade_confronto(
-        db_session, nome="Sumô RC 1,5 kg", evento_id=sumo.evento_id, formato=None
-    )
-    equipes = await _inscrever_equipes(db_session, sumo, coordenador, 2)
-    await _inscrever_equipes(db_session, sumo_rc, coordenador, 3)
-    ficha, criterio = await _criar_ficha_com_criterio(db_session, sumo, coordenador)
-
-    rodadas = await gerar_chaveamento_confronto(db_session, sumo.id, usuario_id=coordenador.id)
-    from app.services.partida import listar_partidas_por_rodada
-
-    [partida] = await listar_partidas_por_rodada(db_session, rodadas[0].id)
-    await _lancar_e_confirmar(
-        db_session, ficha, rodadas[0], equipes[0], criterio, partida, arbitro, 4
-    )
-    await _lancar_e_confirmar(
-        db_session, ficha, rodadas[0], equipes[1], criterio, partida, arbitro, 2
-    )
-
-    # Sumo fechou (unica partida ENCERRADA) -- Sumo RC agora pode iniciar.
-    rodadas_rc = await gerar_chaveamento_confronto(
-        db_session, sumo_rc.id, usuario_id=coordenador.id
-    )
-    assert rodadas_rc
-
-
-async def test_mata_mata_avanca_niveis_de_tamanhos_diferentes_independente(db_session):
-    coordenador = await _criar_coordenador(db_session, "c20@tjr.app")
-    arbitro = await _criar_arbitro(db_session, "a20@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, niveis_aplicaveis=[1, 2])
-    equipes = await _inscrever_equipes_por_nivel(
-        db_session, modalidade, coordenador, [1, 1, 1, 1, 2, 2]
-    )
-    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada1 = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    partidas1 = await listar_partidas_por_rodada(db_session, rodada1.id)
-    assert len(partidas1) == 3  # 2 do nivel 1 (4 equipes) + 1 do nivel 2 (2 equipes)
-
-    for partida in partidas1:
-        equipe_a = next(e for e in equipes if e.id == partida.equipe_a_id)
-        equipe_b = next(e for e in equipes if e.id == partida.equipe_b_id)
-        await _lancar_e_confirmar(
-            db_session, ficha, rodada1, equipe_a, criterio, partida, arbitro, 1
-        )
-        await _lancar_e_confirmar(
-            db_session, ficha, rodada1, equipe_b, criterio, partida, arbitro, 5
-        )
-
-    # O avanco do nivel 1 ja aconteceu sozinho, no meio do loop acima, assim
-    # que a segunda partida desse nivel fechou - sem esperar o nivel 2
-    # terminar (que so tem 1 partida = ja e a final dele, sem rodada extra).
-    rodada2 = await db_session.scalar(
-        select(Rodada).where(Rodada.modalidade_id == modalidade.id, Rodada.numero == 2)
-    )
-    assert rodada2 is not None
-    partidas2 = await listar_partidas_por_rodada(db_session, rodada2.id)
-    # nivel 2 (2 equipes) ja tem campeao definido na rodada 1; so o nivel 1
-    # (4 equipes) precisa de mais uma rodada pra decidir o campeao.
-    assert len(partidas2) == 1
-    assert partidas2[0].nivel == 1
-
-    assert (
-        await avancar_se_rodada_completa(db_session, rodada1.id, usuario_id=coordenador.id) is None
-    )
-
-
-async def test_mata_mata_gera_proxima_rodada_de_um_nivel_sem_esperar_outro_nivel_fechar(
-    db_session,
-):
-    """Bug real relatado pelo usuario: pontuou todas as partidas do nivel 1
-    (Sumo) e a final desse nivel nao apareceu, porque o nivel 2 ainda estava
-    em aberto. O avanco e automatico (disparado de dentro de
-    confirmar_lancamento, via registrar_resultado_lancamento), sem nenhuma
-    chamada manual a avancar_se_rodada_completa aqui - exatamente o caminho
-    real do arbitro em campo.
-    """
-    coordenador = await _criar_coordenador(db_session, "c30@tjr.app")
-    arbitro = await _criar_arbitro(db_session, "a30@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, niveis_aplicaveis=[1, 2])
-    equipes = await _inscrever_equipes_por_nivel(
-        db_session, modalidade, coordenador, [1, 1, 1, 1, 2, 2, 2, 2]
-    )
-    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada1 = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    from app.services.partida import listar_partidas_por_rodada
-
-    partidas1 = await listar_partidas_por_rodada(db_session, rodada1.id)
-    partidas_nivel_1 = [p for p in partidas1 if p.nivel == 1]
-    partidas_nivel_2 = [p for p in partidas1 if p.nivel == 2]
-    assert len(partidas_nivel_1) == 2
-    assert len(partidas_nivel_2) == 2
-
-    # So fecha as partidas do nivel 1. O nivel 2 fica em aberto de proposito
-    # (nenhum lancamento), como no caso real relatado.
-    for partida in partidas_nivel_1:
-        equipe_a = next(e for e in equipes if e.id == partida.equipe_a_id)
-        equipe_b = next(e for e in equipes if e.id == partida.equipe_b_id)
-        await _lancar_e_confirmar(
-            db_session, ficha, rodada1, equipe_a, criterio, partida, arbitro, 1
-        )
-        await _lancar_e_confirmar(
-            db_session, ficha, rodada1, equipe_b, criterio, partida, arbitro, 5
-        )
-
-    rodada2 = await db_session.scalar(
-        select(Rodada).where(Rodada.modalidade_id == modalidade.id, Rodada.numero == 2)
-    )
-    assert rodada2 is not None, "nivel 1 terminou mas a proxima rodada dele nao foi gerada"
-
-    partidas2 = await listar_partidas_por_rodada(db_session, rodada2.id)
-    assert len(partidas2) == 1
-    assert partidas2[0].nivel == 1
-
-
 # ---------- partida em melhor-de-3 (3 tentativas por partida) ----------
 
 
@@ -1032,7 +787,7 @@ async def test_partida_so_fecha_apos_3_tentativas_confirmadas_dos_dois_lados(db_
     modalidade = await _criar_modalidade_confronto(db_session, tentativas_por_rodada=3)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -1065,7 +820,7 @@ async def test_vencedor_da_partida_e_quem_ganha_2_dos_3_combates(db_session):
     modalidade = await _criar_modalidade_confronto(db_session, tentativas_por_rodada=3)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -1112,7 +867,7 @@ async def test_combate_empatado_nao_conta_vitoria_pra_ninguem(db_session):
     modalidade = await _criar_modalidade_confronto(db_session, tentativas_por_rodada=3)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -1159,7 +914,7 @@ async def test_partida_mata_mata_fica_aberta_se_combates_empatam_1_1(db_session)
     modalidade = await _criar_modalidade_confronto(db_session, tentativas_por_rodada=3)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -1207,7 +962,7 @@ async def test_mata_mata_combate_extra_de_desempate_fecha_a_partida(db_session):
     modalidade = await _criar_modalidade_confronto(db_session, tentativas_por_rodada=3)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -1260,7 +1015,7 @@ async def test_mata_mata_combate_extra_tambem_empatado_mantem_partida_aberta(db_
     modalidade = await _criar_modalidade_confronto(db_session, tentativas_por_rodada=3)
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 2)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     from app.services.partida import listar_partidas_por_rodada
 
     partida = (await listar_partidas_por_rodada(db_session, rodada.id))[0]
@@ -1571,7 +1326,7 @@ async def test_resetar_chaveamento_apaga_tudo_e_grava_snapshot_no_audit_log(db_s
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
 
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     resultado = await db_session.execute(select(Partida).where(Partida.rodada_id == rodada.id))
     partida = resultado.scalars().first()
 
@@ -1608,28 +1363,3 @@ async def test_resetar_chaveamento_apaga_tudo_e_grava_snapshot_no_audit_log(db_s
     assert len(log.antes["partidas"]) == 2
     assert len(log.antes["lancamentos"]) == 1
     assert len(log.antes["itens"]) == 1
-
-
-async def test_resetar_chaveamento_libera_trocar_formato_e_gerar_de_novo(db_session):
-    coordenador = await _criar_coordenador(db_session, "c30@tjr.app")
-    modalidade = await _criar_modalidade_confronto(db_session, formato=FormatoChaveamento.MATA_MATA)
-    await _inscrever_equipes(db_session, modalidade, coordenador, 4)
-    await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
-
-    await resetar_chaveamento(
-        db_session, modalidade.id, usuario_id=coordenador.id, justificativa="engano de formato"
-    )
-
-    atualizada = await atualizar_modalidade(
-        db_session,
-        modalidade.id,
-        ModalidadeUpdate(formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS),
-        usuario_id=coordenador.id,
-    )
-    assert atualizada.formato_chaveamento == FormatoChaveamento.TODOS_CONTRA_TODOS
-
-    # todos-contra-todos gera rodadas pelo returno manual (gerar_rodadas), nao
-    # pelo gerar_chaveamento_inicial (esse so vale pra MATA_MATA)
-    novas_rodadas = await gerar_rodadas(db_session, modalidade.id, usuario_id=coordenador.id)
-    assert len(novas_rodadas) > 0
-    assert novas_rodadas[0].numero == 1

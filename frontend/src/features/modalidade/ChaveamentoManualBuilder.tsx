@@ -6,6 +6,8 @@ import { rotuloNivel } from "../../lib/nivel";
 
 const BYE = "__BYE__";
 
+type Formato = "TODOS_CONTRA_TODOS" | "MATA_MATA";
+
 interface EquipeItem {
   id: string;
   nome: string;
@@ -41,6 +43,9 @@ export function ChaveamentoManualBuilder({
   const [nivelSelecionado, setNivelSelecionado] = useState<number | "">("");
   const [equipeAId, setEquipeAId] = useState("");
   const [equipeBId, setEquipeBId] = useState("");
+  // null = ainda nao mexeu: usa a ultima rodada que ja existe (ou 1).
+  const [rodadaDigitada, setRodadaDigitada] = useState<string | null>(null);
+  const [formato, setFormato] = useState<Formato>("MATA_MATA");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -73,9 +78,6 @@ export function ChaveamentoManualBuilder({
   });
   const rodadasOrdenadas = [...(rodadas ?? [])].sort((a, b) => a.numero - b.numero);
 
-  // Busca partidas de TODAS as rodadas (nao so a 1) -- precisa saber ate
-  // onde o nivel ja chegou (fase de grupos + mata-mata) pra calcular a
-  // rodada-alvo certa, igual o backend faz em criar_partida_manual.
   const partidasQueries = useQueries({
     queries: rodadasOrdenadas.map((rodada) => ({
       queryKey: ["partidas", "chaveamento-manual-builder", rodada.id],
@@ -99,20 +101,10 @@ export function ChaveamentoManualBuilder({
   );
   const nivelAtivo = nivelSelecionado === "" ? niveis[0] : nivelSelecionado;
 
-  // Mesma regra de calculo de rodada-alvo do backend (criar_partida_manual):
-  // proxima rodada apos a ultima que esse nivel ja tem partida, MAS so
-  // avanca quando essa ultima foi fase de grupos (TODOS_CONTRA_TODOS) -- se
-  // ja for mata-mata (outra chamada manual ainda montando a mesma rodada),
-  // reaproveita o mesmo numero.
-  const partidasDoNivelTodas = todasPartidas.filter((p) => p.nivel === nivelAtivo);
-  const maiorNumero =
-    partidasDoNivelTodas.length > 0 ? Math.max(...partidasDoNivelTodas.map((p) => p.numero)) : null;
-  let numeroAlvo = 1;
-  if (maiorNumero != null) {
-    const naUltima = partidasDoNivelTodas.filter((p) => p.numero === maiorNumero);
-    const ultimaEhMataMata = naUltima.some((p) => p.formato_chaveamento === "MATA_MATA");
-    numeroAlvo = ultimaEhMataMata ? maiorNumero : maiorNumero + 1;
-  }
+  const ultimaRodada = rodadasOrdenadas[rodadasOrdenadas.length - 1]?.numero ?? 1;
+  const rodadaTexto = rodadaDigitada ?? String(ultimaRodada);
+  const numeroAlvo = Number(rodadaTexto);
+  const rodadaValida = Number.isInteger(numeroAlvo) && numeroAlvo >= 1;
 
   const idsComPartida = new Set(
     todasPartidas
@@ -124,6 +116,7 @@ export function ChaveamentoManualBuilder({
   const partidasDoNivel = todasPartidas.filter(
     (p) => p.nivel === nivelAtivo && p.numero === numeroAlvo,
   );
+  const aceitaBye = formato === "MATA_MATA";
 
   async function invalidar() {
     await queryClient.invalidateQueries({ queryKey: ["rodadas", "chaveamento-manual-builder"] });
@@ -131,14 +124,19 @@ export function ChaveamentoManualBuilder({
   }
 
   async function salvar() {
-    if (!equipeAId || !equipeBId) return;
+    if (!equipeAId || !equipeBId || !rodadaValida) return;
     setEnviando(true);
     setErro(null);
     const { error } = await api.POST(
       "/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
       {
         params: { path: { modalidade_id: modalidadeId } },
-        body: { equipe_a_id: equipeAId, equipe_b_id: equipeBId === BYE ? null : equipeBId },
+        body: {
+          equipe_a_id: equipeAId,
+          equipe_b_id: equipeBId === BYE ? null : equipeBId,
+          rodada_numero: numeroAlvo,
+          formato_chaveamento: formato,
+        },
       },
     );
     setEnviando(false);
@@ -161,8 +159,9 @@ export function ChaveamentoManualBuilder({
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-1 text-lg font-semibold text-slate-800">Montar chaveamento manual</h2>
         <p className="mb-4 text-sm text-slate-500">
-          Escolha as duas equipes de um confronto e salve — o confronto já vira um card pro
-          árbitro pontuar. Repita um por um até fechar o nível.
+          Escolha a rodada, o tipo e as duas equipes e salve — o confronto já vira um card pro
+          árbitro pontuar. O sistema não gera nem avança chaveamento sozinho: semifinal e final
+          também são montadas aqui.
         </p>
 
         {niveis.length > 1 && (
@@ -188,6 +187,44 @@ export function ChaveamentoManualBuilder({
             </select>
           </div>
         )}
+
+        <div className="mb-4 flex gap-3">
+          <div className="w-24">
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="rodada-manual">
+              Rodada
+            </label>
+            <input
+              id="rodada-manual"
+              type="number"
+              min={1}
+              value={rodadaTexto}
+              onChange={(e) => {
+                setRodadaDigitada(e.target.value);
+                setEquipeAId("");
+                setEquipeBId("");
+              }}
+              className="w-full rounded border border-slate-300 px-3 py-2"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="tipo-manual">
+              Tipo
+            </label>
+            <select
+              id="tipo-manual"
+              value={formato}
+              onChange={(e) => {
+                const novo = e.target.value as Formato;
+                setFormato(novo);
+                if (novo !== "MATA_MATA" && equipeBId === BYE) setEquipeBId("");
+              }}
+              className="w-full rounded border border-slate-300 px-3 py-2"
+            >
+              <option value="TODOS_CONTRA_TODOS">Fase de grupos (aceita empate)</option>
+              <option value="MATA_MATA">Eliminatória (sem empate)</option>
+            </select>
+          </div>
+        </div>
 
         <div className="mb-4 flex gap-3">
           <div className="flex-1">
@@ -219,7 +256,7 @@ export function ChaveamentoManualBuilder({
               className="w-full rounded border border-slate-300 px-3 py-2"
             >
               <option value="">Selecione</option>
-              <option value={BYE}>— Bye (sem adversário) —</option>
+              {aceitaBye && <option value={BYE}>— Bye (sem adversário) —</option>}
               {elegiveis
                 .filter((e) => e.id !== equipeAId)
                 .map((e) => (
@@ -236,14 +273,14 @@ export function ChaveamentoManualBuilder({
         <button
           type="button"
           onClick={salvar}
-          disabled={enviando || !equipeAId || !equipeBId}
+          disabled={enviando || !equipeAId || !equipeBId || !rodadaValida}
           className="mb-6 rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {enviando ? "Salvando..." : "Salvar confronto"}
         </button>
 
         <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-slate-500">
-          Confrontos já montados neste nível
+          Confrontos já montados neste nível nesta rodada
         </h3>
         <ul className="mb-4 space-y-1">
           {partidasDoNivel.map((p) => (

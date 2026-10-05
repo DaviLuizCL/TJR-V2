@@ -287,15 +287,14 @@ describe("RodadaListPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("todos-contra-todos nao mostra 'Montar chaveamento manual' (override explicito p/ returno)", async () => {
+  it("todos-contra-todos tambem mostra 'Montar chaveamento manual' (todo combate e montado na mao)", async () => {
     mockGetTodosContraTodos([], {});
 
     renderPage();
 
-    await screen.findByRole("heading", { name: /^rodadas de/i });
     expect(
-      screen.queryByRole("button", { name: /montar chaveamento manual/i }),
-    ).not.toBeInTheDocument();
+      await screen.findByRole("button", { name: /montar chaveamento manual/i }),
+    ).toBeInTheDocument();
   });
 
   it("'Montar chaveamento manual' continua visivel mesmo com rodada 1 ja existindo (nivel montado na mao, outro pendente do automatico)", async () => {
@@ -332,13 +331,12 @@ describe("RodadaListPage", () => {
     expect(await screen.findByRole("button", { name: /^fase de grupos$/i })).toBeInTheDocument();
   });
 
-  it("todos-contra-todos nao mostra 'Fase de Grupos' (mesmo grupo do chaveamento manual)", async () => {
+  it("todos-contra-todos tambem mostra 'Fase de Grupos'", async () => {
     mockGetTodosContraTodos([], {});
 
     renderPage();
 
-    await screen.findByRole("heading", { name: /^rodadas de/i });
-    expect(screen.queryByRole("button", { name: /^fase de grupos$/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^fase de grupos$/i })).toBeInTheDocument();
   });
 
   it("mata-mata de 1 rodada que comeca so na rodada 2 (pos fase de grupos) mostra 'Final', nao 'Rodada 2'", async () => {
@@ -749,15 +747,13 @@ describe("RodadaListPage", () => {
     });
   }
 
-  it("modalidade de confronto todos-contra-todos nao mostra nenhum botao de chaveamento (removido do front; endpoint segue existindo no backend)", async () => {
+  it("modalidade de confronto todos-contra-todos nao tem nenhum botao de geracao automatica", async () => {
     mockGetTodosContraTodos([], {});
 
     renderPage();
 
     await screen.findByRole("heading", { name: /^rodadas de/i });
     expect(screen.queryByRole("button", { name: /^gerar chaveamento$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^fase de grupos$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /montar chaveamento manual/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^gerar rodadas$/i })).not.toBeInTheDocument();
   });
 

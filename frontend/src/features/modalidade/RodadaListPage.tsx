@@ -514,24 +514,20 @@ export function RodadaListPage() {
         <h1 className="text-2xl font-semibold text-slate-800">Rodadas de {modalidade.nome}</h1>
         {isCombate ? (
           <div className="flex gap-2">
-            {modalidade.formato_chaveamento !== "TODOS_CONTRA_TODOS" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setMostrarFaseDeGrupos(true)}
-                  className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                >
-                  Fase de Grupos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMostrarChaveamentoManual(true)}
-                  className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                >
-                  Montar chaveamento manual
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() => setMostrarFaseDeGrupos(true)}
+              className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+            >
+              Fase de Grupos
+            </button>
+            <button
+              type="button"
+              onClick={() => setMostrarChaveamentoManual(true)}
+              className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+            >
+              Montar chaveamento manual
+            </button>
           </div>
         ) : (
           <button

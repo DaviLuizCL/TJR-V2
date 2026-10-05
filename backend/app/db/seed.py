@@ -30,7 +30,6 @@ from app.models.usuario import Papel, Usuario
 from app.schemas.arena import ArenaCreate
 from app.services import agendamento as agendamento_service
 from app.services import arena as arena_service
-from app.services import chaveamento as chaveamento_service
 from app.services import rodada as rodada_service
 
 FUSO_FORTALEZA = ZoneInfo("America/Fortaleza")
@@ -38,9 +37,8 @@ FUSO_FORTALEZA = ZoneInfo("America/Fortaleza")
 MODALIDADES_TJR: tuple[dict, ...] = (
     dict(
         # formato_chaveamento omitido (fica None) em todas as modalidades de
-        # confronto abaixo -- decisao automatica por nivel, ver
-        # services/chaveamento.py::gerar_chaveamento_confronto (<=5 equipes
-        # inscritas naquele nivel = todos-contra-todos, 6+ = mata-mata).
+        # confronto abaixo -- cada partida montada na mao carrega o proprio
+        # tipo (fase de grupos ou eliminatoria), ver criar_partida_manual.
         nome="Sumô",
         tipo_disputa=TipoDisputa.CONFRONTO,
         qtd_rodadas=5,
@@ -382,6 +380,14 @@ _FICHA_RESGATE_DE_ALTO_RISCO: tuple[tuple[str, tuple[dict, ...]], ...] = (
             ),
             _c(
                 "Objeto lata invertido de posição (ponta cabeça)",
+                CategoriaCriterio.PONTUACAO,
+                CriterioTipo.BOOLEANO,
+                pontos=50,
+            ),
+            # Pedido pos-TJR 2026: so girar a lata (sem inverter) tambem vale
+            # +50; criterio proprio, soma com o "invertido" se marcar os dois.
+            _c(
+                "Objeto lata girado",
                 CategoriaCriterio.PONTUACAO,
                 CriterioTipo.BOOLEANO,
                 pontos=50,
@@ -788,42 +794,16 @@ async def seed_arenas(
     return arenas
 
 
-async def _obter_ou_gerar_chaveamento_confronto(
-    db: AsyncSession, modalidade_id: UUID, *, usuario_id: UUID
-) -> list[Rodada]:
-    existentes = list(
-        (await db.scalars(select(Rodada).where(Rodada.modalidade_id == modalidade_id))).all()
-    )
-    if existentes:
-        return existentes
-    return await chaveamento_service.gerar_chaveamento_confronto(
-        db, modalidade_id, usuario_id=usuario_id
-    )
-
-
 async def seed_rodadas(
     db: AsyncSession, modalidades: list[Modalidade], *, usuario_id: UUID
 ) -> list[Rodada]:
-    # CONFRONTO usa gerar_chaveamento_confronto (decide mata-mata vs
-    # todos-contra-todos por nivel, ver comentario em MODALIDADES_TJR) em vez
-    # de gerar_rodadas -- esse ultimo faz pareamento round-robin generico,
-    # que so serve pro lado todos-contra-todos; usa-lo pra um nivel que virou
-    # mata-mata pre-criaria confrontos que nao dependem de quem venceria a
-    # rodada anterior (errado pro bracket) e deixaria o chaveamento
-    # inacessivel depois (409 CHAVEAMENTO_JA_INICIADO, ja que ja existiria
-    # rodada).
+    # So individuais: confronto e montado 100% na mao pelo coordenador
+    # (criar_partida_manual), o sistema nao gera rodada nem partida de combate.
     rodadas: list[Rodada] = []
     for modalidade in modalidades:
         if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
-            rodadas.extend(
-                await _obter_ou_gerar_chaveamento_confronto(
-                    db, modalidade.id, usuario_id=usuario_id
-                )
-            )
-        else:
-            rodadas.extend(
-                await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id)
-            )
+            continue
+        rodadas.extend(await rodada_service.gerar_rodadas(db, modalidade.id, usuario_id=usuario_id))
     return rodadas
 
 
@@ -876,8 +856,8 @@ async def _main(*, apenas_estrutura: bool = False) -> None:
     (EQUIPES_TJR, "Nivel X - Equipe Y") -- so cria coordenador/evento/
     modalidade/ficha/arena, que sao reais em qualquer ambiente (dev ou
     producao). Usado antes de importar o cadastro real de equipes (script
-    em scripts/lista_2026/), pra nao deixar chaveamento fake gerado bloqueando
-    o real depois (gerar_chaveamento_confronto recusa se ja existe rodada).
+    em scripts/lista_2026/), pra nao misturar equipe/rodada fake com o
+    cadastro real.
     """
     async with AsyncSessionLocal() as db:
         coordenador = await seed_coordenador(

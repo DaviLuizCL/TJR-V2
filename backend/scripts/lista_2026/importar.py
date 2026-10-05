@@ -4,10 +4,8 @@ faz parte do app, roda uma vez (dev pra validar, depois producao) pra criar
 as equipes reais e as inscricoes por modalidade a partir da planilha oficial.
 
 Pre-requisito: rodar a seed estrutural primeiro (evento/modalidade/ficha/
-arena precisam existir, mas SEM equipe/rodada ficticia -- senao o
-chaveamento fake da seed normal bloqueia o real depois, ja que
-gerar_chaveamento_confronto recusa iniciar uma modalidade que ja tem
-rodada):
+arena precisam existir, mas SEM equipe/rodada ficticia -- senao equipe e
+rodada fake da seed normal se misturam com o cadastro real):
     docker compose exec -T api python3 -m app.db.seed --apenas-estrutura
 
 Uso (dentro do container da api, apontando pra planilha no volume montado):

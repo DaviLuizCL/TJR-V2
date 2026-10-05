@@ -15,19 +15,9 @@ interface RodadaGerada {
 
 type ResultadoModalidade = "ok" | string;
 
-async function gerarPrimeiraRodada(modalidade: ModalidadeParaAbrir): Promise<RodadaGerada[]> {
-  const ehConfronto = modalidade.tipo_disputa === "CONFRONTO";
-
-  if (ehConfronto) {
-    // Decide mata-mata vs todos-contra-todos por nivel internamente (gerar_chaveamento_confronto),
-    // mesmo quando formato_chaveamento da modalidade e null -- nunca ler esse campo aqui.
-    const { data, error } = await api.POST("/api/v1/chaveamento/gerar", {
-      body: { modalidade_id: modalidade.id } as never,
-    });
-    if (error || !data) throw new Error(extrairErro(error).mensagem);
-    return [data as RodadaGerada];
-  }
-
+// So individuais: combate e montado na mao, confronto por confronto
+// (ChaveamentoManualBuilder) -- o sistema nao gera chaveamento sozinho.
+async function gerarRodadas(modalidade: ModalidadeParaAbrir): Promise<RodadaGerada[]> {
   const { data, error } = await api.POST("/api/v1/rodadas/gerar", {
     body: { modalidade_id: modalidade.id } as never,
   });
@@ -36,7 +26,7 @@ async function gerarPrimeiraRodada(modalidade: ModalidadeParaAbrir): Promise<Rod
 }
 
 export function AbrirEventoModal({
-  modalidades,
+  modalidades: todasModalidades,
   onFechar,
   onConcluido,
 }: {
@@ -44,6 +34,7 @@ export function AbrirEventoModal({
   onFechar: () => void;
   onConcluido?: () => void;
 }) {
+  const modalidades = todasModalidades.filter((m) => m.tipo_disputa !== "CONFRONTO");
   const [horarios, setHorarios] = useState<Record<string, string>>({});
   const [resultados, setResultados] = useState<Record<string, ResultadoModalidade>>({});
   const [enviando, setEnviando] = useState(false);
@@ -56,7 +47,7 @@ export function AbrirEventoModal({
 
     for (const modalidade of modalidades) {
       try {
-        const rodadasGeradas = await gerarPrimeiraRodada(modalidade);
+        const rodadasGeradas = await gerarRodadas(modalidade);
 
         const horario = horarios[modalidade.id];
         if (horario) {
@@ -93,9 +84,9 @@ export function AbrirEventoModal({
       <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-1 text-lg font-semibold text-slate-800">Abrir evento</h2>
         <p className="mb-4 text-sm text-slate-500">
-          Gera a primeira rodada de cada modalidade de uma vez (chaveamento por nível nas de
-          combate, rodadas nas demais). O horário é opcional e só marca o início da 1ª rodada —
-          não gera agendamento de arena.
+          Gera as rodadas de cada modalidade individual de uma vez. Combates ficam de fora: são
+          montados na mão em "Montar chaveamento manual". O horário é opcional e só marca o
+          início da 1ª rodada — não gera agendamento de arena.
         </p>
 
         <ul className="mb-4 max-h-80 space-y-3 overflow-y-auto">

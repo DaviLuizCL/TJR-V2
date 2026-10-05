@@ -156,24 +156,6 @@ describe("FaseDeGruposBuilder", () => {
     expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
   });
 
-  it("gera a fase de grupos ao clicar no botao", async () => {
-    mockDados([
-      { id: "chave-1", modalidade_id: "mod-1", nivel: 1, nome: "Chave A", equipe_ids: ["eq-a", "eq-b"] },
-    ]);
-    vi.mocked(api.POST).mockResolvedValue({ data: [{ id: "r1", numero: 1 }], error: undefined } as never);
-    renderBuilder();
-
-    await screen.findByText("Chave A");
-    await userEvent.click(screen.getByRole("button", { name: /gerar fase de grupos/i }));
-
-    await waitFor(() =>
-      expect(api.POST).toHaveBeenCalledWith(
-        "/api/v1/modalidades/{modalidade_id}/chaveamento/fase-de-grupos/gerar",
-        expect.objectContaining({ params: { path: { modalidade_id: "mod-1" } } }),
-      ),
-    );
-  });
-
   it("mostra a classificacao da chave quando ha partidas decididas", async () => {
     mockDados([
       {
@@ -321,11 +303,11 @@ describe("FaseDeGruposBuilder", () => {
     );
   });
 
-  it("botao de gerar fase de grupos fica desabilitado sem nenhuma chave", async () => {
-    mockDados([]);
+  it("nao gera confronto sozinho: sem botao de gerar fase de grupos", async () => {
+    mockDados([{ id: "ch-1", modalidade_id: "mod-1", nivel: 1, nome: "Chave A", equipe_ids: [] }]);
     renderBuilder();
 
-    await screen.findByText(/nenhuma chave criada ainda/i);
-    expect(screen.getByRole("button", { name: /gerar fase de grupos/i })).toBeDisabled();
+    await screen.findByText("Chave A");
+    expect(screen.queryByRole("button", { name: /gerar fase de grupos/i })).not.toBeInTheDocument();
   });
 });

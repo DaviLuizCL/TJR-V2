@@ -177,13 +177,12 @@ um dia, é feature nova, não reintrodução do código antigo.)
   resultado dos combates anteriores; se até esse combate extra empatar, aí sim a partida fica
   aberta (precisa de correção do coordenador). Todos-contra-todos não usa ponto de ouro — fecha
   `EMPATADA` direto.
-- Vencedor de partida é sempre automático (compara os combates), e o avanço de rodada é
-  automático assim que a última partida da rodada atual fecha — sem clique do coordenador.
-- **Bye (número ímpar de equipes) é resolvido rodada a rodada, não calculado de antemão.** Se a
-  contagem de sobreviventes ficar ímpar no meio do bracket (comum quando o total inicial não é
-  potência de 2, ex.: 48 equipes → 48→24→12→6→3), o bye aparece nessa rodada, não
-  necessariamente na primeira. Decisão consciente do usuário — a alternativa (calcular todos os
-  byes na rodada 1 pra nunca mais precisar depois) foi implementada e revertida a pedido dele.
+- Vencedor de partida é sempre automático (compara os combates). **Chaveamento, não** — desde
+  out/2026 todo confronto é montado na mão pelo coordenador (`criar_partida_manual`: rodada +
+  tipo "Fase de grupos"/`TODOS_CONTRA_TODOS`, aceita empate, ou "Eliminatória"/`MATA_MATA`, empate
+  vai pro ponto de ouro, aceita bye). O sistema não gera chaveamento, não gera round-robin, não gera
+  fase de grupos e não avança rodada sozinho — semifinal/final também são criadas à mão. Ver
+  seção 12.
 
 ---
 
@@ -1394,3 +1393,32 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
 - Não escreva teste que dependa de banco de produção ou de ordem de execução.
 - Não faça commit de `.env`, dump de banco ou dado real de equipe.
 - Não refatore área fora do escopo da tarefa atual sem avisar.
+
+   **Pós-TJR 2026: chaveamento de combate 100% manual + lata girada no Resgate de Alto Risco**
+   (05/10/2026). Feedback do coordenador depois do evento: o chaveamento vai ser montado fora do
+   sistema (ChatGPT) e populado na mão, então **toda geração automática de combate saiu**:
+   `gerar_chaveamento_inicial`, `gerar_chaveamento_confronto` (e `POST /chaveamento/gerar`),
+   `gerar_fase_de_grupos` (e `POST .../fase-de-grupos/gerar`), `avancar_se_rodada_completa`
+   (fechar partida eliminatória não cria mais a próxima rodada), o round-robin de
+   `rodada.gerar_rodadas` (agora recusa `CONFRONTO` com `422 GERAR_RODADAS_SO_INDIVIDUAL`, só
+   cria rodadas vazias de individual) e a geração de combate no seed e no `AbrirEventoModal`
+   (que agora só lista individuais). `criar_partida_manual` ganhou `rodada_numero` e
+   `formato_chaveamento` obrigatórios (antes a rodada era calculada e não dava pra abrir rodada
+   2+ de mata-mata na mão); a mesma equipe pode jogar em rodadas diferentes, só não duas vezes na
+   mesma. Chave virou só rótulo: partida de fase de grupos herda `chave_id` sozinha quando as duas
+   equipes estão na mesma `Chave` da modalidade; eliminatória nunca carrega chave; bye só em
+   eliminatória (`422 BYE_SO_EM_ELIMINATORIA`). `FaseDeGruposBuilder` ficou só com criar
+   chave/distribuir equipe/classificação; `ChaveamentoManualBuilder` ganhou campos **Rodada**
+   (default = última rodada existente) e **Tipo**; os dois botões aparecem em toda modalidade de
+   combate. `LIMITE_EQUIPES_TODOS_CONTRA_TODOS` mudou pra `consolidacao.py` (só prévia de
+   classificação de nível sem partida). `scripts/dados_teste/pontuar_simulacao.py` ainda chama o
+   gerador antigo — script de simulação obsoleto, não atualizado.
+
+   Ficha do Resgate de Alto Risco ganhou `"Objeto lata girado"` (`BOOLEANO`, +50), separado do
+   `"invertido"` — soma se o árbitro marcar os dois. Só no seed: produção ainda tem a ficha
+   publicada antiga (ficha publicada é imutável → aplicar lá exige nova versão).
+
+   Outros feedbacks do evento, **ainda não implementados**: corrigir combate decidido errado
+   pelo árbitro (hoje não tem tela; endpoint de correção existe no backend) e marcar presença da
+   equipe antes de montar o chaveamento.
+

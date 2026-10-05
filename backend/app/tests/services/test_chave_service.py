@@ -6,7 +6,13 @@ from app.core.errors import AppError
 from app.core.security import hash_senha
 from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
-from app.models.modalidade import Consolidacao, Modalidade, ModalidadeStatus, TipoDisputa
+from app.models.modalidade import (
+    Consolidacao,
+    FormatoChaveamento,
+    Modalidade,
+    ModalidadeStatus,
+    TipoDisputa,
+)
 from app.models.usuario import Papel, Usuario
 from app.schemas.chave import ChaveCreate
 from app.schemas.inscricao import InscricaoCreate
@@ -16,7 +22,7 @@ from app.services.chave import (
     listar_chaves,
     remover_equipe,
 )
-from app.services.chaveamento import gerar_fase_de_grupos
+from app.services.chaveamento import criar_partida_manual
 from app.services.inscricao import criar_inscricao
 
 
@@ -240,7 +246,15 @@ async def test_remover_equipe_rejeita_se_chave_ja_tem_partida(db_session):
     equipe_b = await _inscrever(db_session, modalidade, coordenador, "Equipe B")
     await adicionar_equipe(db_session, chave.id, equipe_a.id, usuario_id=coordenador.id)
     await adicionar_equipe(db_session, chave.id, equipe_b.id, usuario_id=coordenador.id)
-    await gerar_fase_de_grupos(db_session, modalidade.id, usuario_id=coordenador.id)
+    await criar_partida_manual(
+        db_session,
+        modalidade.id,
+        equipe_a.id,
+        equipe_b.id,
+        rodada_numero=1,
+        formato=FormatoChaveamento.TODOS_CONTRA_TODOS,
+        usuario_id=coordenador.id,
+    )
 
     with pytest.raises(AppError) as exc_info:
         await remover_equipe(db_session, chave.id, equipe_a.id, usuario_id=coordenador.id)

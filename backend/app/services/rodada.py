@@ -4,10 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.models.equipe import Equipe
-from app.models.inscricao import Inscricao
-from app.models.modalidade import FormatoChaveamento, TipoDisputa
-from app.models.partida import Partida, PartidaStatus
+from app.models.modalidade import TipoDisputa
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.schemas.rodada import RodadaCreate, RodadaUpdate
 from app.services.audit import registrar_audit_log
@@ -131,67 +128,23 @@ async def atualizar_rodada(
     return rodada
 
 
-def _gerar_pareamento(equipe_ids: list[UUID], rodada_numero: int) -> list[tuple[UUID, UUID]]:
-    """Pareamento round-robin (metodo do circulo): fixa a primeira equipe e
-    roda o restante a cada rodada, para so repetir pares quando qtd_rodadas
-    exceder o numero de equipes - 1. Numero impar de equipes deixa uma de bye.
-    Isso e so pareamento simples; mata-mata (chaveamento de fato) fica para a
-    Fase 4.
-    """
-    times: list[UUID | None] = list(equipe_ids)
-    if len(times) % 2 == 1:
-        times.append(None)
-
-    n = len(times)
-    if n < 2:
-        return []
-
-    fixo = times[0]
-    resto = times[1:]
-    deslocamento = (rodada_numero - 1) % len(resto)
-    resto_rotacionado = resto[deslocamento:] + resto[:deslocamento]
-    ordenados = [fixo, *resto_rotacionado]
-
-    pares = []
-    for i in range(n // 2):
-        a = ordenados[i]
-        b = ordenados[n - 1 - i]
-        if a is not None and b is not None:
-            pares.append((a, b))
-    return pares
-
-
-def _rodadas_necessarias(qtd_equipes: int) -> int:
-    """Quantas rodadas o metodo do circulo consegue gerar sem repetir par pra
-    um grupo de `qtd_equipes` equipes (numero impar ganha um bye, que conta
-    como padding par pro calculo).
-    """
-    return qtd_equipes - 1 if qtd_equipes % 2 == 0 else qtd_equipes
-
-
 async def gerar_rodadas(db: AsyncSession, modalidade_id: UUID, *, usuario_id: UUID) -> list[Rodada]:
-    """Equipes de niveis diferentes nunca se enfrentam: cada nivel roda seu
-    proprio returno (metodo do circulo) dentro da mesma modalidade. Um nivel
-    com menos equipes esgota seus confrontos possiveis mais cedo e para de
-    receber partida nas rodadas finais, evitando repetir jogo.
+    """Cria as `qtd_rodadas` rodadas vazias de uma modalidade INDIVIDUAL.
+    Confronto nao passa por aqui: cada partida (e a rodada dela) e montada na
+    mao pelo coordenador em `chaveamento.criar_partida_manual`.
     """
     modalidade = await obter_modalidade(db, modalidade_id)
+    if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
+        raise AppError(
+            codigo="GERAR_RODADAS_SO_INDIVIDUAL",
+            mensagem="Rodadas de combate sao montadas na mao, confronto por confronto.",
+            status_code=422,
+        )
 
     existentes_resultado = await db.execute(
         select(Rodada).where(Rodada.modalidade_id == modalidade.id)
     )
     existentes_por_numero = {r.numero: r for r in existentes_resultado.scalars().all()}
-
-    equipes_por_nivel: dict[int, list[UUID]] = {}
-    if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
-        resultado_insc = await db.execute(
-            select(Inscricao.equipe_id, Equipe.nivel)
-            .join(Equipe, Inscricao.equipe_id == Equipe.id)
-            .where(Inscricao.modalidade_id == modalidade.id)
-            .order_by(Inscricao.equipe_id)
-        )
-        for equipe_id, nivel in resultado_insc.all():
-            equipes_por_nivel.setdefault(nivel, []).append(equipe_id)
 
     rodadas: list[Rodada] = []
     for numero in range(1, modalidade.qtd_rodadas + 1):
@@ -218,26 +171,5 @@ async def gerar_rodadas(db: AsyncSession, modalidade_id: UUID, *, usuario_id: UU
             )
 
         rodadas.append(rodada)
-
-        if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
-            qtd_partidas_existentes = await db.scalar(
-                select(func.count()).select_from(Partida).where(Partida.rodada_id == rodada.id)
-            )
-            if not qtd_partidas_existentes:
-                for nivel, equipe_ids in equipes_por_nivel.items():
-                    if numero > _rodadas_necessarias(len(equipe_ids)):
-                        continue
-                    for equipe_a_id, equipe_b_id in _gerar_pareamento(equipe_ids, numero):
-                        db.add(
-                            Partida(
-                                rodada_id=rodada.id,
-                                equipe_a_id=equipe_a_id,
-                                equipe_b_id=equipe_b_id,
-                                nivel=nivel,
-                                formato_chaveamento=FormatoChaveamento.TODOS_CONTRA_TODOS,
-                                status=PartidaStatus.AGENDADA,
-                            )
-                        )
-                await db.flush()
 
     return rodadas

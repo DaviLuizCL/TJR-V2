@@ -241,7 +241,7 @@ describe("ModalidadeListPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clicar em 'Abrir evento' abre o modal com uma linha por modalidade", async () => {
+  it("clicar em 'Abrir evento' abre o modal com uma linha por modalidade individual", async () => {
     vi.mocked(api.GET).mockImplementation(async (path: string) => {
       if (path === "/api/v1/modalidades") {
         return {
@@ -265,7 +265,7 @@ describe("ModalidadeListPage", () => {
     await userEvent.click(screen.getByRole("button", { name: /abrir evento/i }));
 
     const modal = await screen.findByRole("dialog", { name: /abrir evento/i });
-    expect(within(modal).getByLabelText("Sumo")).toBeInTheDocument();
+    expect(within(modal).queryByLabelText("Sumo")).not.toBeInTheDocument();
     expect(within(modal).getByLabelText("Danca")).toBeInTheDocument();
   });
 

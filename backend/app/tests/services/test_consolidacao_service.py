@@ -756,8 +756,12 @@ async def test_classificacao_bracket_ignora_derrota_de_fase_de_grupos_no_elimina
     coordenador = await _criar_coordenador(db_session, "coord-consolidacao-grupos-mm@tjr.app")
     modalidade = await _criar_modalidade_confronto(db_session, formato=None)
     campeao = await _inscrever_equipe_generica(db_session, modalidade, "Campeao", coordenador)
-    rival_grupo = await _inscrever_equipe_generica(db_session, modalidade, "Rival Grupo", coordenador)
-    rival_final = await _inscrever_equipe_generica(db_session, modalidade, "Rival Final", coordenador)
+    rival_grupo = await _inscrever_equipe_generica(
+        db_session, modalidade, "Rival Grupo", coordenador
+    )
+    rival_final = await _inscrever_equipe_generica(
+        db_session, modalidade, "Rival Final", coordenador
+    )
 
     chave = Chave(modalidade_id=modalidade.id, nivel=1, nome="Chave A")
     db_session.add(chave)

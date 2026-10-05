@@ -16,6 +16,7 @@ vi.mock("../../api/client", () => ({
 
 const MODALIDADES = [
   { id: "mod-individual", nome: "Resgate no Plano", tipo_disputa: "INDIVIDUAL" },
+  { id: "mod-danca", nome: "Dança", tipo_disputa: "INDIVIDUAL" },
   { id: "mod-matamata", nome: "Sumô", tipo_disputa: "CONFRONTO" },
   { id: "mod-todoscontratodos", nome: "Cabo de Guerra", tipo_disputa: "CONFRONTO" },
 ];
@@ -34,17 +35,18 @@ beforeEach(() => {
 });
 
 describe("AbrirEventoModal", () => {
-  it("mostra um campo de horario por modalidade", () => {
+  it("mostra um campo de horario por modalidade individual; combate fica de fora", () => {
     renderModal();
 
     expect(screen.getByLabelText("Resgate no Plano")).toBeInTheDocument();
-    expect(screen.getByLabelText("Sumô")).toBeInTheDocument();
-    expect(screen.getByLabelText("Cabo de Guerra")).toBeInTheDocument();
+    expect(screen.getByLabelText("Dança")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Sumô")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Cabo de Guerra")).not.toBeInTheDocument();
   });
 
-  it("chama o endpoint certo por tipo: chaveamento/gerar pra toda modalidade de confronto (decide mata-mata/todos-contra-todos por nivel sozinho), rodadas/gerar so pra individual", async () => {
+  it("so gera rodadas das individuais; nunca gera chaveamento de combate", async () => {
     vi.mocked(api.POST).mockResolvedValue({
-      data: { id: "r1", numero: 1 },
+      data: [{ id: "r1", numero: 1 }],
       error: undefined,
     } as never);
 
@@ -53,38 +55,17 @@ describe("AbrirEventoModal", () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith(
-        "/api/v1/chaveamento/gerar",
-        expect.objectContaining({ body: { modalidade_id: "mod-matamata" } }),
+        "/api/v1/rodadas/gerar",
+        expect.objectContaining({ body: { modalidade_id: "mod-individual" } }),
       ),
     );
-    expect(api.POST).toHaveBeenCalledWith(
-      "/api/v1/chaveamento/gerar",
-      expect.objectContaining({ body: { modalidade_id: "mod-todoscontratodos" } }),
-    );
-    expect(api.POST).toHaveBeenCalledWith(
-      "/api/v1/rodadas/gerar",
-      expect.objectContaining({ body: { modalidade_id: "mod-individual" } }),
-    );
-    expect(api.POST).not.toHaveBeenCalledWith(
-      "/api/v1/chaveamento/gerar",
-      expect.objectContaining({ body: { modalidade_id: "mod-individual" } }),
-    );
-    expect(api.POST).not.toHaveBeenCalledWith(
-      "/api/v1/rodadas/gerar",
-      expect.objectContaining({ body: { modalidade_id: "mod-matamata" } }),
-    );
-    expect(api.POST).not.toHaveBeenCalledWith(
-      "/api/v1/rodadas/gerar",
-      expect.objectContaining({ body: { modalidade_id: "mod-todoscontratodos" } }),
-    );
+    expect(api.POST).toHaveBeenCalledTimes(2);
+    expect(api.POST).not.toHaveBeenCalledWith("/api/v1/chaveamento/gerar", expect.anything());
   });
 
   it("com horario preenchido, aplica o horario na rodada 1 depois de gerar", async () => {
-    vi.mocked(api.POST).mockImplementation(async (path: string, opts?: unknown) => {
+    vi.mocked(api.POST).mockImplementation(async (_path: string, opts?: unknown) => {
       const body = (opts as { body: { modalidade_id: string } }).body;
-      if (path === "/api/v1/chaveamento/gerar") {
-        return { data: { id: `r1-${body.modalidade_id}`, numero: 1 }, error: undefined } as never;
-      }
       return {
         data: [{ id: `r1-${body.modalidade_id}`, numero: 1 }],
         error: undefined,
@@ -112,21 +93,18 @@ describe("AbrirEventoModal", () => {
     // Modalidades sem horario preenchido nao disparam PATCH.
     expect(api.PATCH).not.toHaveBeenCalledWith(
       "/api/v1/rodadas/{rodada_id}",
-      expect.objectContaining({ params: { path: { rodada_id: "r1-mod-matamata" } } }),
+      expect.objectContaining({ params: { path: { rodada_id: "r1-mod-danca" } } }),
     );
   });
 
   it("erro numa modalidade nao impede as outras de serem processadas, e mostra o erro inline", async () => {
-    vi.mocked(api.POST).mockImplementation(async (path: string, opts?: unknown) => {
+    vi.mocked(api.POST).mockImplementation(async (_path: string, opts?: unknown) => {
       const body = (opts as { body: { modalidade_id: string } }).body;
-      if (body.modalidade_id === "mod-matamata") {
+      if (body.modalidade_id === "mod-danca") {
         return {
           data: undefined,
           error: { erro: { codigo: "RODADA_JA_EXISTE", mensagem: "Ja existe rodada gerada." } },
         } as never;
-      }
-      if (path === "/api/v1/chaveamento/gerar") {
-        return { data: { id: `r1-${body.modalidade_id}`, numero: 1 }, error: undefined } as never;
       }
       return {
         data: [{ id: `r1-${body.modalidade_id}`, numero: 1 }],
@@ -137,8 +115,8 @@ describe("AbrirEventoModal", () => {
     renderModal();
     await userEvent.click(screen.getByRole("button", { name: /abrir evento/i }));
 
-    const linhaSumo = (await screen.findByText("Ja existe rodada gerada.")).closest("li")!;
-    expect(within(linhaSumo).getByText(/ja existe rodada gerada/i)).toBeInTheDocument();
+    const linhaDanca = (await screen.findByText("Ja existe rodada gerada.")).closest("li")!;
+    expect(within(linhaDanca).getByText(/ja existe rodada gerada/i)).toBeInTheDocument();
 
     const linhaIndividual = screen.getByLabelText("Resgate no Plano").closest("li")!;
     await waitFor(() => expect(within(linhaIndividual).getByText("✓")).toBeInTheDocument());
@@ -146,7 +124,7 @@ describe("AbrirEventoModal", () => {
 
   it("enquanto processa mostra 'Cancelar'; depois de concluir, mostra 'Fechar' e um resumo do resultado", async () => {
     vi.mocked(api.POST).mockResolvedValue({
-      data: { id: "r1", numero: 1 },
+      data: [{ id: "r1", numero: 1 }],
       error: undefined,
     } as never);
 
@@ -156,7 +134,7 @@ describe("AbrirEventoModal", () => {
     await userEvent.click(screen.getByRole("button", { name: /abrir evento/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/conclu[ií]do.*3 de 3/i)).toBeInTheDocument(),
+      expect(screen.getByText(/conclu[ií]do.*2 de 2/i)).toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: /^fechar$/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^cancelar$/i })).not.toBeInTheDocument();

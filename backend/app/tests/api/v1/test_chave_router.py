@@ -99,9 +99,7 @@ async def test_criar_chave_e_listar(client, db_session):
         f"/api/v1/chaves/{chave_id}/equipes", json={"equipe_id": equipe_b}, headers=headers
     )
 
-    listagem = await client.get(
-        f"/api/v1/modalidades/{modalidade_id}/chaves", headers=headers
-    )
+    listagem = await client.get(f"/api/v1/modalidades/{modalidade_id}/chaves", headers=headers)
     assert listagem.status_code == 200
     corpo = listagem.json()
     assert len(corpo) == 1
@@ -160,18 +158,14 @@ async def test_remover_equipe_da_chave(client, db_session):
         f"/api/v1/chaves/{chave_id}/equipes", json={"equipe_id": equipe_a}, headers=headers
     )
 
-    resposta = await client.delete(
-        f"/api/v1/chaves/{chave_id}/equipes/{equipe_a}", headers=headers
-    )
+    resposta = await client.delete(f"/api/v1/chaves/{chave_id}/equipes/{equipe_a}", headers=headers)
 
     assert resposta.status_code == 204
-    listagem = await client.get(
-        f"/api/v1/modalidades/{modalidade_id}/chaves", headers=headers
-    )
+    listagem = await client.get(f"/api/v1/modalidades/{modalidade_id}/chaves", headers=headers)
     assert listagem.json()[0]["equipe_ids"] == []
 
 
-async def test_gerar_fase_de_grupos_endpoint_retorna_rodadas_criadas(client, db_session):
+async def test_partida_manual_de_fase_de_grupos_herda_a_chave_das_equipes(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chr-6@tjr.app")
     evento_id = await _criar_evento(client, headers)
     modalidade_id = await _criar_modalidade_confronto(client, headers, evento_id)
@@ -183,23 +177,36 @@ async def test_gerar_fase_de_grupos_endpoint_retorna_rodadas_criadas(client, db_
         headers=headers,
     )
     chave_id = chave.json()["id"]
-    await client.post(
-        f"/api/v1/chaves/{chave_id}/equipes", json={"equipe_id": equipe_a}, headers=headers
+    for equipe in (equipe_a, equipe_b):
+        await client.post(
+            f"/api/v1/chaves/{chave_id}/equipes", json={"equipe_id": equipe}, headers=headers
+        )
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
+        json={
+            "equipe_a_id": equipe_a,
+            "equipe_b_id": equipe_b,
+            "rodada_numero": 1,
+            "formato_chaveamento": "TODOS_CONTRA_TODOS",
+        },
+        headers=headers,
     )
-    await client.post(
-        f"/api/v1/chaves/{chave_id}/equipes", json={"equipe_id": equipe_b}, headers=headers
-    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["chave_id"] == chave_id
+
+
+async def test_gerar_fase_de_grupos_automatico_nao_existe_mais(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chr-6b@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade_confronto(client, headers, evento_id)
 
     resposta = await client.post(
         f"/api/v1/modalidades/{modalidade_id}/chaveamento/fase-de-grupos/gerar", headers=headers
     )
 
-    assert resposta.status_code == 201
-    corpo = resposta.json()
-    assert len(corpo) == 1
-    partidas = await client.get(f"/api/v1/rodadas/{corpo[0]['id']}/partidas", headers=headers)
-    assert len(partidas.json()) == 1
-    assert partidas.json()[0]["chave_id"] == chave_id
+    assert resposta.status_code in (404, 405)
 
 
 async def test_get_classificacao_chave_rejeita_papel_publico_via_ranking_privado(

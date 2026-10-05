@@ -1,6 +1,8 @@
 from app.core.security import hash_senha
 from app.models.usuario import Papel, Usuario
 
+_ELIMINATORIA_R1 = {"rodada_numero": 1, "formato_chaveamento": "MATA_MATA"}
+
 
 async def _criar_usuario(db_session, *, email, papel, senha="senha-123"):
     usuario = Usuario(nome="Usuario Teste", email=email, senha_hash=hash_senha(senha), papel=papel)
@@ -60,26 +62,19 @@ async def _criar_equipe_inscrita(client, headers, modalidade_id, nome, nivel=1):
     return equipe_id
 
 
-async def test_gerar_chaveamento_mata_mata_cria_rodada_1_com_partidas(client, db_session):
+async def test_gerar_chaveamento_automatico_nao_existe_mais(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-1@tjr.app")
     evento_id = await _criar_evento(client, headers)
     modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
-    for i in range(4):
-        await _criar_equipe_inscrita(client, headers, modalidade_id, f"Equipe {i}")
 
     resposta = await client.post(
         "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers
     )
 
-    assert resposta.status_code == 201
-    corpo = resposta.json()
-    assert corpo["numero"] == 1
-
-    partidas = await client.get(f"/api/v1/rodadas/{corpo['id']}/partidas", headers=headers)
-    assert len(partidas.json()) == 2
+    assert resposta.status_code in (404, 405)
 
 
-async def test_criar_partida_manual_cria_partida_na_rodada_1(client, db_session):
+async def test_criar_partida_manual_cria_na_rodada_e_tipo_informados(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-man1@tjr.app")
     evento_id = await _criar_evento(client, headers)
     modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
@@ -88,7 +83,7 @@ async def test_criar_partida_manual_cria_partida_na_rodada_1(client, db_session)
 
     resposta = await client.post(
         f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
-        json={"equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
+        json={**_ELIMINATORIA_R1, "equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
         headers=headers,
     )
 
@@ -96,6 +91,29 @@ async def test_criar_partida_manual_cria_partida_na_rodada_1(client, db_session)
     corpo = resposta.json()
     assert {corpo["equipe_a_id"], corpo["equipe_b_id"]} == {equipe_a, equipe_b}
     assert corpo["status"] == "AGENDADA"
+    assert corpo["formato_chaveamento"] == "MATA_MATA"
+    rodada = await client.get(f"/api/v1/rodadas/{corpo['rodada_id']}", headers=headers)
+    assert rodada.json()["numero"] == 1
+
+
+async def test_criar_partida_manual_sem_rodada_retorna_422(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-man5@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
+    equipe_a = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe A")
+    equipe_b = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe B")
+
+    resposta = await client.post(
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
+        json={
+            "equipe_a_id": equipe_a,
+            "equipe_b_id": equipe_b,
+            "formato_chaveamento": "MATA_MATA",
+        },
+        headers=headers,
+    )
+
+    assert resposta.status_code == 422
 
 
 async def test_criar_partida_manual_com_papel_arbitro_retorna_403(client, db_session):
@@ -112,7 +130,7 @@ async def test_criar_partida_manual_com_papel_arbitro_retorna_403(client, db_ses
 
     resposta = await client.post(
         f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
-        json={"equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
+        json={**_ELIMINATORIA_R1, "equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
         headers=headers_arbitro,
     )
 
@@ -128,7 +146,7 @@ async def test_criar_partida_manual_com_niveis_diferentes_retorna_422(client, db
 
     resposta = await client.post(
         f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
-        json={"equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
+        json={**_ELIMINATORIA_R1, "equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
         headers=headers,
     )
 
@@ -144,7 +162,7 @@ async def test_criar_partida_manual_com_bye_fecha_a_partida_sozinha(client, db_s
 
     resposta = await client.post(
         f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
-        json={"equipe_a_id": equipe_a, "equipe_b_id": None},
+        json={**_ELIMINATORIA_R1, "equipe_a_id": equipe_a, "equipe_b_id": None},
         headers=headers,
     )
 
@@ -155,93 +173,16 @@ async def test_criar_partida_manual_com_bye_fecha_a_partida_sozinha(client, db_s
     assert corpo["vencedor_id"] == equipe_a
 
 
-async def test_gerar_chaveamento_com_papel_arbitro_retorna_403(client, db_session):
-    coord_headers = await _auth_header(
-        client, db_session, Papel.COORDENADOR, "coord-chav-2@tjr.app"
-    )
-    evento_id = await _criar_evento(client, coord_headers)
-    modalidade_id = await _criar_modalidade(client, coord_headers, evento_id, "MATA_MATA")
-    for i in range(2):
-        await _criar_equipe_inscrita(client, coord_headers, modalidade_id, f"Equipe {i}")
-    headers_arbitro = await _auth_header(client, db_session, Papel.ARBITRO, "arbitro-chav@tjr.app")
-
-    resposta = await client.post(
-        "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers_arbitro
-    )
-
-    assert resposta.status_code == 403
-
-
-async def test_gerar_chaveamento_com_formato_todos_contra_todos_explicito_cria_returno(
-    client, db_session
-):
-    # /chaveamento/gerar virou o ponto de entrada unico pra CONFRONTO (antes
-    # so aceitava MATA_MATA, e TODOS_CONTRA_TODOS explicito tinha que passar
-    # por /rodadas/gerar) -- com o formato forcado na modalidade, gera o
-    # returno pra todos os niveis igual, sem olhar contagem de equipe.
-    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-3@tjr.app")
-    evento_id = await _criar_evento(client, headers)
-    modalidade_id = await _criar_modalidade(client, headers, evento_id, "TODOS_CONTRA_TODOS")
-    for i in range(2):
-        await _criar_equipe_inscrita(client, headers, modalidade_id, f"Equipe {i}")
-
-    resposta = await client.post(
-        "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers
-    )
-
-    assert resposta.status_code == 201
-    corpo = resposta.json()
-    assert corpo["numero"] == 1
-
-    partidas = await client.get(f"/api/v1/rodadas/{corpo['id']}/partidas", headers=headers)
-    assert len(partidas.json()) == 1
-
-
-async def test_gerar_chaveamento_automatico_decide_formato_por_nivel_pela_contagem(
-    client, db_session
-):
-    # formato_chaveamento=None na modalidade = decisao automatica por nivel:
-    # <=5 equipes = todos-contra-todos, 6+ = mata-mata. Nivel 1 (3 equipes) e
-    # nivel 2 (6 equipes) na MESMA modalidade, cada um com o formato certo.
-    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-7@tjr.app")
-    evento_id = await _criar_evento(client, headers)
-    modalidade_id = await _criar_modalidade(client, headers, evento_id, None)
-    for i in range(3):
-        await _criar_equipe_inscrita(client, headers, modalidade_id, f"N1 Equipe {i}", nivel=1)
-    for i in range(6):
-        await _criar_equipe_inscrita(client, headers, modalidade_id, f"N2 Equipe {i}", nivel=2)
-
-    resposta = await client.post(
-        "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers
-    )
-
-    assert resposta.status_code == 201
-
-    rodadas = await client.get(
-        "/api/v1/rodadas", params={"modalidade_id": modalidade_id}, headers=headers
-    )
-    partidas_por_nivel = {1: [], 2: []}
-    for rodada in rodadas.json()["itens"]:
-        resposta_partidas = await client.get(
-            f"/api/v1/rodadas/{rodada['id']}/partidas", headers=headers
-        )
-        for partida in resposta_partidas.json():
-            partidas_por_nivel[partida["nivel"]].append(partida)
-
-    assert partidas_por_nivel[1]
-    assert all(p["formato_chaveamento"] == "TODOS_CONTRA_TODOS" for p in partidas_por_nivel[1])
-    assert partidas_por_nivel[2]
-    assert all(p["formato_chaveamento"] == "MATA_MATA" for p in partidas_por_nivel[2])
-
-
 async def test_resetar_chaveamento_apaga_rodada_e_retorna_204(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-chav-4@tjr.app")
     evento_id = await _criar_evento(client, headers)
     modalidade_id = await _criar_modalidade(client, headers, evento_id, "MATA_MATA")
-    for i in range(4):
-        await _criar_equipe_inscrita(client, headers, modalidade_id, f"Equipe {i}")
+    equipe_a = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe A")
+    equipe_b = await _criar_equipe_inscrita(client, headers, modalidade_id, "Equipe B")
     await client.post(
-        "/api/v1/chaveamento/gerar", json={"modalidade_id": modalidade_id}, headers=headers
+        f"/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual",
+        json={**_ELIMINATORIA_R1, "equipe_a_id": equipe_a, "equipe_b_id": equipe_b},
+        headers=headers,
     )
 
     resposta = await client.post(

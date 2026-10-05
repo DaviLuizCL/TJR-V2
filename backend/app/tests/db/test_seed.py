@@ -28,7 +28,6 @@ from app.models.inscricao import Inscricao
 from app.models.modalidade import (
     Consolidacao,
     DecisaoPartida,
-    FormatoChaveamento,
     Modalidade,
     ModalidadeStatus,
     TipoDisputa,
@@ -36,7 +35,6 @@ from app.models.modalidade import (
 from app.models.partida import Partida
 from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
-from app.services.rodada import _rodadas_necessarias
 
 
 async def _criterios_da_modalidade(db_session, modalidades, nome_modalidade) -> list[Criterio]:
@@ -199,6 +197,26 @@ async def test_seed_fichas_cria_ficha_publicada_para_cada_modalidade_de_ficha_un
         assert len(fichas_da_modalidade) == 1
         assert fichas_da_modalidade[0].nivel is None
         assert fichas_da_modalidade[0].status == FichaStatus.PUBLICADA
+
+
+async def test_seed_fichas_resgate_alto_risco_pontua_lata_girada_separado_da_invertida(
+    db_session,
+):
+    # Pedido pos-TJR 2026: so girar a lata (sem chegar a inverter) tambem vale
+    # +50, como criterio proprio - soma com "invertido" se o arbitro marcar os
+    # dois.
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+    await seed_fichas(db_session, modalidades)
+
+    criterios = await _criterios_da_modalidade(db_session, modalidades, "Resgate de Alto Risco")
+    por_nome = {c.nome: c for c in criterios}
+
+    girada = por_nome["Objeto lata girado"]
+    assert girada.tipo == CriterioTipo.BOOLEANO
+    assert girada.categoria == CategoriaCriterio.PONTUACAO
+    assert girada.pontos == 50
+    assert "Objeto lata invertido de posição (ponta cabeça)" in por_nome
 
 
 async def test_seed_fichas_cria_uma_ficha_por_nivel_para_viagem_ao_centro_da_terra(db_session):
@@ -652,18 +670,11 @@ async def test_seed_arenas_resgate_no_plano_e_alto_risco_tem_uma_arena_por_nivel
 
 
 def _qtd_rodadas_esperada_no_seed(modalidade: Modalidade) -> int:
-    # MATA_MATA so pode ter a Rodada 1 pre-gerada: as proximas dependem de
-    # quem vence cada partida (avancar_se_rodada_completa gera dinamicamente
-    # conforme o chaveamento avanca) - nao da pra saber os confrontos de
-    # antemao. TODOS_CONTRA_TODOS (explicito ou decidido automaticamente,
-    # ver gerar_chaveamento_confronto) gera exatamente o que o metodo do
-    # circulo precisa pras equipes daquele nivel, nao mais o teto de
-    # `qtd_rodadas` (o seed credencia 4 equipes por nivel em toda modalidade
-    # de confronto, sempre <=5 -> sempre vira todos-contra-todos hoje).
+    # Confronto e 100% manual desde o pos-TJR 2026 (coordenador monta cada
+    # confronto na mao, em qualquer rodada) - o seed nao gera rodada nem
+    # partida nenhuma pra combate, so pras individuais.
     if modalidade.tipo_disputa == TipoDisputa.CONFRONTO:
-        if modalidade.formato_chaveamento == FormatoChaveamento.MATA_MATA:
-            return 1
-        return _rodadas_necessarias(4)
+        return 0
     return modalidade.qtd_rodadas
 
 
@@ -679,7 +690,7 @@ async def test_seed_rodadas_cria_qtd_rodadas_para_cada_modalidade(db_session):
     assert len(rodadas) == sum(_qtd_rodadas_esperada_no_seed(m) for m in modalidades)
 
 
-async def test_seed_rodadas_confronto_ja_vem_com_partidas(db_session):
+async def test_seed_rodadas_nao_gera_rodada_nem_partida_pra_confronto(db_session):
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
     equipes = await seed_equipes_credenciadas(db_session)
@@ -688,58 +699,13 @@ async def test_seed_rodadas_confronto_ja_vem_com_partidas(db_session):
 
     await seed_rodadas(db_session, modalidades, usuario_id=coordenador.id)
 
-    sumo = next(m for m in modalidades if m.nome == "Sumô")
-    resultado = await db_session.execute(select(Rodada).where(Rodada.modalidade_id == sumo.id))
-    primeira_rodada = next(r for r in resultado.scalars().all() if r.numero == 1)
-    resultado_partidas = await db_session.execute(
-        select(Partida).where(Partida.rodada_id == primeira_rodada.id)
-    )
-    assert len(resultado_partidas.scalars().all()) > 0
-
-
-async def test_seed_rodadas_mata_mata_nao_pre_gera_rodadas_futuras(db_session):
-    # Bug real (historico): seed_rodadas chamava o pareamento generico
-    # (round-robin, "metodo do circulo") pra toda modalidade de CONFRONTO,
-    # inclusive quando o formato era MATA_MATA - isso pre-criava rodadas
-    # futuras com confrontos que nao dependiam de quem venceria a rodada
-    # anterior (errado pro bracket) e deixava `gerar_chaveamento_confronto`
-    # inacessivel depois (409 CHAVEAMENTO_JA_INICIADO, ja que ja existia
-    # rodada). O seed real de 2026 nao seta mais formato_chaveamento
-    # explicito (vira decisao automatica por nivel - com 4 equipes
-    # credenciadas por nivel, sempre da <=5 e vira todos-contra-todos, ver
-    # test_seed_rodadas_cria_qtd_rodadas_para_cada_modalidade), mas o escape
-    # manual (coordenador forca MATA_MATA numa modalidade) ainda precisa
-    # desse comportamento certo - so a Rodada 1 pronta no seed; as seguintes
-    # vem de `avancar_se_rodada_completa`, so depois que as partidas da
-    # rodada atual fecharem de verdade.
-    evento = await seed_evento(db_session)
-    coordenador = await seed_coordenador(
-        db_session, email="rodadas-mata-mata@tjr.app", senha="senha-123"
-    )
-    modalidade_forcada = Modalidade(
-        evento_id=evento.id,
-        nome="Combate Forcado Mata-Mata",
-        tipo_disputa=TipoDisputa.CONFRONTO,
-        formato_chaveamento=FormatoChaveamento.MATA_MATA,
-        niveis_aplicaveis=[1, 2, 3, 4],
-        ficha_unica_entre_niveis=True,
-        qtd_rodadas=5,
-        tentativas_por_rodada=1,
-        consolidacao=Consolidacao.SOMA_RODADAS,
-        status=ModalidadeStatus.PUBLICADA,
-    )
-    db_session.add(modalidade_forcada)
-    await db_session.flush()
-    equipes = await seed_equipes_credenciadas(db_session)
-    await seed_inscricoes(db_session, [modalidade_forcada], equipes)
-
-    await seed_rodadas(db_session, [modalidade_forcada], usuario_id=coordenador.id)
-
+    ids_confronto = [m.id for m in modalidades if m.tipo_disputa == TipoDisputa.CONFRONTO]
+    assert ids_confronto
     resultado = await db_session.execute(
-        select(Rodada).where(Rodada.modalidade_id == modalidade_forcada.id)
+        select(Rodada).where(Rodada.modalidade_id.in_(ids_confronto))
     )
-    numeros = sorted(r.numero for r in resultado.scalars().all())
-    assert numeros == [1]
+    assert resultado.scalars().all() == []
+    assert (await db_session.execute(select(Partida))).scalars().all() == []
 
 
 async def test_seed_rodadas_e_idempotente(db_session):

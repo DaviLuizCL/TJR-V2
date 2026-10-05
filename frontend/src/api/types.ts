@@ -596,23 +596,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chaveamento/gerar": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Gerar Chaveamento */
-        post: operations["gerar_chaveamento_api_v1_chaveamento_gerar_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual": {
         parameters: {
             query?: never;
@@ -624,23 +607,6 @@ export interface paths {
         put?: never;
         /** Criar Partida Manual */
         post: operations["criar_partida_manual_api_v1_modalidades__modalidade_id__chaveamento_partida_manual_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/modalidades/{modalidade_id}/chaveamento/fase-de-grupos/gerar": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Gerar Fase De Grupos */
-        post: operations["gerar_fase_de_grupos_api_v1_modalidades__modalidade_id__chaveamento_fase_de_grupos_gerar_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1052,6 +1018,9 @@ export interface components {
             equipe_a_id: string;
             /** Equipe B Id */
             equipe_b_id?: string | null;
+            /** Rodada Numero */
+            rodada_numero: number;
+            formato_chaveamento: components["schemas"]["FormatoChaveamento"];
         };
         /** CriterioCreate */
         CriterioCreate: {
@@ -1373,14 +1342,6 @@ export interface components {
              * @default false
              */
             regenerar: boolean;
-        };
-        /** GerarChaveamentoRequest */
-        GerarChaveamentoRequest: {
-            /**
-             * Modalidade Id
-             * Format: uuid
-             */
-            modalidade_id: string;
         };
         /** GerarRodadasRequest */
         GerarRodadasRequest: {
@@ -3729,39 +3690,6 @@ export interface operations {
             };
         };
     };
-    gerar_chaveamento_api_v1_chaveamento_gerar_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GerarChaveamentoRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RodadaOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     criar_partida_manual_api_v1_modalidades__modalidade_id__chaveamento_partida_manual_post: {
         parameters: {
             query?: never;
@@ -3784,37 +3712,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartidaOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    gerar_fase_de_grupos_api_v1_modalidades__modalidade_id__chaveamento_fase_de_grupos_gerar_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                modalidade_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RodadaOut"][];
                 };
             };
             /** @description Validation Error */

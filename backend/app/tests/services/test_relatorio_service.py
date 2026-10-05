@@ -11,6 +11,7 @@ from app.models.equipe import Equipe
 from app.models.evento import Evento, EventoStatus
 from app.models.ficha import Ficha, FichaStatus
 from app.models.grupo import Grupo
+from app.models.inscricao import Inscricao
 from app.models.modalidade import (
     Consolidacao,
     FormatoChaveamento,
@@ -19,10 +20,11 @@ from app.models.modalidade import (
     TipoDisputa,
 )
 from app.models.partida import Partida
+from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
 from app.schemas.inscricao import InscricaoCreate
 from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
-from app.services.chaveamento import gerar_chaveamento_inicial
+from app.services.chaveamento import criar_partida_manual
 from app.services.ficha import publicar_ficha
 from app.services.inscricao import criar_inscricao
 from app.services.lancamento import confirmar_lancamento, criar_lancamento
@@ -139,6 +141,33 @@ def test_calcular_gerado_em_retorna_horario_atual_nao_data_fixa():
     assert antes <= resultado.astimezone(UTC) <= depois
 
 
+async def _montar_rodada_1(db_session, modalidade_id, *, usuario_id) -> Rodada:
+    """Pareia as inscritas em ordem de inscricao (eliminatoria, Rodada 1) - o
+    sistema nao gera chaveamento sozinho, entao o setup monta na mao.
+    """
+    ids = list(
+        (
+            await db_session.scalars(
+                select(Inscricao.equipe_id)
+                .where(Inscricao.modalidade_id == modalidade_id)
+                .order_by(Inscricao.criado_em)
+            )
+        ).all()
+    )
+    partida = None
+    for i in range(0, len(ids) - 1, 2):
+        partida = await criar_partida_manual(
+            db_session,
+            modalidade_id,
+            ids[i],
+            ids[i + 1],
+            rodada_numero=1,
+            formato=FormatoChaveamento.MATA_MATA,
+            usuario_id=usuario_id,
+        )
+    return await db_session.get(Rodada, partida.rodada_id)
+
+
 async def test_gerar_relatorio_auditoria_pdf_retorna_pdf_valido_com_lancamento(db_session):
     coordenador = await _criar_coordenador(db_session)
     arbitro = await _criar_arbitro(db_session)
@@ -146,7 +175,7 @@ async def test_gerar_relatorio_auditoria_pdf_retorna_pdf_valido_com_lancamento(d
     equipes = await _inscrever_equipes(db_session, modalidade, coordenador, 4)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
 
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     resultado = await db_session.execute(select(Partida).where(Partida.rodada_id == rodada.id))
     partida = resultado.scalars().first()
 
@@ -177,7 +206,7 @@ async def test_gerar_relatorio_auditoria_pdf_com_os_dois_lados_do_combate_lancad
     await _inscrever_equipes(db_session, modalidade, coordenador, 4)
     ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
 
-    rodada = await gerar_chaveamento_inicial(db_session, modalidade.id, usuario_id=coordenador.id)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
     resultado = await db_session.execute(select(Partida).where(Partida.rodada_id == rodada.id))
     partida = resultado.scalars().first()
 
@@ -220,9 +249,7 @@ async def test_gerar_relatorio_auditoria_evento_pdf_junta_todas_as_modalidades(d
     await _inscrever_equipes(db_session, modalidade_b, coordenador, 2)
     ficha_a, criterio_a = await _criar_ficha_com_criterio(db_session, modalidade_a, coordenador)
 
-    rodada_a = await gerar_chaveamento_inicial(
-        db_session, modalidade_a.id, usuario_id=coordenador.id
-    )
+    rodada_a = await _montar_rodada_1(db_session, modalidade_a.id, usuario_id=coordenador.id)
     resultado = await db_session.execute(select(Partida).where(Partida.rodada_id == rodada_a.id))
     partida_a = resultado.scalars().first()
     payload = LancamentoCreate(

@@ -15,7 +15,6 @@ from app.models.lancamento_item import LancamentoItem
 from app.models.modalidade import Consolidacao, FormatoChaveamento, Modalidade, TipoDisputa
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import Rodada
-from app.services.chaveamento import LIMITE_EQUIPES_TODOS_CONTRA_TODOS
 from app.services.modalidade import obter_modalidade
 
 
@@ -26,7 +25,7 @@ async def calcular_classificacao(db: AsyncSession, modalidade_id: UUID) -> list[
     original, com desempates configuraveis).
 
     Confronto: cada nivel pode estar num formato diferente (ver
-    `_formato_por_nivel`/`gerar_chaveamento_confronto`) - todos-contra-todos
+    `_formato_por_nivel`, decidido pelo tipo das partidas montadas na mao) - todos-contra-todos
     usa pontos de liga (vitoria/empate/derrota, `modalidade.pontos_vitoria`/
     `pontos_empate`); mata-mata nao tem nota, so vitorias/derrotas (ordenado
     por vitorias) e aponta quem eliminou a equipe.
@@ -39,14 +38,19 @@ async def calcular_classificacao(db: AsyncSession, modalidade_id: UUID) -> list[
     return await _classificacao_individual(db, modalidade)
 
 
+# Previa de classificacao pra nivel que ainda nao tem partida nenhuma montada
+# (ate esse tanto de equipes = tabela de liga, acima = mata-mata).
+LIMITE_EQUIPES_TODOS_CONTRA_TODOS = 5
+
+
 async def _formato_por_nivel(
     db: AsyncSession, modalidade: Modalidade
 ) -> dict[int, FormatoChaveamento]:
     """Formato de cada nivel pra fins de classificacao: o que a(s) partida(s)
     ja geradas daquele nivel decidiram (fonte da verdade, gravada em
     Partida.formato_chaveamento no momento da criacao - ver
-    gerar_chaveamento_confronto), ou uma previa pela mesma regra de
-    contagem quando o nivel ainda nao tem chaveamento gerado.
+    criar_partida_manual), ou uma previa por contagem de equipes quando o
+    nivel ainda nao tem partida montada.
     """
     resultado = await db.execute(
         select(Partida.nivel, Partida.formato_chaveamento)

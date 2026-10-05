@@ -161,21 +161,6 @@ export function FaseDeGruposBuilder({
     await invalidar();
   }
 
-  async function gerarFaseDeGrupos() {
-    setEnviando(true);
-    setErro(null);
-    const { error } = await api.POST(
-      "/api/v1/modalidades/{modalidade_id}/chaveamento/fase-de-grupos/gerar",
-      { params: { path: { modalidade_id: modalidadeId } } },
-    );
-    setEnviando(false);
-    if (error) {
-      setErro(extrairErro(error).mensagem);
-      return;
-    }
-    await invalidar();
-  }
-
   return (
     <div
       role="dialog"
@@ -185,9 +170,9 @@ export function FaseDeGruposBuilder({
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-1 text-lg font-semibold text-slate-800">Montar fase de grupos</h2>
         <p className="mb-4 text-sm text-slate-500">
-          Crie as chaves (grupos) do nível, distribua as equipes entre elas, e gere o
-          todos-contra-todos de cada chave. Depois que a fase de grupos fechar, monte o mata-mata
-          na aba de chaveamento manual.
+          Crie as chaves (grupos) do nível e distribua as equipes entre elas. Os confrontos são
+          montados em "Montar chaveamento manual" com o tipo "Fase de grupos" — quando as duas
+          equipes estão na mesma chave, o confronto entra na classificação dela.
         </p>
 
         {niveis.length > 1 && (
@@ -314,15 +299,7 @@ export function FaseDeGruposBuilder({
           )}
         </ul>
 
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={gerarFaseDeGrupos}
-            disabled={enviando || chavesDoNivel.length === 0}
-            className="rounded bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            Gerar fase de grupos
-          </button>
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={onFechar}

@@ -75,23 +75,16 @@ async def test_gerar_rodadas_cria_todas_de_uma_vez(client, db_session):
     assert [r["numero"] for r in corpo] == [1, 2, 3]
 
 
-async def test_gerar_rodadas_confronto_traz_partidas_pareadas(client, db_session):
+async def test_gerar_rodadas_confronto_retorna_422(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-gerar-2@tjr.app")
     evento_id = await _criar_evento(client, headers)
     modalidade_id = await _criar_modalidade(
         client, headers, evento_id, tipo_disputa="CONFRONTO", qtd_rodadas=1
     )
-    for i in range(4):
-        await _criar_equipe_inscrita(client, headers, modalidade_id, nome=f"Equipe {i}")
 
-    await client.post(
+    resposta = await client.post(
         "/api/v1/rodadas/gerar", json={"modalidade_id": modalidade_id}, headers=headers
     )
 
-    rodadas = await client.get(f"/api/v1/rodadas?modalidade_id={modalidade_id}", headers=headers)
-    rodada_id = rodadas.json()["itens"][0]["id"]
-
-    partidas = await client.get(f"/api/v1/rodadas/{rodada_id}/partidas", headers=headers)
-
-    assert partidas.status_code == 200
-    assert len(partidas.json()) == 2
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "GERAR_RODADAS_SO_INDIVIDUAL"

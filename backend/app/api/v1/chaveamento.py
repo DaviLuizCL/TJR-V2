@@ -8,26 +8,12 @@ from app.db.session import get_db
 from app.models.usuario import Papel, Usuario
 from app.schemas.chaveamento import (
     CriarPartidaManualRequest,
-    GerarChaveamentoRequest,
     ResetarChaveamentoRequest,
 )
 from app.schemas.partida import PartidaOut
-from app.schemas.rodada import RodadaOut
 from app.services import chaveamento as chaveamento_service
 
 router = APIRouter()
-
-
-@router.post("/chaveamento/gerar", response_model=RodadaOut, status_code=201)
-async def gerar_chaveamento(
-    dto: GerarChaveamentoRequest,
-    db: AsyncSession = Depends(get_db),
-    usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
-) -> RodadaOut:
-    rodadas = await chaveamento_service.gerar_chaveamento_confronto(
-        db, dto.modalidade_id, usuario_id=usuario.id
-    )
-    return RodadaOut.model_validate(rodadas[0])
 
 
 @router.post(
@@ -42,25 +28,15 @@ async def criar_partida_manual(
     usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
 ) -> PartidaOut:
     partida = await chaveamento_service.criar_partida_manual(
-        db, modalidade_id, dto.equipe_a_id, dto.equipe_b_id, usuario_id=usuario.id
+        db,
+        modalidade_id,
+        dto.equipe_a_id,
+        dto.equipe_b_id,
+        rodada_numero=dto.rodada_numero,
+        formato=dto.formato_chaveamento,
+        usuario_id=usuario.id,
     )
     return PartidaOut.model_validate(partida)
-
-
-@router.post(
-    "/modalidades/{modalidade_id}/chaveamento/fase-de-grupos/gerar",
-    response_model=list[RodadaOut],
-    status_code=201,
-)
-async def gerar_fase_de_grupos(
-    modalidade_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
-) -> list[RodadaOut]:
-    rodadas = await chaveamento_service.gerar_fase_de_grupos(
-        db, modalidade_id, usuario_id=usuario.id
-    )
-    return [RodadaOut.model_validate(r) for r in rodadas]
 
 
 @router.post("/modalidades/{modalidade_id}/chaveamento/reset", status_code=204)
