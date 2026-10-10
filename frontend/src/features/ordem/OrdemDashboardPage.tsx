@@ -9,7 +9,7 @@ interface ModalidadeResumo {
   tipo_disputa: string;
 }
 
-export function HorarioDashboardPage() {
+export function OrdemDashboardPage() {
   const { eventoId } = useParams<{ eventoId: string }>();
 
   const { data: modalidades, isLoading } = useQuery({
@@ -40,10 +40,10 @@ export function HorarioDashboardPage() {
           >
             <p className="font-medium text-slate-800">{modalidade.nome}</p>
             <Link
-              to={`/eventos/${eventoId}/modalidades/${modalidade.id}/horarios`}
+              to={`/eventos/${eventoId}/modalidades/${modalidade.id}/ordem`}
               className="text-sm font-medium text-slate-700 underline"
             >
-              Ver horários
+              Ver sequência
             </Link>
           </li>
         ))}

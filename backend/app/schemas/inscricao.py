@@ -15,5 +15,15 @@ class InscricaoOut(BaseModel):
     id: UUID
     equipe_id: UUID
     modalidade_id: UUID
+    ordem_apresentacao: int | None = None
     criado_em: datetime
     atualizado_em: datetime
+
+
+class SortearOrdemIn(BaseModel):
+    nivel: int
+
+
+class DefinirOrdemIn(BaseModel):
+    nivel: int
+    equipe_ids: list[UUID]

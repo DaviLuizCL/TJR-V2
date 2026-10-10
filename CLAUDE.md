@@ -3,6 +3,12 @@
 Contexto permanente do projeto. Leia este arquivo inteiro antes de escrever qualquer código.
 O que **fazer agora** está no prompt da sessão, não aqui. Aqui está **como fazer**.
 
+> **⚠ Servidor de produção fora do ar desde 10/10/2026** (EC2 `tjr.pontuai.online` morreu).
+> Até subir de novo, **todo desenvolvimento e teste é local**: stack dev desta máquina
+> (`docker compose up -d`, sem o `-f docker-compose.prod.yml`), nada de deploy/SSH. O banco
+> local é só de desenvolvimento — pode subir, migrar e rodar teste à vontade. Quando o servidor
+> voltar, apague este aviso.
+
 ---
 
 ## 1. O que é o sistema
@@ -109,8 +115,9 @@ use exatamente estas palavras em models, endpoints, tipos e componentes.
 | `grupo` | Seção da ficha (ex.: "Parte Artística", "Parte Técnica"). |
 | `criterio` | Linha da ficha que gera ou desconta ponto. |
 | `rodada` | Uma passagem da modalidade (Rodada 1, 2, 3), com horário. |
-| `arena` | Estação física de uma modalidade individual onde as equipes se apresentam a cada rodada. |
-| `agendamento` | Horário e arena atribuídos a uma equipe dentro de uma rodada (modalidade individual). |
+| `arena` | Estação física de uma modalidade individual. **Dormente desde 10/10/2026**: saiu do front, a arena é decidida na hora (ver seção 12). |
+| `agendamento` | Horário e arena de uma equipe numa rodada. **Dormente desde 10/10/2026**, substituído por `ordem_apresentacao`. |
+| `ordem_apresentacao` | Posição (1..N) da equipe na fila de apresentação do seu nível, em `inscricao`. Mesma pra todas as rodadas. |
 | `tentativa` | Subdivisão da rodada (ex.: "1º cubo" e "2º cubo" em Viagem ao Centro da Terra). |
 | `equipe` | Time inscrito, pertence a um nível. |
 | `inscricao` | Vínculo equipe ↔ modalidade. |
@@ -213,7 +220,7 @@ Se alguma tarefa parecer exigir quebrar uma destas, **pare e pergunte**.
 fisicamente equivalentes no ginásio real, então a trava só bloqueava o card de pontuar sem
 carregar informação útil nenhuma. `criar_lancamento` não exige mais `Agendamento` pra
 INDIVIDUAL; `PontuarPage.tsx` mostra arena/horário como informação extra quando existir, nunca
-mais como pré-requisito. Ver histórico na seção 12. Não reintroduzir sem pedido explícito.
+mais como pré-requisito. (Desde 10/10/2026 nem isso: arena/horário saíram do front inteiro.) Ver histórico na seção 12. Não reintroduzir sem pedido explícito.
 
 ---
 
@@ -1436,4 +1443,80 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
      coordenador) e selo "Ausente". Equipe ausente some das opções do `ChaveamentoManualBuilder` e
      do seletor de adicionar em chave (`FaseDeGruposBuilder`), e `criar_partida_manual` recusa com
      `422 EQUIPE_AUSENTE`. Presença é por equipe, não por modalidade.
+
+   **Painel de Administração "à prova de leigo" + arena substituída por ordem de apresentação**
+   (10/10/2026). Motivo: o usuário não vai estar no próximo evento pra mexer em nada, e quem vai
+   operar é um coordenador sem conhecimento técnico. **Servidor de produção (EC2) caiu nesse
+   dia**: tudo foi feito e verificado só na stack dev local (aviso no topo deste arquivo).
+   Planejado em `EnterPlanMode` e implementado em TDD, bloco a bloco:
+
+   - **`/eventos/:id/admin` (`features/admin/AdminPage.tsx`)**: cartões grandes com ícone e uma
+     frase cada, só `COORDENADOR`. Link "Administração" no Header **substituiu "Staff"** (virou o
+     cartão "Juízes e senhas"). Botões diretos de "Baixar backup" e "Relatório geral (PDF)".
+   - **Ordem de apresentação no lugar de arena/horário**: `Inscricao.ordem_apresentacao` (migration
+     `2b573a27850c`), `services/ordem_apresentacao.py` (`sortear_ordem` com `random.shuffle` por
+     nível, só equipe `ativo`; `definir_ordem` manual, recusa lista incompleta/repetida com
+     `422 ORDEM_INCOMPLETA`; só `INDIVIDUAL`, `422 ORDEM_SO_INDIVIDUAL`). Rotas
+     `POST /modalidades/{id}/ordem-apresentacao/sortear` e `PUT .../ordem-apresentacao`. Front:
+     `features/ordem/OrdemApresentacaoPage` (sortear, "sortear de novo" com confirmação inline,
+     ↑/↓ que salvam na hora; árbitro só vê) e aba "Ordem de apresentação" no `IndividualHubPage`
+     (`?sub=ordem`). `PontuarPage` ordena por rodada → tentativa → ordem → nome e mostra
+     "Nº a se apresentar". **Removido do front**: `HorarioPage`, `HorarioDashboardPage`, rota
+     `/horarios`, seção de arenas do wizard, toda exibição de arena/agendamento. **Backend de
+     arena/agendamento ficou dormente** (tabelas, rotas e o seed continuam): decisão consciente
+     de não fazer migration destrutiva; remover de vez é decisão nova.
+   - **Anular lançamento** (`anular_lancamento`, `POST /lancamentos/{id}/anular`, `COORDENADOR`,
+     justificativa **obrigatória**, ao contrário da correção): aceita `PENDENTE` ou `CONFIRMADO`
+     (fecha o gap antigo de "não dá pra refazer lançamento PENDENTE"), vira `ANULADO`, audit
+     `ANULAR`. A equipe volta a ficar pendente (`criar_lancamento` já ignorava `ANULADO`). Em
+     confronto, `registrar_resultado_lancamento` agora **reabre a partida** (`AGENDADA`,
+     `REABRIR`) quando falta combate confirmado e ela já estava decidida; a gravação de status
+     foi extraída pra `_gravar_status_partida`. Tela `admin/CorrigirPontuacaoPage`: modalidade +
+     busca de equipe, "Corrigir nota" (só `CONFIRMADO`, leva pro `LancamentoCorrecaoPage`) e
+     "Anular".
+   - **Checklist do dia** (`services/checklist.py`, `GET /admin/checklist?evento_id=`,
+     `COORDENADOR`/`SECRETARIA`): por modalidade, itens com `codigo` estável (`FICHA`, `EQUIPES`,
+     `RODADAS`/`ORDEM` pra individual, `CONFRONTOS` pra combate) e geral (`JUIZES`,
+     `NOTAS_PENDENTES`), com mensagem pronta em português. O backend não conhece rota do front: o
+     `ChecklistPage` mapeia `codigo` → tela do botão "Resolver". Rótulo de nível duplicado de
+     propósito (`_rotulo_nivel`, 1 = ABSOLUTO, igual a `lib/nivel.ts`).
+   - **Staff**: `PATCH /usuarios/{id}` (nome/papel/ativo) e `POST /usuarios/{id}/senha` (mín. 6,
+     audit `TROCAR_SENHA` sem a senha). O coordenador não pode se desativar nem tirar o próprio
+     papel (`422 NAO_PODE_ALTERAR_PROPRIO_ACESSO`), pra ninguém se trancar fora. `UsuarioListPage`
+     ganhou o painel "Editar" por linha.
+   - **Resetar chaveamento pelo admin**: modal extraído pra `chaveamento/ResetarChaveamentoModal`
+     (reaproveitado pela `ChaveamentoPage` e pela nova `admin/ResetarChaveamentoAdminPage`).
+   - **Ficha**: só o aviso do `FichaEditorPage` ficou mais claro (o versionamento automático já
+     existia). A pendência da "lata girada" em produção continua: é editar a ficha pela tela
+     quando o servidor voltar.
+   - **Importar planilha pela tela**: lógica movida de `scripts/lista_2026/importar.py` pra
+     `services/importacao.py` (`importar_planilha(..., simular=)`; simulação roda num
+     `begin_nested()` e dá rollback). O script agora só chama o serviço.
+     `POST /admin/importar-equipes` (multipart, `simular=true` por padrão). Tela em 2 passos:
+     prévia → confirmar.
+   - **Backup** (`services/backup.py`, `GET /admin/backup`, só `COORDENADOR`): roda
+     `pg_dump --format=custom`, com a senha só via `PGPASSWORD` (nunca em argumento). A imagem
+     da api ganhou `postgresql-client` (Debian 13 = client **17**, servidor é 16). **Restaurar
+     exige o `pg_restore` 17 do container `api`**: o 16 do container `db` recusa o arquivo.
+     Procedimento testado de verdade e documentado no `DEPLOY.md` seção 3b.
+   - **Bug latente achado no caminho**: o `backend/Dockerfile` copiava só `pyproject.toml`, sem o
+     `poetry.lock`. Todo build resolvia as dependências do zero, e `sqlalchemy = "^2.0.35"` passou
+     a puxar uma versão que não traz mais `greenlet`: a api não subia (`ImportError ... greenlet`).
+     Corrigido copiando o `poetry.lock` (`COPY pyproject.toml poetry.lock ./`). **Qualquer
+     rebuild de produção antes desta correção teria derrubado a api.**
+   - Lint: `ruff check .` acusa erros antigos em `scripts/credenciamento/` e `scripts/dados_teste/`
+     (não mexidos nesta sessão); `ruff check app` está limpo.
+   - Suíte: backend 579 (era 510), frontend 461 (era 422), typecheck/lint do front limpos.
+     Verificado no Chromium headless contra a stack local: sortear → mover equipe → Pontuar
+     respeita a ordem; checklist; telas de admin; layout de 390px sem rolagem horizontal; zero
+     erro de console.
+   - **Mesma sessão, depois**: na tela, "Ordem de apresentação" virou **"Sequência de competição"**
+     (aba do hub, título, cartão do admin, checklist, "Nº na sequência" no card de Pontuar). O
+     nome interno continua `ordem_apresentacao`/`ordem` (campo, rotas, `?sub=ordem`, pasta
+     `features/ordem`), pra não exigir migration. PDF pro telão:
+     `GET /modalidades/{id}/sequencia-competicao.pdf` (`_PAPEIS_LEITURA`, árbitro incluso),
+     `ordem_apresentacao.listar_sequencia` (mesma ordem do Pontuar: sorteada e, sem sorteio,
+     alfabética; equipe desativada fica de fora, ausente sai marcada) +
+     `gerar_sequencia_pdf` (A4 paisagem, uma página por nível, fonte que encolhe com nível
+     grande). Botão "📺 Gerar PDF pro telão" na `OrdemApresentacaoPage`.
 

@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1 import (
+    admin,
     agendamentos,
     arenas,
     auth,
@@ -53,6 +54,7 @@ app.include_router(chave.router, prefix="/api/v1", tags=["chave"])
 app.include_router(arenas.router, prefix="/api/v1", tags=["arenas"])
 app.include_router(agendamentos.router, prefix="/api/v1", tags=["agendamentos"])
 app.include_router(usuarios.router, prefix="/api/v1", tags=["usuarios"])
+app.include_router(admin.router, prefix="/api/v1", tags=["admin"])
 
 
 @app.exception_handler(AppError)

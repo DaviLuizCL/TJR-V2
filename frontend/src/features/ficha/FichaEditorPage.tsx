@@ -534,9 +534,13 @@ export function FichaEditorPage() {
       </div>
 
       {ficha.status === "PUBLICADA" && (
-        <p className="mb-4 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Esta ficha esta publicada. Qualquer edicao cria uma nova versao automaticamente.
-        </p>
+        <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p className="font-semibold">Esta ficha está publicada (em uso pelos juízes).</p>
+          <p>
+            Qualquer edição cria uma nova versão automaticamente, e as próximas notas já usam a
+            versão nova. As notas já lançadas não mudam: continuam valendo pela versão antiga.
+          </p>
+        </div>
       )}
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

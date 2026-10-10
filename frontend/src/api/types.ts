@@ -215,6 +215,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modalidades/{modalidade_id}/ordem-apresentacao/sortear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sortear Ordem Apresentacao */
+        post: operations["sortear_ordem_apresentacao_api_v1_modalidades__modalidade_id__ordem_apresentacao_sortear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modalidades/{modalidade_id}/ordem-apresentacao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Definir Ordem Apresentacao */
+        put: operations["definir_ordem_apresentacao_api_v1_modalidades__modalidade_id__ordem_apresentacao_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modalidades/{modalidade_id}/sequencia-competicao.pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Baixar Sequencia Competicao Pdf */
+        get: operations["baixar_sequencia_competicao_pdf_api_v1_modalidades__modalidade_id__sequencia_competicao_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rodadas": {
         parameters: {
             query?: never;
@@ -365,6 +416,23 @@ export interface paths {
         put?: never;
         /** Corrigir Lancamento */
         post: operations["corrigir_lancamento_api_v1_lancamentos__lancamento_id__corrigir_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lancamentos/{lancamento_id}/anular": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Anular Lancamento */
+        post: operations["anular_lancamento_api_v1_lancamentos__lancamento_id__anular_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -804,6 +872,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usuarios/{usuario_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Atualizar Usuario */
+        patch: operations["atualizar_usuario_api_v1_usuarios__usuario_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/usuarios/{usuario_id}/senha": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Definir Senha */
+        post: operations["definir_senha_api_v1_usuarios__usuario_id__senha_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Obter Checklist */
+        get: operations["obter_checklist_api_v1_admin_checklist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/importar-equipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Importar Equipes */
+        post: operations["importar_equipes_api_v1_admin_importar_equipes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Baixar Backup */
+        get: operations["baixar_backup_api_v1_admin_backup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -916,6 +1069,14 @@ export interface components {
             /** Ativo */
             ativo?: boolean | null;
         };
+        /** Body_importar_equipes_api_v1_admin_importar_equipes_post */
+        Body_importar_equipes_api_v1_admin_importar_equipes_post: {
+            /**
+             * Arquivo
+             * Format: binary
+             */
+            arquivo: string;
+        };
         /**
          * CategoriaCriterio
          * @enum {string}
@@ -959,6 +1120,35 @@ export interface components {
             nome: string;
             /** Equipe Ids */
             equipe_ids: string[];
+        };
+        /** ChecklistItem */
+        ChecklistItem: {
+            /** Codigo */
+            codigo: string;
+            /** Ok */
+            ok: boolean;
+            /** Mensagem */
+            mensagem: string;
+        };
+        /** ChecklistModalidade */
+        ChecklistModalidade: {
+            /**
+             * Modalidade Id
+             * Format: uuid
+             */
+            modalidade_id: string;
+            /** Nome */
+            nome: string;
+            tipo_disputa: components["schemas"]["TipoDisputa"];
+            /** Itens */
+            itens: components["schemas"]["ChecklistItem"][];
+        };
+        /** ChecklistOut */
+        ChecklistOut: {
+            /** Gerais */
+            gerais: components["schemas"]["ChecklistItem"][];
+            /** Modalidades */
+            modalidades: components["schemas"]["ChecklistModalidade"][];
         };
         /** ClassificacaoChaveItem */
         ClassificacaoChaveItem: {
@@ -1111,6 +1301,13 @@ export interface components {
          * @enum {string}
          */
         DecisaoPartida: "COMBATES_VENCIDOS" | "SOMA_PONTOS";
+        /** DefinirOrdemIn */
+        DefinirOrdemIn: {
+            /** Nivel */
+            nivel: number;
+            /** Equipe Ids */
+            equipe_ids: string[];
+        };
         /** DetalheCriterio */
         DetalheCriterio: {
             /**
@@ -1423,6 +1620,8 @@ export interface components {
              * Format: uuid
              */
             modalidade_id: string;
+            /** Ordem Apresentacao */
+            ordem_apresentacao?: number | null;
             /**
              * Criado Em
              * Format: date-time
@@ -1467,6 +1666,11 @@ export interface components {
             valor: number | null;
             /** Pontos */
             pontos: number;
+        };
+        /** LancamentoAnular */
+        LancamentoAnular: {
+            /** Justificativa */
+            justificativa: string;
         };
         /** LancamentoAuditoriaOut */
         LancamentoAuditoriaOut: {
@@ -1997,6 +2201,21 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** RelatorioImportacao */
+        RelatorioImportacao: {
+            /** Simulacao */
+            simulacao: boolean;
+            /** Linhas */
+            linhas: number;
+            /** Equipes Novas */
+            equipes_novas: number;
+            /** Inscricoes Novas */
+            inscricoes_novas: number;
+            /** Ignoradas */
+            ignoradas: number;
+            /** Erros */
+            erros: string[];
+        };
         /** ResetarChaveamentoRequest */
         ResetarChaveamentoRequest: {
             /** Justificativa */
@@ -2056,6 +2275,11 @@ export interface components {
             horario_inicio?: string | null;
             status?: components["schemas"]["RodadaStatus"] | null;
         };
+        /** SenhaIn */
+        SenhaIn: {
+            /** Senha */
+            senha: string;
+        };
         /** SimulacaoRequest */
         SimulacaoRequest: {
             /** Valores */
@@ -2073,6 +2297,11 @@ export interface components {
             detalhamento_por_criterio: components["schemas"]["DetalheCriterio"][];
             /** Modificadores Aplicados */
             modificadores_aplicados: components["schemas"]["ModificadorAplicado"][];
+        };
+        /** SortearOrdemIn */
+        SortearOrdemIn: {
+            /** Nivel */
+            nivel: number;
         };
         /**
          * TipoDisputa
@@ -2118,6 +2347,14 @@ export interface components {
             papel: components["schemas"]["Papel"];
             /** Ativo */
             ativo: boolean;
+        };
+        /** UsuarioUpdate */
+        UsuarioUpdate: {
+            /** Nome */
+            nome?: string | null;
+            papel?: components["schemas"]["Papel"] | null;
+            /** Ativo */
+            ativo?: boolean | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2752,6 +2989,103 @@ export interface operations {
             };
         };
     };
+    sortear_ordem_apresentacao_api_v1_modalidades__modalidade_id__ordem_apresentacao_sortear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SortearOrdemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    definir_ordem_apresentacao_api_v1_modalidades__modalidade_id__ordem_apresentacao_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefinirOrdemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    baixar_sequencia_competicao_pdf_api_v1_modalidades__modalidade_id__sequencia_competicao_pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     listar_rodadas_api_v1_rodadas_get: {
         parameters: {
             query?: {
@@ -3125,6 +3459,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LancamentoCorrigir"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LancamentoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    anular_lancamento_api_v1_lancamentos__lancamento_id__anular_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lancamento_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LancamentoAnular"];
             };
         };
         responses: {
@@ -4218,6 +4587,161 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    atualizar_usuario_api_v1_usuarios__usuario_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                usuario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UsuarioUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsuarioOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    definir_senha_api_v1_usuarios__usuario_id__senha_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                usuario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SenhaIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obter_checklist_api_v1_admin_checklist_get: {
+        parameters: {
+            query: {
+                evento_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    importar_equipes_api_v1_admin_importar_equipes_post: {
+        parameters: {
+            query: {
+                evento_id: string;
+                simular?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_importar_equipes_api_v1_admin_importar_equipes_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelatorioImportacao"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    baixar_backup_api_v1_admin_backup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
                 };
             };
         };

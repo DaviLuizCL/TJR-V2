@@ -17,6 +17,7 @@ interface RodadaItem {
 
 interface InscricaoItem {
   equipe_id: string;
+  ordem_apresentacao?: number | null;
 }
 
 interface EquipeItem {
@@ -31,30 +32,10 @@ interface LancamentoResumo {
   status: string;
 }
 
-interface ArenaItem {
-  id: string;
-  nome: string;
-}
-
-interface AgendamentoItem {
-  rodada_id: string;
-  equipe_id: string;
-  arena_id: string;
-  horario_inicio: string;
-}
-
 interface Pendencia {
   equipe: EquipeItem;
   rodada: RodadaItem;
   tentativa: number;
-}
-
-function formatarHorario(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
-    timeZone: "America/Fortaleza",
-    dateStyle: "short",
-    timeStyle: "short",
-  });
 }
 
 export function PontuarPage() {
@@ -114,6 +95,11 @@ export function PontuarPage() {
   }
 
   const idsInscritos = new Set((inscricoes ?? []).map((i) => i.equipe_id));
+  // Sequencia de competicao sorteada pelo coordenador (mesma pra todas as
+  // rodadas). Arena nao existe mais: a equipe vai pra arena que estiver livre.
+  const ordemPorEquipe = new Map(
+    (inscricoes ?? []).map((i) => [i.equipe_id, i.ordem_apresentacao ?? null]),
+  );
   const equipesInscritas = (equipesTodas ?? []).filter((e) => idsInscritos.has(e.id));
   const niveisDisponiveis = Array.from(new Set(equipesInscritas.map((e) => e.nivel))).sort(
     (a, b) => a - b,
@@ -145,32 +131,6 @@ export function PontuarPage() {
     );
   }
 
-  const { data: arenas } = useQuery({
-    queryKey: ["arenas", modalidadeId],
-    queryFn: async () => {
-      const { data } = await api.GET("/api/v1/arenas", {
-        params: { query: { modalidade_id: modalidadeId, size: 200 } },
-      });
-      return (data?.itens ?? []) as ArenaItem[];
-    },
-    enabled: !!modalidadeId,
-  });
-  const arenaPorId = new Map((arenas ?? []).map((a) => [a.id, a.nome]));
-
-  const { data: agendamentos } = useQuery({
-    queryKey: ["agendamentos", modalidadeId],
-    queryFn: async () => {
-      const { data } = await api.GET("/api/v1/agendamentos", {
-        params: { query: { modalidade_id: modalidadeId, size: 200 } },
-      });
-      return (data?.itens ?? []) as AgendamentoItem[];
-    },
-    enabled: !!modalidadeId,
-  });
-  const agendamentoPorRodadaEquipe = new Map(
-    (agendamentos ?? []).map((a) => [`${a.rodada_id}:${a.equipe_id}`, a]),
-  );
-
   const tentativasPorRodada = modalidade?.tentativas_por_rodada ?? 1;
 
   function proximaPendencia(equipeId: string): { rodada: RodadaItem; tentativa: number } | null {
@@ -200,6 +160,9 @@ export function PontuarPage() {
   pendencias.sort((a, b) => {
     if (a.rodada.numero !== b.rodada.numero) return a.rodada.numero - b.rodada.numero;
     if (a.tentativa !== b.tentativa) return a.tentativa - b.tentativa;
+    const ordemA = ordemPorEquipe.get(a.equipe.id) ?? Number.POSITIVE_INFINITY;
+    const ordemB = ordemPorEquipe.get(b.equipe.id) ?? Number.POSITIVE_INFINITY;
+    if (ordemA !== ordemB) return ordemA - ordemB;
     return a.equipe.nome.localeCompare(b.equipe.nome);
   });
 
@@ -290,10 +253,10 @@ export function PontuarPage() {
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
           <p>Nenhuma rodada foi criada para esta modalidade. Gere as rodadas antes de pontuar.</p>
           <Link
-            to={`/eventos/${eventoId}/modalidades/${modalidadeId}/horarios`}
+            to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas`}
             className="mt-1 inline-block text-xs font-medium text-amber-900 underline"
           >
-            Gerar horário →
+            Gerar rodadas →
           </Link>
         </div>
       )}
@@ -310,7 +273,7 @@ export function PontuarPage() {
 
       <ul className="grid gap-3 sm:grid-cols-2">
         {pendenciasExibidas.map(({ equipe, rodada, tentativa }) => {
-          const agendamento = agendamentoPorRodadaEquipe.get(`${rodada.id}:${equipe.id}`);
+          const ordem = ordemPorEquipe.get(equipe.id);
 
           const cabecalho = (
             <div className="flex items-start justify-between gap-2">
@@ -324,7 +287,10 @@ export function PontuarPage() {
           );
           const corpo = (
             <>
-              <p className="text-sm text-slate-500">{rotuloNivel(equipe.nivel)}</p>
+              <p className="text-sm text-slate-500">
+                {rotuloNivel(equipe.nivel)}
+                {ordem ? ` · ${ordem}º na sequência` : ""}
+              </p>
               <p className="mt-2 text-sm font-medium text-slate-700">
                 Rodada {rodada.numero}
                 {tentativasPorRodada > 1 ? ` · Tentativa ${tentativa}` : ""}
@@ -332,11 +298,6 @@ export function PontuarPage() {
             </>
           );
 
-          // Trava de agendamento removida a pedido do coordenador (TJR 2026):
-          // na pratica as arenas de uma modalidade individual sao
-          // fisicamente equivalentes no dia do evento, entao o card fica
-          // sempre clicavel -- so mostra a arena/horario quando o
-          // agendamento existir (informativo, nao bloqueante).
           return (
             <li key={equipe.id}>
               <Link
@@ -345,12 +306,6 @@ export function PontuarPage() {
               >
                 {cabecalho}
                 {corpo}
-                {agendamento && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    {arenaPorId.get(agendamento.arena_id) ?? "Arena"} ·{" "}
-                    {formatarHorario(agendamento.horario_inicio)}
-                  </p>
-                )}
               </Link>
             </li>
           );

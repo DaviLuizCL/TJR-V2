@@ -31,8 +31,6 @@ function renderPage(caminho = "/eventos/evt-1/modalidades/mod-1/pontuar") {
 interface MockConfig {
   tentativasPorRodada?: number;
   lancamentosPorRodada?: Record<string, unknown[]>;
-  arenas?: unknown[];
-  agendamentos?: unknown[];
   equipes?: unknown[];
   inscricoes?: unknown[];
   rodadas?: unknown[];
@@ -86,30 +84,6 @@ function mockGet(cfg: MockConfig = {}) {
           page: 1,
           size: 200,
         },
-        error: undefined,
-      } as never;
-    }
-    if (path === "/api/v1/arenas") {
-      const arenas = cfg.arenas ?? [
-        { id: "are-padrao", modalidade_id: "mod-1", nome: "Arena Padrão", niveis_aplicaveis: null, ativo: true },
-      ];
-      return {
-        data: { itens: arenas, total: arenas.length, page: 1, size: 200 },
-        error: undefined,
-      } as never;
-    }
-    if (path === "/api/v1/agendamentos") {
-      // Por padrao, toda equipe inscrita ja tem arena atribuida em rod-1 e rod-2
-      // (cobre os cenarios de teste que nao envolvem a regra de arena em si).
-      // Testes que exercitam especificamente a ausencia de agendamento passam
-      // `agendamentos` explicitamente (inclusive `[]`).
-      const agendamentosPadrao = (equipes as { id: string }[]).flatMap((equipe) => [
-        { id: `ag-${equipe.id}-rod-1`, rodada_id: "rod-1", equipe_id: equipe.id, arena_id: "are-padrao", ordem_na_arena: 0, horario_inicio: "2026-08-10T08:00:00Z" },
-        { id: `ag-${equipe.id}-rod-2`, rodada_id: "rod-2", equipe_id: equipe.id, arena_id: "are-padrao", ordem_na_arena: 0, horario_inicio: "2026-08-10T09:00:00Z" },
-      ]);
-      const agendamentos = cfg.agendamentos ?? agendamentosPadrao;
-      return {
-        data: { itens: agendamentos, total: agendamentos.length, page: 1, size: 200 },
         error: undefined,
       } as never;
     }
@@ -208,36 +182,6 @@ describe("PontuarPage", () => {
     );
   });
 
-  it("equipe sem arena atribuida na rodada pendente continua clicavel (trava de arena removida)", async () => {
-    // Regra removida a pedido do coordenador (TJR 2026): na pratica as
-    // arenas de uma modalidade individual sao fisicamente equivalentes, e
-    // exigir agendamento formal antes de liberar o card so virou atrito.
-    // Ver historico em CLAUDE.md.
-    mockGet({ agendamentos: [] });
-
-    renderPage();
-
-    const cardX = (await screen.findByText("Equipe X")).closest("li")!;
-    expect(within(cardX).getByRole("link", { name: /rodada/i })).toBeInTheDocument();
-    expect(within(cardX).queryByText(/sem arena atribu[ií]da/i)).not.toBeInTheDocument();
-  });
-
-  it("todas as equipes ficam clicaveis mesmo com agendamento so pra algumas", async () => {
-    mockGet({
-      agendamentos: [
-        { id: "ag-1", rodada_id: "rod-1", equipe_id: "eq-2", arena_id: "are-padrao", ordem_na_arena: 0, horario_inicio: "2026-08-10T08:00:00Z" },
-      ],
-    });
-
-    renderPage();
-
-    const cardX = (await screen.findByText("Equipe X")).closest("li")!;
-    expect(within(cardX).getByRole("link", { name: /rodada/i })).toBeInTheDocument();
-
-    const cardY = screen.getByText("Equipe Y").closest("li")!;
-    expect(within(cardY).getByRole("link", { name: /rodada/i })).toBeInTheDocument();
-  });
-
   it("equipe que ja completou todas as rodadas/tentativas nao aparece nos cards pendentes", async () => {
     mockGet({
       lancamentosPorRodada: {
@@ -314,25 +258,69 @@ describe("PontuarPage", () => {
     expect(screen.queryByText(/equipe.*completa/i)).not.toBeInTheDocument();
   });
 
-  it("mostra arena e horario quando ja existe agendamento pra rodada da equipe", async () => {
+  it("ordena as equipes da mesma rodada pela sequencia de competicao sorteada", async () => {
     mockGet({
-      arenas: [{ id: "are-1", modalidade_id: "mod-1", nome: "Arena A", niveis_aplicaveis: null, ativo: true }],
-      agendamentos: [
-        {
-          id: "ag-1",
-          rodada_id: "rod-1",
-          equipe_id: "eq-1",
-          arena_id: "are-1",
-          ordem_na_arena: 0,
-          horario_inicio: "2026-08-10T08:00:00Z",
-        },
+      equipes: [
+        { id: "eq-1", nome: "Alfa", nivel: 1, ativo: true },
+        { id: "eq-2", nome: "Beta", nivel: 1, ativo: true },
+        { id: "eq-3", nome: "Gama", nivel: 1, ativo: true },
+      ],
+      inscricoes: [
+        { id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1", ordem_apresentacao: 3 },
+        { id: "ins-2", equipe_id: "eq-2", modalidade_id: "mod-1", ordem_apresentacao: 1 },
+        { id: "ins-3", equipe_id: "eq-3", modalidade_id: "mod-1", ordem_apresentacao: 2 },
+      ],
+    });
+
+    renderPage();
+
+    await screen.findByText("Alfa");
+    const nomes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(nomes).toEqual(["Beta", "Gama", "Alfa"]);
+  });
+
+  it("mostra a posicao da equipe na sequencia de competicao no card", async () => {
+    mockGet({
+      inscricoes: [
+        { id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1", ordem_apresentacao: 2 },
+        { id: "ins-2", equipe_id: "eq-2", modalidade_id: "mod-1", ordem_apresentacao: 1 },
       ],
     });
 
     renderPage();
 
     const cardX = (await screen.findByText("Equipe X")).closest("a")!;
-    expect(within(cardX).getByText(/arena a/i)).toBeInTheDocument();
+    expect(within(cardX).getByText(/2º na sequ[eê]ncia/i)).toBeInTheDocument();
+  });
+
+  it("equipe sem ordem sorteada vai pro fim da rodada, em ordem alfabetica", async () => {
+    mockGet({
+      equipes: [
+        { id: "eq-1", nome: "Alfa", nivel: 1, ativo: true },
+        { id: "eq-2", nome: "Beta", nivel: 1, ativo: true },
+      ],
+      inscricoes: [
+        { id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1", ordem_apresentacao: null },
+        { id: "ins-2", equipe_id: "eq-2", modalidade_id: "mod-1", ordem_apresentacao: 1 },
+      ],
+    });
+
+    renderPage();
+
+    await screen.findByText("Alfa");
+    const nomes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(nomes).toEqual(["Beta", "Alfa"]);
+  });
+
+  it("nao busca arena nem agendamento (arena e decidida na hora)", async () => {
+    mockGet();
+
+    renderPage();
+
+    await screen.findByText("Equipe X");
+    const caminhos = vi.mocked(api.GET).mock.calls.map((c) => c[0]);
+    expect(caminhos).not.toContain("/api/v1/arenas");
+    expect(caminhos).not.toContain("/api/v1/agendamentos");
   });
 
   it("mostra mensagem quando nao ha nenhuma equipe pendente", async () => {
@@ -356,12 +344,11 @@ describe("PontuarPage", () => {
     // sem rodada, nao existe "completou" nem "pendente" possivel ainda.
     expect(screen.queryByText(/equipe.*completa/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
-    // A aba Rodadas do hub Individual foi removida (rodadas sao fixas por
-    // modalidade) -- o jeito de resolver "sem rodada" agora e pela aba
-    // Horarios, que ja gera rodada+arena juntos.
-    expect(screen.getByRole("link", { name: /gerar hor[aá]rio/i })).toHaveAttribute(
+    // Arena/horario sairam do sistema -- "sem rodada" se resolve direto na
+    // tela de Rodadas da modalidade, que tem o botao "Gerar rodadas".
+    expect(screen.getByRole("link", { name: /gerar rodadas/i })).toHaveAttribute(
       "href",
-      "/eventos/evt-1/modalidades/mod-1/horarios",
+      "/eventos/evt-1/modalidades/mod-1/rodadas",
     );
   });
 

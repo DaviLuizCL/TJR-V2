@@ -56,19 +56,26 @@ describe("IndividualHubPage", () => {
     expect(screen.queryByRole("tab", { name: /^rodadas$/i })).not.toBeInTheDocument();
   });
 
-  it("troca pra aba Horarios ao clicar", async () => {
+  it("troca pra aba Sequencia de competicao ao clicar", async () => {
     renderPage();
 
-    await userEvent.click(await screen.findByRole("tab", { name: /hor[aá]rios/i }));
+    await userEvent.click(await screen.findByRole("tab", { name: /sequ[eê]ncia de competi/i }));
 
-    const link = await screen.findByRole("link", { name: /ver hor[aá]rios/i });
-    expect(link).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/horarios");
+    const link = await screen.findByRole("link", { name: /ver sequ[eê]ncia/i });
+    expect(link).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/ordem");
+  });
+
+  it("nao tem mais a aba Horarios (arena e horario sairam do sistema)", async () => {
+    renderPage();
+
+    await screen.findByRole("tab", { name: /pontuar/i });
+    expect(screen.queryByRole("tab", { name: /hor[aá]rios/i })).not.toBeInTheDocument();
   });
 
   it("abre direto na aba indicada pelo parametro ?sub=", async () => {
-    renderPage("/eventos/evt-1/individual?sub=horarios");
+    renderPage("/eventos/evt-1/individual?sub=ordem");
 
-    const abaHorarios = await screen.findByRole("tab", { name: /hor[aá]rios/i });
-    expect(abaHorarios).toHaveAttribute("aria-selected", "true");
+    const aba = await screen.findByRole("tab", { name: /sequ[eê]ncia de competi/i });
+    expect(aba).toHaveAttribute("aria-selected", "true");
   });
 });

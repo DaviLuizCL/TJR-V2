@@ -134,3 +134,70 @@ async def test_secretaria_nao_pode_listar_usuarios(client, db_session):
     resposta = await client.get("/api/v1/usuarios", headers=headers)
 
     assert resposta.status_code == 403
+
+
+async def _criar_juiz(client, headers, email):
+    resposta = await client.post(
+        "/api/v1/usuarios",
+        json={"nome": "Juiz", "email": email, "senha": "senha-antiga", "papel": "ARBITRO"},
+        headers=headers,
+    )
+    return resposta.json()["id"]
+
+
+async def test_patch_usuario_desativa_e_juiz_nao_consegue_mais_logar(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "c-edit-1@tjr.app")
+    juiz_id = await _criar_juiz(client, headers, "juiz-edit-1@tjr.app")
+
+    resposta = await client.patch(
+        f"/api/v1/usuarios/{juiz_id}", json={"ativo": False}, headers=headers
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["ativo"] is False
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "juiz-edit-1@tjr.app", "senha": "senha-antiga"}
+    )
+    assert login.status_code == 401
+
+
+async def test_trocar_senha_permite_logar_com_a_senha_nova(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "c-edit-2@tjr.app")
+    juiz_id = await _criar_juiz(client, headers, "juiz-edit-2@tjr.app")
+
+    resposta = await client.post(
+        f"/api/v1/usuarios/{juiz_id}/senha", json={"senha": "senha-nova"}, headers=headers
+    )
+
+    assert resposta.status_code == 204
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "juiz-edit-2@tjr.app", "senha": "senha-nova"}
+    )
+    assert login.status_code == 200
+
+
+async def test_trocar_senha_curta_demais_retorna_422(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "c-edit-3@tjr.app")
+    juiz_id = await _criar_juiz(client, headers, "juiz-edit-3@tjr.app")
+
+    resposta = await client.post(
+        f"/api/v1/usuarios/{juiz_id}/senha", json={"senha": "123"}, headers=headers
+    )
+
+    assert resposta.status_code == 422
+
+
+async def test_arbitro_nao_pode_editar_usuario(client, db_session):
+    coord = await _auth_header(client, db_session, Papel.COORDENADOR, "c-edit-4@tjr.app")
+    juiz_id = await _criar_juiz(client, coord, "juiz-edit-4@tjr.app")
+    headers = await _auth_header(client, db_session, Papel.ARBITRO, "a-edit-4@tjr.app")
+
+    patch = await client.patch(
+        f"/api/v1/usuarios/{juiz_id}", json={"ativo": False}, headers=headers
+    )
+    senha = await client.post(
+        f"/api/v1/usuarios/{juiz_id}/senha", json={"senha": "senha-nova"}, headers=headers
+    )
+
+    assert patch.status_code == 403
+    assert senha.status_code == 403

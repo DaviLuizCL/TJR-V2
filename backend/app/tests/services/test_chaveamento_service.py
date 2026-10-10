@@ -38,6 +38,7 @@ from app.services.chaveamento import (
 )
 from app.services.inscricao import criar_inscricao
 from app.services.lancamento import (
+    anular_lancamento,
     confirmar_lancamento,
     corrigir_lancamento,
     criar_lancamento,
@@ -1483,3 +1484,38 @@ async def test_corrigir_combate_de_partida_empatada_decide_o_vencedor(db_session
     corrigida = await db_session.get(Partida, partida.id)
     assert corrigida.status == PartidaStatus.ENCERRADA
     assert corrigida.vencedor_id == b.id
+
+
+# ---------- anulacao de combate ja decidido ----------
+
+
+async def test_anular_combate_de_partida_encerrada_reabre_a_partida(db_session):
+    coord, arbitro, ficha, criterio, rodada, partida, a, b = await _partida_com_um_combate(
+        db_session, 10, ELIMINATORIA
+    )
+    await _lancar_e_confirmar(db_session, ficha, rodada, a, criterio, partida, arbitro, 1)
+    lanc_b = await _lancar_e_confirmar(db_session, ficha, rodada, b, criterio, partida, arbitro, 5)
+    assert (await db_session.get(Partida, partida.id)).vencedor_id == b.id
+
+    await anular_lancamento(
+        db_session, lanc_b.id, justificativa="equipe trocada", usuario_id=coord.id
+    )
+
+    reaberta = await db_session.get(Partida, partida.id)
+    assert reaberta.status == PartidaStatus.AGENDADA
+    assert reaberta.vencedor_id is None
+
+
+async def test_relancar_combate_anulado_decide_a_partida_de_novo(db_session):
+    coord, arbitro, ficha, criterio, rodada, partida, a, b = await _partida_com_um_combate(
+        db_session, 11, ELIMINATORIA
+    )
+    await _lancar_e_confirmar(db_session, ficha, rodada, a, criterio, partida, arbitro, 1)
+    lanc_b = await _lancar_e_confirmar(db_session, ficha, rodada, b, criterio, partida, arbitro, 5)
+    await anular_lancamento(db_session, lanc_b.id, justificativa="x", usuario_id=coord.id)
+
+    await _lancar_e_confirmar(db_session, ficha, rodada, b, criterio, partida, arbitro, 0)
+
+    decidida = await db_session.get(Partida, partida.id)
+    assert decidida.status == PartidaStatus.ENCERRADA
+    assert decidida.vencedor_id == a.id

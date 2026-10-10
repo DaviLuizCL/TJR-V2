@@ -134,7 +134,8 @@ describe("FichaEditorPage", () => {
 
     await screen.findByText(/v2/i);
     expect(screen.queryByRole("button", { name: /publicar/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/qualquer edicao cria uma nova versao/i)).toBeInTheDocument();
+    expect(screen.getByText(/qualquer edi[cç][aã]o cria uma nova vers[aã]o/i)).toBeInTheDocument();
+    expect(screen.getByText(/notas j[aá] lan[cç]adas n[aã]o mudam/i)).toBeInTheDocument();
   });
 
   it("adiciona um novo grupo", async () => {

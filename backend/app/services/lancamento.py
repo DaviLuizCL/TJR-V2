@@ -494,3 +494,39 @@ async def listar_lancamentos_auditoria(
             )
         )
     return auditorias, total or 0
+
+
+async def anular_lancamento(
+    db: AsyncSession, lancamento_id: UUID, *, justificativa: str, usuario_id: UUID
+) -> Lancamento:
+    """Anula um lancamento PENDENTE ou CONFIRMADO (regra 5: status, nunca DELETE).
+
+    O lancamento anulado deixa de contar: a equipe volta a ficar pendente
+    naquela rodada/tentativa (criar_lancamento ignora ANULADO), e em
+    confronto a partida e recalculada -- se faltar esse combate, reabre.
+    """
+    lancamento = await obter_lancamento(db, lancamento_id)
+    if lancamento.status == LancamentoStatus.ANULADO:
+        raise AppError(
+            codigo="LANCAMENTO_JA_ANULADO",
+            mensagem="Este lancamento ja foi anulado.",
+            status_code=422,
+        )
+
+    antes = _serializar(lancamento)
+    lancamento.status = LancamentoStatus.ANULADO
+    await db.flush()
+
+    await registrar_audit_log(
+        db,
+        usuario_id=usuario_id,
+        entidade="lancamento",
+        entidade_id=lancamento.id,
+        acao="ANULAR",
+        antes=antes,
+        depois=_serializar(lancamento),
+        justificativa=justificativa,
+    )
+
+    await registrar_resultado_lancamento(db, lancamento, usuario_id=usuario_id)
+    return lancamento

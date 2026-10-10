@@ -102,10 +102,10 @@ describe("Header", () => {
     expect(screen.queryByRole("link", { name: /^modalidades$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^fichas$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /painel/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /staff/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /administra/i })).not.toBeInTheDocument();
   });
 
-  it("secretaria mantem acesso amplo de leitura, igual coordenador, mas sem Staff", () => {
+  it("secretaria mantem acesso amplo de leitura, igual coordenador, mas sem Administracao", () => {
     logarComo("SECRETARIA");
 
     renderHeader();
@@ -113,15 +113,20 @@ describe("Header", () => {
     expect(screen.getByRole("link", { name: /equipes/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^modalidades$/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /painel/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /staff/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /administra/i })).not.toBeInTheDocument();
   });
 
-  it("coordenador ve o link Staff pra cadastrar arbitro/secretaria", () => {
+  it("coordenador ve o link Administracao do evento atual (Staff virou um cartao dentro dela)", () => {
     logarComo("COORDENADOR");
+    useEventoStore.setState({ eventoAtualId: "evt-9" });
 
     renderHeader();
 
-    expect(screen.getByRole("link", { name: /staff/i })).toHaveAttribute("href", "/usuarios");
+    expect(screen.getByRole("link", { name: /administra/i })).toHaveAttribute(
+      "href",
+      "/eventos/evt-9/admin",
+    );
+    expect(screen.queryByRole("link", { name: /staff/i })).not.toBeInTheDocument();
   });
 
   it("mostra o botao Sair pra qualquer papel logado", () => {

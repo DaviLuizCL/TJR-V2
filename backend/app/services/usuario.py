@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
 from app.core.security import hash_senha
-from app.models.usuario import Usuario
-from app.schemas.usuario import UsuarioCreate
+from app.models.usuario import Papel, Usuario
+from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 from app.services.audit import registrar_audit_log
 
 
@@ -51,3 +51,72 @@ async def listar_usuarios(db: AsyncSession, *, page: int, size: int) -> tuple[li
     )
     itens = list(resultado.scalars().all())
     return itens, total or 0
+
+
+async def obter_usuario(db: AsyncSession, usuario_alvo_id: UUID) -> Usuario:
+    usuario = await db.get(Usuario, usuario_alvo_id)
+    if usuario is None:
+        raise AppError(
+            codigo="USUARIO_NAO_ENCONTRADO", mensagem="Usuario nao encontrado.", status_code=404
+        )
+    return usuario
+
+
+def _serializar_completo(usuario: Usuario) -> dict:
+    return {**_serializar(usuario), "ativo": usuario.ativo}
+
+
+async def atualizar_usuario(
+    db: AsyncSession, usuario_alvo_id: UUID, dto: UsuarioUpdate, *, usuario_id: UUID
+) -> Usuario:
+    usuario = await obter_usuario(db, usuario_alvo_id)
+    mudancas = dto.model_dump(exclude_unset=True, exclude_none=True)
+
+    # Ninguem se tranca pra fora: o coordenador logado nao pode se desativar
+    # nem deixar de ser coordenador (senao pode sobrar nenhum coordenador).
+    if usuario.id == usuario_id and (
+        mudancas.get("ativo") is False
+        or ("papel" in mudancas and mudancas["papel"] != Papel.COORDENADOR)
+    ):
+        raise AppError(
+            codigo="NAO_PODE_ALTERAR_PROPRIO_ACESSO",
+            mensagem="Voce nao pode desativar a propria conta nem tirar seu proprio acesso de "
+            "coordenador. Peca para outro coordenador fazer isso.",
+            status_code=422,
+        )
+
+    antes = _serializar_completo(usuario)
+    for campo, valor in mudancas.items():
+        setattr(usuario, campo, valor)
+    await db.flush()
+
+    await registrar_audit_log(
+        db,
+        usuario_id=usuario_id,
+        entidade="usuario",
+        entidade_id=usuario.id,
+        acao="ATUALIZAR",
+        antes=antes,
+        depois=_serializar_completo(usuario),
+    )
+    return usuario
+
+
+async def definir_senha(
+    db: AsyncSession, usuario_alvo_id: UUID, senha: str, *, usuario_id: UUID
+) -> Usuario:
+    usuario = await obter_usuario(db, usuario_alvo_id)
+    usuario.senha_hash = hash_senha(senha)
+    await db.flush()
+
+    # Nunca grava a senha (nem o hash) no rastro, so que ela foi trocada.
+    await registrar_audit_log(
+        db,
+        usuario_id=usuario_id,
+        entidade="usuario",
+        entidade_id=usuario.id,
+        acao="TROCAR_SENHA",
+        antes=None,
+        depois=_serializar(usuario),
+    )
+    return usuario

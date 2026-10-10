@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.usuario import Papel, Usuario
 from app.schemas.common import Pagina
 from app.schemas.lancamento import (
+    LancamentoAnular,
     LancamentoAuditoriaOut,
     LancamentoCorrigir,
     LancamentoCreate,
@@ -111,5 +112,19 @@ async def corrigir_lancamento(
     usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
 ) -> LancamentoOut:
     await lancamento_service.corrigir_lancamento(db, lancamento_id, dto, usuario_id=usuario.id)
+    completo = await lancamento_service.obter_lancamento_completo(db, lancamento_id)
+    return LancamentoOut.model_validate(completo)
+
+
+@router.post("/lancamentos/{lancamento_id}/anular", response_model=LancamentoOut)
+async def anular_lancamento(
+    lancamento_id: UUID,
+    dto: LancamentoAnular,
+    db: AsyncSession = Depends(get_db),
+    usuario: Usuario = Depends(exigir_papel(Papel.COORDENADOR)),
+) -> LancamentoOut:
+    await lancamento_service.anular_lancamento(
+        db, lancamento_id, justificativa=dto.justificativa, usuario_id=usuario.id
+    )
     completo = await lancamento_service.obter_lancamento_completo(db, lancamento_id)
     return LancamentoOut.model_validate(completo)

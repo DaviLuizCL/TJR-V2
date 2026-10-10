@@ -227,7 +227,7 @@ describe("ModalidadeWizardPage - criacao", () => {
     });
   });
 
-  it("mostra a secao de arenas no passo de rodadas quando a modalidade e individual", async () => {
+  it("nao mostra mais secao de arenas na modalidade individual (arena e decidida na hora)", async () => {
     renderCriar();
 
     await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Resgate no Plano");
@@ -236,7 +236,8 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
 
-    expect(screen.getByRole("button", { name: /adicionar arena/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/quantidade de rodadas/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /adicionar arena/i })).not.toBeInTheDocument();
   });
 
   it("nao mostra a secao de arenas nem gera rodadas/arenas quando o tipo de disputa e confronto", async () => {
@@ -261,16 +262,13 @@ describe("ModalidadeWizardPage - criacao", () => {
     expect(api.POST).toHaveBeenCalledTimes(1);
   });
 
-  it("ao criar modalidade individual, gera as rodadas e as arenas informadas em sequencia", async () => {
+  it("ao criar modalidade individual, gera as rodadas e nao cria arena", async () => {
     vi.mocked(api.POST).mockImplementation((async (url: string) => {
       if (url === "/api/v1/modalidades") {
         return { data: { id: "mod-novo" }, error: undefined };
       }
       if (url === "/api/v1/rodadas/gerar") {
         return { data: [], error: undefined };
-      }
-      if (url === "/api/v1/arenas") {
-        return { data: { id: "arena-x" }, error: undefined };
       }
       throw new Error(`chamada inesperada: ${url}`);
     }) as never);
@@ -282,10 +280,6 @@ describe("ModalidadeWizardPage - criacao", () => {
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await userEvent.click(screen.getByLabelText(/^absoluto$/i));
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
-
-    await userEvent.click(screen.getByRole("button", { name: /adicionar arena/i }));
-    await userEvent.type(screen.getByLabelText(/nome da arena/i), "Arena A");
-    await userEvent.click(screen.getByLabelText(/atende absoluto/i));
 
     await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
     await waitFor(() => expect(screen.getByText(/passo 5 de 5/i)).toBeInTheDocument());
@@ -300,14 +294,8 @@ describe("ModalidadeWizardPage - criacao", () => {
     expect(chamadas.map(([url]) => url)).toEqual([
       "/api/v1/modalidades",
       "/api/v1/rodadas/gerar",
-      "/api/v1/arenas",
     ]);
     expect(chamadas[1][1].body).toMatchObject({ modalidade_id: "mod-novo" });
-    expect(chamadas[2][1].body).toMatchObject({
-      modalidade_id: "mod-novo",
-      nome: "Arena A",
-      niveis_aplicaveis: [1],
-    });
   });
 
   it("mostra erro e nao navega se a geracao de rodadas falhar apos criar a modalidade individual", async () => {

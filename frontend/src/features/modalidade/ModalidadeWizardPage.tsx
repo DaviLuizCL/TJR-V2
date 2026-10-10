@@ -51,14 +51,6 @@ const schema = z
         }),
       )
       .optional(),
-    arenas: z
-      .array(
-        z.object({
-          nome: z.string().min(1, "Informe o nome da arena"),
-          niveis_aplicaveis: z.array(z.number()).optional(),
-        }),
-      )
-      .optional(),
   })
   .superRefine((dados, ctx) => {
     if (dados.formato_chaveamento && dados.tipo_disputa !== "CONFRONTO") {
@@ -102,7 +94,6 @@ const VALORES_PADRAO: FormData = {
   consolidacao_n: null,
   permite_total_negativo: false,
   desempates: [],
-  arenas: [],
 };
 
 const TITULOS_ETAPAS = [
@@ -122,7 +113,6 @@ const CAMPOS_POR_ETAPA: (keyof FormData)[][] = [
     "tentativas_por_rodada",
     "duracao_maxima_rodada_seg",
     "pausa_entre_rodadas_seg",
-    "arenas",
   ],
   ["consolidacao", "consolidacao_n", "permite_total_negativo", "desempates"],
 ];
@@ -267,99 +257,11 @@ function EtapaNiveis({ form }: { form: UseFormReturn<FormData> }) {
   );
 }
 
-function EtapaArenas({ form }: { form: UseFormReturn<FormData> }) {
-  const { control, register, watch } = form;
-  const { fields, append, remove } = useFieldArray({ control, name: "arenas" });
-  const niveisDaModalidade = watch("niveis_aplicaveis") ?? [];
-
-  return (
-    <div className="mt-6 border-t border-slate-200 pt-4">
-      <p className="mb-1 text-sm font-medium text-slate-700">Arenas</p>
-      <p className="mb-3 text-xs text-slate-500">
-        Opcional aqui: da pra criar depois na aba Horarios. Nenhum nivel marcado = arena atende
-        todos os niveis da modalidade.
-      </p>
-      <div className="space-y-3">
-        {fields.map((field, index) => (
-          <div
-            key={field.id}
-            className="flex flex-wrap items-end gap-3 rounded border border-slate-200 p-3"
-          >
-            <div>
-              <label
-                className="mb-1 block text-xs text-slate-600"
-                htmlFor={`arenas.${index}.nome`}
-              >
-                Nome da arena
-              </label>
-              <input
-                id={`arenas.${index}.nome`}
-                className="rounded border border-slate-300 px-2 py-1"
-                {...register(`arenas.${index}.nome` as const)}
-              />
-            </div>
-            <Controller
-              control={control}
-              name={`arenas.${index}.niveis_aplicaveis`}
-              render={({ field: campoNiveis }) => (
-                <fieldset>
-                  <legend className="mb-1 text-xs text-slate-600">Niveis atendidos</legend>
-                  <div className="flex gap-3">
-                    {niveisDaModalidade.map((nivel) => (
-                      <label key={nivel} className="inline-flex items-center gap-1 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={campoNiveis.value?.includes(nivel) ?? false}
-                          onChange={(evento) => {
-                            const atual = campoNiveis.value ?? [];
-                            campoNiveis.onChange(
-                              evento.target.checked
-                                ? [...atual, nivel]
-                                : atual.filter((n) => n !== nivel),
-                            );
-                          }}
-                        />
-                        Atende {rotuloNivel(nivel)}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              )}
-            />
-            <button
-              type="button"
-              onClick={() => remove(index)}
-              className="rounded border border-red-300 px-3 py-1 text-sm text-red-700"
-            >
-              Remover
-            </button>
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={() => append({ nome: "", niveis_aplicaveis: [] })}
-        className="mt-3 rounded border border-slate-300 px-3 py-1 text-sm text-slate-700"
-      >
-        Adicionar arena
-      </button>
-    </div>
-  );
-}
-
-function EtapaRodadas({
-  form,
-  modoEdicao,
-}: {
-  form: UseFormReturn<FormData>;
-  modoEdicao: boolean;
-}) {
+function EtapaRodadas({ form }: { form: UseFormReturn<FormData> }) {
   const {
     register,
-    watch,
     formState: { errors },
   } = form;
-  const tipoDisputa = watch("tipo_disputa");
 
   return (
     <div className="space-y-4">
@@ -423,7 +325,6 @@ function EtapaRodadas({
         />
       </div>
 
-      {tipoDisputa === "INDIVIDUAL" && !modoEdicao && <EtapaArenas form={form} />}
     </div>
   );
 }
@@ -649,25 +550,6 @@ export function ModalidadeWizardPage() {
         return;
       }
 
-      for (const arena of dados.arenas ?? []) {
-        const resultadoArena = await api.POST("/api/v1/arenas", {
-          body: {
-            modalidade_id: modalidadeId,
-            nome: arena.nome,
-            niveis_aplicaveis:
-              arena.niveis_aplicaveis && arena.niveis_aplicaveis.length > 0
-                ? arena.niveis_aplicaveis
-                : null,
-            ativo: true,
-          },
-        });
-        if (resultadoArena.error) {
-          setErroGeral(
-            `Modalidade e rodadas criadas, mas falha ao criar a arena "${arena.nome}": ${extrairErro(resultadoArena.error).mensagem}`,
-          );
-          return;
-        }
-      }
     }
 
     navigate(`/eventos/${eventoId}/modalidades`);
@@ -686,7 +568,7 @@ export function ModalidadeWizardPage() {
         {etapa === 0 && <EtapaDadosBasicos form={form} />}
         {etapa === 1 && <EtapaTipoDisputa form={form} />}
         {etapa === 2 && <EtapaNiveis form={form} />}
-        {etapa === 3 && <EtapaRodadas form={form} modoEdicao={modoEdicao} />}
+        {etapa === 3 && <EtapaRodadas form={form} />}
         {etapa === 4 && <EtapaConsolidacao form={form} />}
 
         {erroGeral && <p className="mt-4 text-sm text-red-600">{erroGeral}</p>}

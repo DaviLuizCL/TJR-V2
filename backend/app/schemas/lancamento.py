@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.lancamento import LancamentoStatus
+from app.schemas.common import NomeObrigatorio
 
 
 class ItemLancamentoInput(BaseModel):
@@ -22,6 +23,12 @@ class LancamentoCreate(BaseModel):
     client_operation_id: UUID
     itens: list[ItemLancamentoInput]
     tempo_gasto_seg: int | None = Field(default=None, ge=0)
+
+
+class LancamentoAnular(BaseModel):
+    # Obrigatoria (ao contrario da correcao): anular tira a nota da equipe,
+    # entao o rastro precisa dizer o porque.
+    justificativa: NomeObrigatorio
 
 
 class LancamentoCorrigir(BaseModel):

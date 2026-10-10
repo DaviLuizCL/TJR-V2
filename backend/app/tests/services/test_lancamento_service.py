@@ -21,6 +21,7 @@ from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.lancamento import ItemLancamentoInput, LancamentoCorrigir, LancamentoCreate
 from app.services.lancamento import (
+    anular_lancamento,
     confirmar_lancamento,
     corrigir_lancamento,
     criar_lancamento,
@@ -797,3 +798,99 @@ async def test_listar_lancamentos_filtra_por_rodada_e_equipe(db_session):
 
     assert total == 1
     assert itens[0].equipe_id == equipe.id
+
+
+# ---------- anulacao ----------
+
+
+async def test_anular_lancamento_confirmado_muda_status_pra_anulado(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+
+    anulado = await anular_lancamento(
+        db_session, lancamento.id, justificativa="equipe errada", usuario_id=coordenador.id
+    )
+
+    assert anulado.status == LancamentoStatus.ANULADO
+
+
+async def test_anular_lancamento_pendente_tambem_e_permitido(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+
+    anulado = await anular_lancamento(
+        db_session, lancamento.id, justificativa="registrado errado", usuario_id=coordenador.id
+    )
+
+    assert anulado.status == LancamentoStatus.ANULADO
+
+
+async def test_anular_lancamento_nao_apaga_o_registro(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+
+    await anular_lancamento(
+        db_session, lancamento.id, justificativa="erro", usuario_id=coordenador.id
+    )
+
+    assert await db_session.get(Lancamento, lancamento.id) is not None
+
+
+async def test_anular_lancamento_grava_audit_log_com_justificativa(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+
+    await anular_lancamento(
+        db_session, lancamento.id, justificativa="equipe trocada", usuario_id=coordenador.id
+    )
+
+    log = await db_session.scalar(
+        select(AuditLog).where(AuditLog.entidade_id == lancamento.id, AuditLog.acao == "ANULAR")
+    )
+    assert log.justificativa == "equipe trocada"
+    assert log.usuario_id == coordenador.id
+
+
+async def test_anular_lancamento_ja_anulado_e_recusado(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+    await anular_lancamento(db_session, lancamento.id, justificativa="x", usuario_id=coordenador.id)
+
+    with pytest.raises(AppError) as erro:
+        await anular_lancamento(
+            db_session, lancamento.id, justificativa="x", usuario_id=coordenador.id
+        )
+    assert erro.value.codigo == "LANCAMENTO_JA_ANULADO"
+
+
+async def test_depois_de_anular_a_equipe_pode_ser_pontuada_de_novo(db_session):
+    _, ficha, criterio, rodada, equipe, arbitro = await _cenario_basico(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    lancamento = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio), arbitro_id=arbitro.id
+    )
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+    await anular_lancamento(db_session, lancamento.id, justificativa="x", usuario_id=coordenador.id)
+
+    novo = await criar_lancamento(
+        db_session, _payload(ficha, rodada, equipe, criterio, ocorrencias=1), arbitro_id=arbitro.id
+    )
+
+    assert novo.id != lancamento.id
+    assert novo.status == LancamentoStatus.PENDENTE

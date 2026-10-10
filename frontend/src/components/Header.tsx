@@ -24,6 +24,7 @@ export function Header() {
   const linkFichas = eventoAtualId ? `/eventos/${eventoAtualId}/fichas` : "/eventos";
   const linkCompeticoes = eventoAtualId ? `/eventos/${eventoAtualId}/competicoes` : "/eventos";
   const linkPainel = eventoAtualId ? `/eventos/${eventoAtualId}/painel` : "/eventos";
+  const linkAdmin = eventoAtualId ? `/eventos/${eventoAtualId}/admin` : "/eventos";
 
   return (
     <header className="border-b border-slate-200 bg-white px-6 py-3">
@@ -65,8 +66,8 @@ export function Header() {
           </Link>
         )}
         {ehCoordenador && (
-          <Link to="/usuarios" className="text-sm font-medium text-slate-700 hover:text-slate-900">
-            Staff
+          <Link to={linkAdmin} className="text-sm font-semibold text-slate-900 hover:text-slate-700">
+            Administração
           </Link>
         )}
         <button

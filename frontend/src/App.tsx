@@ -3,6 +3,11 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { Header } from "./components/Header";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { useSincronizarOutbox } from "./lib/use-sincronizar-outbox";
+import { AdminPage } from "./features/admin/AdminPage";
+import { ChecklistPage } from "./features/admin/ChecklistPage";
+import { CorrigirPontuacaoPage } from "./features/admin/CorrigirPontuacaoPage";
+import { ImportarEquipesPage } from "./features/admin/ImportarEquipesPage";
+import { ResetarChaveamentoAdminPage } from "./features/admin/ResetarChaveamentoAdminPage";
 import { LancamentoFormPage } from "./features/arbitragem/LancamentoFormPage";
 import { PartidaScorerPage } from "./features/arbitragem/PartidaScorerPage";
 import { LoginPage } from "./features/auth/LoginPage";
@@ -13,7 +18,6 @@ import { FichaDashboardPage } from "./features/ficha/FichaDashboardPage";
 import { FichaEditorPage } from "./features/ficha/FichaEditorPage";
 import { FichaListPage } from "./features/ficha/FichaListPage";
 import { FichaPreviewPage } from "./features/ficha/FichaPreviewPage";
-import { HorarioPage } from "./features/horario/HorarioPage";
 import { PontuarRoutePage } from "./features/arbitragem/PontuarRoutePage";
 import { CompeticoesPage } from "./features/modalidade/CompeticoesPage";
 import { InscricaoPage } from "./features/modalidade/InscricaoPage";
@@ -23,6 +27,7 @@ import { ModalidadeListPage } from "./features/modalidade/ModalidadeListPage";
 import { ModalidadeWizardPage } from "./features/modalidade/ModalidadeWizardPage";
 import { RodadaListPage } from "./features/modalidade/RodadaListPage";
 import { RodadaSubmissoesPage } from "./features/modalidade/RodadaSubmissoesPage";
+import { OrdemApresentacaoPage } from "./features/ordem/OrdemApresentacaoPage";
 import { RankingPage } from "./features/ranking/RankingPage";
 import { UsuarioListPage } from "./features/usuario/UsuarioListPage";
 
@@ -73,8 +78,48 @@ export default function App() {
         <Route path="/eventos/:eventoId/competicoes" element={<CompeticoesPage />} />
         <Route path="/eventos/:eventoId/painel" element={<PainelPage />} />
         <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/horarios"
-          element={<HorarioPage />}
+          path="/eventos/:eventoId/admin"
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+              <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eventos/:eventoId/admin/checklist"
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR", "SECRETARIA"]}>
+              <ChecklistPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eventos/:eventoId/admin/corrigir"
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+              <CorrigirPontuacaoPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eventos/:eventoId/admin/importar"
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+              <ImportarEquipesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eventos/:eventoId/admin/resetar-chaveamento"
+          element={
+            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+              <ResetarChaveamentoAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eventos/:eventoId/modalidades/:modalidadeId/ordem"
+          element={<OrdemApresentacaoPage />}
         />
         <Route
           path="/eventos/:eventoId/modalidades/:modalidadeId/pontuar"

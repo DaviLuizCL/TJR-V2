@@ -560,3 +560,52 @@ async def test_listar_auditoria_com_papel_publico_retorna_403(client, db_session
     resposta = await client.get(f"/api/v1/lancamentos/auditoria?evento_id={cenario['evento_id']}")
 
     assert resposta.status_code == 401
+
+
+async def _lancamento_confirmado(client, db_session, sufixo):
+    headers = await _auth_header(client, db_session, Papel.ARBITRO, f"arb-anular-{sufixo}@tjr.app")
+    coord_headers = await _auth_header(
+        client, db_session, Papel.COORDENADOR, f"coord-anular-{sufixo}@tjr.app"
+    )
+    cenario = await _montar_cenario(client, coord_headers)
+    criado = await client.post("/api/v1/lancamentos", json=_payload(cenario), headers=headers)
+    lancamento_id = criado.json()["id"]
+    await client.post(f"/api/v1/lancamentos/{lancamento_id}/confirmar", headers=headers)
+    return headers, coord_headers, lancamento_id
+
+
+async def test_anular_lancamento_com_coordenador_retorna_anulado(client, db_session):
+    _, coord_headers, lancamento_id = await _lancamento_confirmado(client, db_session, 1)
+
+    resposta = await client.post(
+        f"/api/v1/lancamentos/{lancamento_id}/anular",
+        json={"justificativa": "Pontuou a equipe errada"},
+        headers=coord_headers,
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["status"] == "ANULADO"
+
+
+async def test_anular_lancamento_sem_justificativa_retorna_422(client, db_session):
+    _, coord_headers, lancamento_id = await _lancamento_confirmado(client, db_session, 2)
+
+    resposta = await client.post(
+        f"/api/v1/lancamentos/{lancamento_id}/anular",
+        json={"justificativa": "   "},
+        headers=coord_headers,
+    )
+
+    assert resposta.status_code == 422
+
+
+async def test_anular_lancamento_com_arbitro_retorna_403(client, db_session):
+    headers, _, lancamento_id = await _lancamento_confirmado(client, db_session, 3)
+
+    resposta = await client.post(
+        f"/api/v1/lancamentos/{lancamento_id}/anular",
+        json={"justificativa": "x"},
+        headers=headers,
+    )
+
+    assert resposta.status_code == 403

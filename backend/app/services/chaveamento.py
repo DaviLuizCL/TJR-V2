@@ -234,9 +234,19 @@ async def registrar_resultado_lancamento(
 
     tentativas = range(1, modalidade.tentativas_por_rodada + 1)
     equipe_a_id, equipe_b_id = partida.equipe_a_id, partida.equipe_b_id
-    if not all((equipe_a_id, t) in por_equipe_tentativa for t in tentativas):
-        return
-    if not all((equipe_b_id, t) in por_equipe_tentativa for t in tentativas):
+    combates_completos = all(
+        (equipe_id, t) in por_equipe_tentativa
+        for equipe_id in (equipe_a_id, equipe_b_id)
+        for t in tentativas
+    )
+    if not combates_completos:
+        # Falta combate confirmado. Normalmente a partida so esta em
+        # andamento; mas se ela ja tinha sido decidida, um combate foi
+        # anulado depois -- volta pra aberta ate o combate ser relancado.
+        if partida.status != PartidaStatus.AGENDADA:
+            await _gravar_status_partida(
+                db, partida, PartidaStatus.AGENDADA, None, usuario_id=usuario_id
+            )
         return
 
     # Duas formas de decidir a partida a partir dos combates confirmados
@@ -301,6 +311,25 @@ async def registrar_resultado_lancamento(
     if partida.status == novo_status and partida.vencedor_id == vencedor_id:
         return
 
+    await _gravar_status_partida(
+        db,
+        partida,
+        novo_status,
+        vencedor_id,
+        usuario_id=usuario_id,
+        extra={"pontuacao_a": pontuacao_a, "pontuacao_b": pontuacao_b},
+    )
+
+
+async def _gravar_status_partida(
+    db: AsyncSession,
+    partida: Partida,
+    novo_status: PartidaStatus,
+    vencedor_id: UUID | None,
+    *,
+    usuario_id: UUID,
+    extra: dict | None = None,
+) -> None:
     antes = {"status": partida.status.value, "vencedor_id": partida.vencedor_id}
     partida.status = novo_status
     partida.vencedor_id = vencedor_id
@@ -321,8 +350,7 @@ async def registrar_resultado_lancamento(
         depois={
             "status": novo_status.value,
             "vencedor_id": str(vencedor_id) if vencedor_id else None,
-            "pontuacao_a": pontuacao_a,
-            "pontuacao_b": pontuacao_b,
+            **(extra or {}),
         },
     )
 

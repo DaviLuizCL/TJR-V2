@@ -21,3 +21,13 @@ class UsuarioOut(BaseModel):
     email: str
     papel: Papel
     ativo: bool
+
+
+class UsuarioUpdate(BaseModel):
+    nome: NomeObrigatorio | None = None
+    papel: Papel | None = None
+    ativo: bool | None = None
+
+
+class SenhaIn(BaseModel):
+    senha: str = Field(min_length=6)
