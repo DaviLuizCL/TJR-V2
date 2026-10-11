@@ -23,11 +23,10 @@ interface Checklist {
 }
 
 // Pra onde o botao "Resolver" leva, por codigo de item (estavel, vem do backend).
+// FICHA fica sem botao de proposito: o coordenador nao altera ficha, so o dev.
 function linkResolver(eventoId: string, codigo: string, modalidadeId?: string): string | null {
   const base = `/eventos/${eventoId}/modalidades/${modalidadeId}`;
   switch (codigo) {
-    case "FICHA":
-      return `${base}/fichas`;
     case "EQUIPES":
       return `${base}/inscricoes`;
     case "RODADAS":

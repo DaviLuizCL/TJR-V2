@@ -1,4 +1,6 @@
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from io import BytesIO
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -13,12 +15,132 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.equipe import Equipe
 from app.models.evento import Evento
+from app.models.ficha import Ficha, FichaStatus
+from app.models.lancamento import Lancamento, LancamentoStatus
 from app.models.modalidade import FormatoChaveamento, Modalidade, TipoDisputa
+from app.models.partida import Partida
+from app.models.rodada import Rodada
 from app.services.consolidacao import calcular_classificacao
 from app.services.evento import obter_evento
 from app.services.modalidade import obter_modalidade
 
 _FUSO_FORTALEZA = ZoneInfo("America/Fortaleza")
+
+
+@dataclass
+class ConfrontoResumo:
+    rodada: int
+    nivel: int | None
+    equipe_a: str
+    pontos_a: Decimal
+    equipe_b: str | None
+    pontos_b: Decimal
+    vencedor: str | None
+
+
+@dataclass
+class PontuacaoModalidade:
+    rodadas: list[tuple[UUID, int]] = field(default_factory=list)
+    nota_por_rodada: dict[tuple[UUID, UUID], Decimal] = field(default_factory=dict)
+    pontos_por_equipe: dict[UUID, Decimal] = field(default_factory=dict)
+    confrontos: list[ConfrontoResumo] = field(default_factory=list)
+
+
+def _formatar_pontos(valor: Decimal) -> str:
+    """30.00 -> "30", 12.50 -> "12.5" (Numeric do banco vem com casas fixas)."""
+    return f"{Decimal(valor).normalize():f}"
+
+
+async def _carregar_pontuacao(db: AsyncSession, modalidade: Modalidade) -> PontuacaoModalidade:
+    """Nota de cada rodada (individual) ou placar de cada confronto, so com
+    lancamento CONFIRMADO de ficha nao DEPRECADA - mesmo filtro da
+    consolidacao, pra o numero do relatorio bater com a nota final.
+    """
+    rodadas = (
+        await db.execute(
+            select(Rodada.id, Rodada.numero)
+            .where(Rodada.modalidade_id == modalidade.id)
+            .order_by(Rodada.numero)
+        )
+    ).all()
+    numero_da_rodada = {rodada_id: numero for rodada_id, numero in rodadas}
+    lancamentos = (
+        (
+            await db.scalars(
+                select(Lancamento)
+                .join(Ficha, Lancamento.ficha_id == Ficha.id)
+                .where(
+                    Lancamento.rodada_id.in_(numero_da_rodada),
+                    Lancamento.status == LancamentoStatus.CONFIRMADO,
+                    Ficha.status != FichaStatus.DEPRECADA,
+                )
+            )
+        ).all()
+        if rodadas
+        else []
+    )
+
+    pontuacao = PontuacaoModalidade()
+    if modalidade.tipo_disputa == TipoDisputa.INDIVIDUAL:
+        pontuacao.rodadas = [(rodada_id, numero) for rodada_id, numero in rodadas]
+        # Mesma regra da consolidacao: vale o maior total da equipe na rodada.
+        for lancamento in lancamentos:
+            chave = (lancamento.equipe_id, lancamento.rodada_id)
+            total = Decimal(lancamento.total)
+            if chave not in pontuacao.nota_por_rodada or total > pontuacao.nota_por_rodada[chave]:
+                pontuacao.nota_por_rodada[chave] = total
+        return pontuacao
+
+    pontos_por_partida_equipe: dict[tuple[UUID, UUID], Decimal] = {}
+    for lancamento in lancamentos:
+        if lancamento.partida_id is None:
+            continue
+        chave = (lancamento.partida_id, lancamento.equipe_id)
+        total = Decimal(lancamento.total)
+        pontos_por_partida_equipe[chave] = (
+            pontos_por_partida_equipe.get(chave, Decimal("0")) + total
+        )
+        pontuacao.pontos_por_equipe[lancamento.equipe_id] = (
+            pontuacao.pontos_por_equipe.get(lancamento.equipe_id, Decimal("0")) + total
+        )
+
+    partidas = (
+        (
+            await db.scalars(
+                select(Partida)
+                .where(Partida.rodada_id.in_(numero_da_rodada))
+                .order_by(Partida.nivel, Partida.criado_em)
+            )
+        ).all()
+        if rodadas
+        else []
+    )
+    ids_equipes = {e for p in partidas for e in (p.equipe_a_id, p.equipe_b_id) if e is not None}
+    nomes = (
+        {
+            e.id: e.nome
+            for e in (await db.scalars(select(Equipe).where(Equipe.id.in_(ids_equipes)))).all()
+        }
+        if ids_equipes
+        else {}
+    )
+    for partida in sorted(partidas, key=lambda p: numero_da_rodada[p.rodada_id]):
+        pontuacao.confrontos.append(
+            ConfrontoResumo(
+                rodada=numero_da_rodada[partida.rodada_id],
+                nivel=partida.nivel,
+                equipe_a=nomes.get(partida.equipe_a_id, "-"),
+                pontos_a=pontos_por_partida_equipe.get(
+                    (partida.id, partida.equipe_a_id), Decimal("0")
+                ),
+                equipe_b=nomes.get(partida.equipe_b_id) if partida.equipe_b_id else None,
+                pontos_b=pontos_por_partida_equipe.get(
+                    (partida.id, partida.equipe_b_id), Decimal("0")
+                ),
+                vencedor=nomes.get(partida.vencedor_id) if partida.vencedor_id else None,
+            )
+        )
+    return pontuacao
 
 
 def _calcular_gerado_em() -> datetime:
@@ -67,6 +189,7 @@ def _montar_secao_modalidade(
     modalidade: Modalidade,
     classificacao: list[dict],
     equipes_por_id: dict[UUID, Equipe],
+    pontuacao: PontuacaoModalidade | None = None,
 ) -> list:
     """Monta os flowables de classificacao de uma modalidade - o corpo do
     relatorio, sem cabecalho de documento. Reutilizado pelo relatorio de uma
@@ -96,29 +219,78 @@ def _montar_secao_modalidade(
                 estilos["Heading3"],
             )
         )
-        linhas_classificacao = [["Posicao", "Equipe", "Resultado"]]
-        for item, equipe in grupos_por_nivel[nivel]:
-            linhas_classificacao.append(
-                [
-                    str(item.get("posicao", "-")),
-                    equipe.nome if equipe else "-",
-                    _formatar_metrica_classificacao(modalidade, item),
-                ]
-            )
-        tabela_classificacao = Table(linhas_classificacao, hAlign="LEFT")
-        tabela_classificacao.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ]
-            )
+        elementos.append(
+            _tabela(_linhas_classificacao(modalidade, grupos_por_nivel[nivel], pontuacao))
         )
-        elementos.append(tabela_classificacao)
+        elementos.append(Spacer(1, 0.5 * cm))
+
+    if pontuacao and pontuacao.confrontos:
+        elementos.append(Paragraph("Confrontos", estilos["Heading2"]))
+        linhas = [["Rodada", "Equipe A", "Placar", "Equipe B", "Vencedor"]]
+        for c in pontuacao.confrontos:
+            linhas.append(
+                [
+                    str(c.rodada),
+                    c.equipe_a,
+                    f"{_formatar_pontos(c.pontos_a)} x {_formatar_pontos(c.pontos_b)}"
+                    if c.equipe_b
+                    else "-",
+                    c.equipe_b or "(bye)",
+                    c.vencedor or "-",
+                ]
+            )
+        elementos.append(_tabela(linhas))
         elementos.append(Spacer(1, 0.5 * cm))
 
     return elementos
+
+
+def _linhas_classificacao(
+    modalidade: Modalidade,
+    itens: list[tuple[dict, Equipe | None]],
+    pontuacao: PontuacaoModalidade | None,
+) -> list[list[str]]:
+    individual = modalidade.tipo_disputa == TipoDisputa.INDIVIDUAL
+    rodadas = pontuacao.rodadas if pontuacao and individual else []
+    if rodadas:
+        cabecalho = ["Posicao", "Equipe", *[f"Rodada {n}" for _, n in rodadas], "Nota final"]
+    elif pontuacao and not individual:
+        cabecalho = ["Posicao", "Equipe", "Resultado", "Pontos marcados"]
+    else:
+        cabecalho = ["Posicao", "Equipe", "Resultado"]
+
+    linhas = [cabecalho]
+    for item, equipe in itens:
+        linha = [str(item.get("posicao", "-")), equipe.nome if equipe else "-"]
+        if rodadas:
+            for rodada_id, _ in rodadas:
+                nota = pontuacao.nota_por_rodada.get((item["equipe_id"], rodada_id))
+                linha.append(_formatar_pontos(nota) if nota is not None else "-")
+            linha.append(_formatar_pontos(item["nota_final"]))
+        else:
+            linha.append(_formatar_metrica_classificacao(modalidade, item))
+            if pontuacao and not individual:
+                linha.append(
+                    _formatar_pontos(
+                        pontuacao.pontos_por_equipe.get(item["equipe_id"], Decimal("0"))
+                    )
+                )
+        linhas.append(linha)
+    return linhas
+
+
+def _tabela(linhas: list[list[str]]) -> Table:
+    tabela = Table(linhas, hAlign="LEFT", repeatRows=1)
+    tabela.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ]
+        )
+    )
+    return tabela
 
 
 def _cabecalho_modalidade(estilos: StyleSheet1, modalidade: Modalidade) -> Paragraph:
@@ -139,6 +311,7 @@ async def gerar_relatorio_auditoria_pdf(db: AsyncSession, modalidade_id: UUID) -
     evento = await db.get(Evento, modalidade.evento_id)
 
     dados = await _carregar_dados_modalidade(db, modalidade)
+    pontuacao = await _carregar_pontuacao(db, modalidade)
 
     buffer = BytesIO()
     documento = SimpleDocTemplate(
@@ -173,7 +346,7 @@ async def gerar_relatorio_auditoria_pdf(db: AsyncSession, modalidade_id: UUID) -
         )
     elementos.append(Spacer(1, 0.5 * cm))
 
-    elementos.extend(_montar_secao_modalidade(estilos, modalidade, *dados))
+    elementos.extend(_montar_secao_modalidade(estilos, modalidade, *dados, pontuacao))
 
     documento.build(elementos)
     return buffer.getvalue()
@@ -223,7 +396,8 @@ async def gerar_relatorio_auditoria_evento_pdf(db: AsyncSession, evento_id: UUID
         elementos.append(_cabecalho_modalidade(estilos, modalidade))
         elementos.append(Spacer(1, 0.3 * cm))
         dados = await _carregar_dados_modalidade(db, modalidade)
-        elementos.extend(_montar_secao_modalidade(estilos, modalidade, *dados))
+        pontuacao = await _carregar_pontuacao(db, modalidade)
+        elementos.extend(_montar_secao_modalidade(estilos, modalidade, *dados, pontuacao))
 
     documento.build(elementos)
     return buffer.getvalue()

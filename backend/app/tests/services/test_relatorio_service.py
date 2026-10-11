@@ -20,7 +20,7 @@ from app.models.modalidade import (
     TipoDisputa,
 )
 from app.models.partida import Partida
-from app.models.rodada import Rodada
+from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.usuario import Papel, Usuario
 from app.schemas.inscricao import InscricaoCreate
 from app.schemas.lancamento import ItemLancamentoInput, LancamentoCreate
@@ -29,7 +29,10 @@ from app.services.ficha import publicar_ficha
 from app.services.inscricao import criar_inscricao
 from app.services.lancamento import confirmar_lancamento, criar_lancamento
 from app.services.relatorio import (
+    ConfrontoResumo,
+    PontuacaoModalidade,
     _calcular_gerado_em,
+    _carregar_pontuacao,
     _montar_secao_modalidade,
     gerar_relatorio_auditoria_evento_pdf,
     gerar_relatorio_auditoria_pdf,
@@ -334,3 +337,168 @@ def test_montar_secao_modalidade_separa_cada_nivel_em_secao_propria():
     linhas_nivel_2 = tabela_nivel_2._cellvalues
     assert any("Equipe Nivel 2" in str(celula) for linha in linhas_nivel_2 for celula in linha)
     assert not any("Equipe Nivel 1" in str(celula) for linha in linhas_nivel_2 for celula in linha)
+
+
+# ---------- pontuacao no relatorio (nota por rodada / placar do confronto) ----------
+
+
+def _textos_das_tabelas(elementos) -> list[list[str]]:
+    return [
+        [str(celula) for linha in e._cellvalues for celula in linha]
+        for e in elementos
+        if hasattr(e, "_cellvalues")
+    ]
+
+
+async def _criar_modalidade_individual(db_session, qtd_rodadas=2) -> tuple[Modalidade, list]:
+    evento = await _criar_evento(db_session)
+    modalidade = Modalidade(
+        evento_id=evento.id,
+        nome="Danca",
+        tipo_disputa=TipoDisputa.INDIVIDUAL,
+        niveis_aplicaveis=[1],
+        ficha_unica_entre_niveis=True,
+        qtd_rodadas=qtd_rodadas,
+        tentativas_por_rodada=1,
+        consolidacao=Consolidacao.SOMA_RODADAS,
+        status=ModalidadeStatus.PUBLICADA,
+    )
+    db_session.add(modalidade)
+    await db_session.flush()
+    rodadas = []
+    for numero in range(1, qtd_rodadas + 1):
+        rodada = Rodada(
+            modalidade_id=modalidade.id,
+            numero=numero,
+            modo_horario=ModoHorario.MANUAL,
+            status=RodadaStatus.AGENDADA,
+        )
+        db_session.add(rodada)
+        rodadas.append(rodada)
+    await db_session.flush()
+    return modalidade, rodadas
+
+
+async def _lancar_confirmado(
+    db_session, ficha, criterio, rodada, equipe, ocorrencias, arbitro, partida=None
+):
+    payload = LancamentoCreate(
+        ficha_id=ficha.id,
+        rodada_id=rodada.id,
+        tentativa=1,
+        equipe_id=equipe,
+        partida_id=partida,
+        client_operation_id=uuid.uuid4(),
+        itens=[ItemLancamentoInput(criterio_id=criterio.id, ocorrencias=ocorrencias)],
+    )
+    lancamento = await criar_lancamento(db_session, payload, arbitro_id=arbitro.id)
+    await confirmar_lancamento(db_session, lancamento.id, usuario_id=arbitro.id)
+    return lancamento
+
+
+async def test_carregar_pontuacao_individual_guarda_a_nota_de_cada_rodada(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    arbitro = await _criar_arbitro(db_session)
+    modalidade, (rodada_1, rodada_2) = await _criar_modalidade_individual(db_session)
+    (equipe,) = await _inscrever_equipes(db_session, modalidade, coordenador, 1)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+    await _lancar_confirmado(db_session, ficha, criterio, rodada_1, equipe.id, 3, arbitro)
+    await _lancar_confirmado(db_session, ficha, criterio, rodada_2, equipe.id, 2, arbitro)
+
+    pontuacao = await _carregar_pontuacao(db_session, modalidade)
+
+    assert [numero for _, numero in pontuacao.rodadas] == [1, 2]
+    assert pontuacao.nota_por_rodada[(equipe.id, rodada_1.id)] == Decimal("30")
+    assert pontuacao.nota_por_rodada[(equipe.id, rodada_2.id)] == Decimal("20")
+
+
+async def test_carregar_pontuacao_confronto_soma_os_pontos_de_cada_lado(db_session):
+    coordenador = await _criar_coordenador(db_session)
+    arbitro = await _criar_arbitro(db_session)
+    modalidade = await _criar_modalidade_confronto(db_session)
+    await _inscrever_equipes(db_session, modalidade, coordenador, 2)
+    ficha, criterio = await _criar_ficha_com_criterio(db_session, modalidade, coordenador)
+    rodada = await _montar_rodada_1(db_session, modalidade.id, usuario_id=coordenador.id)
+    partida = (
+        await db_session.scalars(select(Partida).where(Partida.rodada_id == rodada.id))
+    ).one()
+    await _lancar_confirmado(
+        db_session, ficha, criterio, rodada, partida.equipe_a_id, 3, arbitro, partida.id
+    )
+    await _lancar_confirmado(
+        db_session, ficha, criterio, rodada, partida.equipe_b_id, 1, arbitro, partida.id
+    )
+
+    pontuacao = await _carregar_pontuacao(db_session, modalidade)
+
+    assert pontuacao.pontos_por_equipe[partida.equipe_a_id] == Decimal("30")
+    assert pontuacao.pontos_por_equipe[partida.equipe_b_id] == Decimal("10")
+    (confronto,) = pontuacao.confrontos
+    assert (confronto.equipe_a, confronto.pontos_a) == ("Equipe 1", Decimal("30"))
+    assert (confronto.equipe_b, confronto.pontos_b) == ("Equipe 2", Decimal("10"))
+    assert confronto.vencedor == "Equipe 1"
+
+
+def test_montar_secao_individual_mostra_uma_coluna_por_rodada_e_o_total():
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    modalidade = SimpleNamespace(tipo_disputa=TipoDisputa.INDIVIDUAL, formato_chaveamento=None)
+    equipe_id, rodada_1, rodada_2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    classificacao = [{"equipe_id": equipe_id, "nota_final": Decimal("30.50"), "posicao": 1}]
+    equipes_por_id = {equipe_id: SimpleNamespace(nome="Equipe A", nivel=1)}
+    pontuacao = PontuacaoModalidade(
+        rodadas=[(rodada_1, 1), (rodada_2, 2)],
+        nota_por_rodada={(equipe_id, rodada_1): Decimal("30.50")},
+    )
+
+    elementos = _montar_secao_modalidade(
+        getSampleStyleSheet(), modalidade, classificacao, equipes_por_id, pontuacao
+    )
+
+    (tabela,) = _textos_das_tabelas(elementos)
+    assert tabela[:5] == ["Posicao", "Equipe", "Rodada 1", "Rodada 2", "Nota final"]
+    # Rodada 2 sem nota lancada aparece como "-", nao como zero.
+    assert tabela[5:] == ["1", "Equipe A", "30.5", "-", "30.5"]
+
+
+def test_montar_secao_confronto_mostra_pontos_e_placar_de_cada_confronto():
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    modalidade = SimpleNamespace(
+        tipo_disputa=TipoDisputa.CONFRONTO, formato_chaveamento=FormatoChaveamento.MATA_MATA
+    )
+    equipe_a, equipe_b = uuid.uuid4(), uuid.uuid4()
+    classificacao = [
+        {
+            "equipe_id": equipe_a,
+            "posicao": 1,
+            "vitorias": 1,
+            "derrotas": 0,
+            "formato_chaveamento": FormatoChaveamento.MATA_MATA,
+        },
+    ]
+    equipes_por_id = {equipe_a: SimpleNamespace(nome="Alfa", nivel=1)}
+    pontuacao = PontuacaoModalidade(
+        pontos_por_equipe={equipe_a: Decimal("30"), equipe_b: Decimal("10")},
+        confrontos=[
+            ConfrontoResumo(
+                rodada=1,
+                nivel=1,
+                equipe_a="Alfa",
+                pontos_a=Decimal("30"),
+                equipe_b="Beta",
+                pontos_b=Decimal("10"),
+                vencedor="Alfa",
+            )
+        ],
+    )
+
+    elementos = _montar_secao_modalidade(
+        getSampleStyleSheet(), modalidade, classificacao, equipes_por_id, pontuacao
+    )
+
+    classificacao_tabela, confrontos_tabela = _textos_das_tabelas(elementos)
+    assert classificacao_tabela[:4] == ["Posicao", "Equipe", "Resultado", "Pontos marcados"]
+    assert classificacao_tabela[4:] == ["1", "Alfa", "1V 0D", "30"]
+    assert confrontos_tabela[:5] == ["Rodada", "Equipe A", "Placar", "Equipe B", "Vencedor"]
+    assert confrontos_tabela[5:] == ["1", "Alfa", "30 x 10", "Beta", "Alfa"]

@@ -44,12 +44,17 @@ describe("AdminPage", () => {
     [/importar equipes/i, "/eventos/evt-1/admin/importar"],
     [/equipes e presen/i, "/equipes"],
     [/sequ[eê]ncia de competi/i, "/eventos/evt-1/competicoes?aba=individual&sub=ordem"],
-    [/fichas de pontua/i, "/eventos/evt-1/fichas"],
     [/resetar chaveamento/i, "/eventos/evt-1/admin/resetar-chaveamento"],
   ])("cartao %s leva pra %s", (nome, href) => {
     renderPage();
 
     expect(screen.getByRole("link", { name: nome })).toHaveAttribute("href", href);
+  });
+
+  it("nao tem cartao de fichas (coordenador nao altera ficha)", () => {
+    renderPage();
+
+    expect(screen.queryByRole("link", { name: /fichas de pontua/i })).toBeNull();
   });
 
   it("guarda o evento atual pros outros links do menu", () => {

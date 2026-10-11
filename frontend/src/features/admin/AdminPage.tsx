@@ -59,12 +59,6 @@ function cartoes(eventoId: string): { secao: string; itens: Cartao[] }[] {
           destino: `${evento}/admin/importar`,
         },
         {
-          icone: "📋",
-          titulo: "Fichas de pontuação",
-          descricao: "Ver ou alterar os critérios de pontuação de cada modalidade.",
-          destino: `${evento}/fichas`,
-        },
-        {
           icone: "♻️",
           titulo: "Resetar chaveamento",
           descricao: "Apaga os confrontos de uma modalidade de combate pra montar de novo.",

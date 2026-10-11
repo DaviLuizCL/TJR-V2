@@ -1520,3 +1520,11 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
      `gerar_sequencia_pdf` (A4 paisagem, uma página por nível, fonte que encolhe com nível
      grande). Botão "📺 Gerar PDF pro telão" na `OrdemApresentacaoPage`.
 
+   - **Ajustes pedidos no fim do dia (10/10/2026)**: o cartão "Fichas de pontuação" saiu do
+     painel de Administração, e o item `FICHA` do checklist ficou sem botão "Resolver". O
+     coordenador não altera ficha: se precisar, o usuário pede pro dev. O link "Fichas" do Header
+     continua lá. O relatório geral em PDF ganhou a pontuação (`relatorio._carregar_pontuacao`,
+     mesmo filtro da consolidação: só `CONFIRMADO` de ficha não `DEPRECADA`). Na individual, uma
+     coluna por rodada (maior total da equipe na rodada, "-" se não tem nota) + "Nota final". No
+     confronto, a coluna "Pontos marcados" (soma de todos os combates) + uma tabela "Confrontos"
+     (rodada, equipes, placar somado, vencedor).

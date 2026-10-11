@@ -110,6 +110,25 @@ describe("ChecklistPage", () => {
     );
   });
 
+  it("ficha pendente nao tem botao Resolver (ficha so o dev altera)", async () => {
+    mockChecklist({
+      ...TUDO_OK,
+      modalidades: [
+        {
+          modalidade_id: "mod-1",
+          nome: "Dança",
+          tipo_disputa: "INDIVIDUAL",
+          itens: [{ codigo: "FICHA", ok: false, mensagem: "Falta publicar a ficha." }],
+        },
+      ],
+    });
+
+    renderPage();
+
+    const item = (await screen.findByText("Falta publicar a ficha.")).closest("li")!;
+    expect(within(item).queryByRole("link")).toBeNull();
+  });
+
   it("item ok nao tem botao Resolver", async () => {
     mockChecklist(TUDO_OK);
 
