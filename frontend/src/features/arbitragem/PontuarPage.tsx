@@ -2,6 +2,9 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
+import { PageHeader } from "../../components/PageHeader";
+import { iconeModalidade } from "../../lib/modalidade-icone";
 import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeInfo {
@@ -24,6 +27,8 @@ interface EquipeItem {
   id: string;
   nome: string;
   nivel: number;
+  // Ausente (marcado pela coordenacao) vai pro fim da fila, mas segue clicavel.
+  presente?: boolean;
 }
 
 interface LancamentoResumo {
@@ -158,6 +163,9 @@ export function PontuarPage() {
   }
 
   pendencias.sort((a, b) => {
+    const ausenteA = a.equipe.presente === false;
+    const ausenteB = b.equipe.presente === false;
+    if (ausenteA !== ausenteB) return Number(ausenteA) - Number(ausenteB);
     if (a.rodada.numero !== b.rodada.numero) return a.rodada.numero - b.rodada.numero;
     if (a.tentativa !== b.tentativa) return a.tentativa - b.tentativa;
     const ordemA = ordemPorEquipe.get(a.equipe.id) ?? Number.POSITIVE_INFINITY;
@@ -175,24 +183,31 @@ export function PontuarPage() {
 
   if (carregando) {
     return (
-      <main className="p-8">
+      <main className="px-4 py-6 sm:p-8">
         <p className="animate-pulse text-slate-500">Carregando...</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <Link
-        to={`/eventos/${eventoId}/competicoes?aba=individual&sub=pontuar`}
-        className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
-      >
-        ← Voltar para pontuar
-      </Link>
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">Pontuar {modalidade.nome}</h1>
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        voltar={{
+          para: `/eventos/${eventoId}/competicoes?aba=individual&sub=pontuar`,
+          rotulo: "Voltar para pontuar",
+        }}
+        sobretitulo="Pontuar"
+        titulo={
+          <>
+            <span aria-hidden="true">{iconeModalidade(modalidade.nome)} </span>
+            {modalidade.nome}
+          </>
+        }
+        descricao="Toque na equipe que vai se apresentar agora. A primeira da lista é a próxima da fila."
+      />
 
       {(niveisDisponiveis.length > 1 || rodadasOrdenadas.length > 1) && (
-        <div className="mb-4 flex flex-wrap gap-4">
+        <div className="card mb-6 grid grid-cols-2 gap-3 p-4 sm:flex sm:flex-wrap sm:gap-4">
           {niveisDisponiveis.length > 1 && (
             <div>
               <label
@@ -205,9 +220,9 @@ export function PontuarPage() {
                 id="filtro-nivel"
                 value={nivelFiltro}
                 onChange={(e) => atualizarFiltro("nivel", e.target.value)}
-                className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
+                className="min-h-12 w-full max-w-xs rounded-lg sm:min-w-[12rem] border border-slate-300 px-3 py-2"
               >
-                <option value="">Todos os niveis</option>
+                <option value="">Todos os níveis</option>
                 {niveisDisponiveis.map((nivel) => (
                   <option key={nivel} value={nivel}>
                     {rotuloNivel(nivel)}
@@ -229,7 +244,7 @@ export function PontuarPage() {
                 id="filtro-rodada"
                 value={rodadaFiltro}
                 onChange={(e) => atualizarFiltro("rodada", e.target.value)}
-                className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
+                className="min-h-12 w-full max-w-xs rounded-lg sm:min-w-[12rem] border border-slate-300 px-3 py-2"
               >
                 <option value="">Todas as rodadas</option>
                 {rodadasOrdenadas.map((rodada) => (
@@ -244,68 +259,94 @@ export function PontuarPage() {
       )}
 
       {pendencias.length === 0 && equipesFiltradas.length === 0 && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
-          <p>Nenhuma equipe pendente: a modalidade ainda nao tem equipe inscrita.</p>
+        <div className="card p-5 text-slate-600">
+          <p>
+            <span aria-hidden="true">📭 </span>Nenhuma equipe pendente: a modalidade ainda não tem equipe
+            inscrita. A coordenação inscreve as equipes em Equipes → Editar.
+          </p>
         </div>
       )}
 
       {pendencias.length === 0 && equipesFiltradas.length > 0 && rodadasOrdenadas.length === 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
-          <p>Nenhuma rodada foi criada para esta modalidade. Gere as rodadas antes de pontuar.</p>
+        <Aviso tipo="alerta">
+          <p>
+            Nenhuma rodada foi criada para esta modalidade. Gere as
+            rodadas antes de pontuar.
+          </p>
           <Link
             to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas`}
-            className="mt-1 inline-block text-xs font-medium text-amber-900 underline"
+            className="btn mt-3 bg-amber-500 text-slate-50"
           >
             Gerar rodadas →
           </Link>
-        </div>
+        </Aviso>
       )}
 
       {pendencias.length === 0 && equipesFiltradas.length > 0 && rodadasOrdenadas.length > 0 && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
-          <p>✓ Nenhuma equipe pendente: todas ja completaram todas as rodadas.</p>
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-6 text-center text-emerald-800">
+          <p className="text-4xl" aria-hidden="true">🏁</p>
+          <p className="mt-2 font-display text-xl font-bold">Tudo pontuado!</p>
+          <p className="text-sm">Nenhuma equipe pendente: todas já completaram todas as rodadas.</p>
         </div>
       )}
 
       {pendencias.length > 0 && pendenciasExibidas.length === 0 && (
-        <p className="text-slate-500">Nenhuma equipe pendente na rodada selecionada.</p>
+        <p className="card p-5 text-slate-500">Nenhuma equipe pendente na rodada selecionada.</p>
       )}
 
       <ul className="grid gap-3 sm:grid-cols-2">
-        {pendenciasExibidas.map(({ equipe, rodada, tentativa }) => {
+        {pendenciasExibidas.map(({ equipe, rodada, tentativa }, indice) => {
           const ordem = ordemPorEquipe.get(equipe.id);
-
-          const cabecalho = (
-            <div className="flex items-start justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-800">{equipe.nome}</h2>
-              {temLancamentoPendente(equipe.id) && (
-                <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                  ⚠ Pendente de confirmação
-                </span>
-              )}
-            </div>
-          );
-          const corpo = (
-            <>
-              <p className="text-sm text-slate-500">
-                {rotuloNivel(equipe.nivel)}
-                {ordem ? ` · ${ordem}º na sequência` : ""}
-              </p>
-              <p className="mt-2 text-sm font-medium text-slate-700">
-                Rodada {rodada.numero}
-                {tentativasPorRodada > 1 ? ` · Tentativa ${tentativa}` : ""}
-              </p>
-            </>
-          );
+          const ausente = equipe.presente === false;
+          const proxima = indice === 0 && !ausente;
+          const aguardandoConfirmacao = temLancamentoPendente(equipe.id);
 
           return (
-            <li key={equipe.id}>
+            <li key={equipe.id} className={proxima ? "sm:col-span-2" : undefined}>
               <Link
                 to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodada.id}/lancamentos/novo?equipeId=${equipe.id}&tentativa=${tentativa}${nivelFiltro ? `&nivel=${nivelFiltro}` : ""}${rodadaFiltro ? `&rodada=${rodadaFiltro}` : ""}`}
-                className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
+                className={`card group flex min-h-[88px] items-center gap-4 p-4 hover:border-neon/60 ${
+                  proxima ? "border-neon/50 shadow-glow" : ""
+                } ${ausente ? "opacity-60" : ""}`}
               >
-                {cabecalho}
-                {corpo}
+                <span
+                  aria-hidden="true"
+                  className={`grid h-14 w-14 shrink-0 place-items-center rounded-xl font-display font-bold ${
+                    ordem ? "text-2xl" : "text-xs uppercase"
+                  } ${proxima ? "bg-neon text-slate-50" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}
+                >
+                  {ordem ?? `R${rodada.numero}`}
+                </span>
+                <div className="min-w-0 flex-1">
+                  {proxima && <p className="eyebrow mb-0.5">Próxima</p>}
+                  <h2 className="truncate font-display text-xl font-bold text-slate-900">
+                    {equipe.nome}
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    {rotuloNivel(equipe.nivel)}
+                    {ordem ? ` · ${ordem}º na sequência` : ""}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="chip border-slate-300 bg-slate-100 text-slate-700">
+                      Rodada {rodada.numero}
+                      {tentativasPorRodada > 1 ? ` · Tentativa ${tentativa}` : ""}
+                    </span>
+                    {ausente && (
+                      <span className="chip border-red-300 bg-red-50 text-red-700">Ausente</span>
+                    )}
+                    {aguardandoConfirmacao && (
+                      <span className="chip border-amber-300 bg-amber-50 text-amber-800">
+                        ⚠ Pendente de confirmação
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span
+                  aria-hidden="true"
+                  className="font-display text-2xl text-slate-400 group-hover:translate-x-1 group-hover:text-neon"
+                >
+                  →
+                </span>
               </Link>
             </li>
           );

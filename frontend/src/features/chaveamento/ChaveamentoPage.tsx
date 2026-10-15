@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { useAuthStore } from "../../lib/auth-store";
 import { rotuloNivel } from "../../lib/nivel";
 import { ResetarChaveamentoModal } from "./ResetarChaveamentoModal";
@@ -183,22 +184,9 @@ export function ChaveamentoPage() {
     // mesmo formato, por construcao (gerar_chaveamento_confronto).
     const formatoDoNivel = partidasDoNivel[0]?.formato_chaveamento;
 
-    if (formatoDoNivel === "MATA_MATA") {
-      const rodadasComNivel = rodadasOrdenadas.filter((r) =>
-        (partidasPorRodada.get(r.id) ?? []).some((p) => p.nivel === nivelAtivo),
-      );
-      if (rodadasComNivel.length === 0) return null;
-      const ultimaRodada = rodadasComNivel[rodadasComNivel.length - 1];
-      const partidasDaUltima = (partidasPorRodada.get(ultimaRodada.id) ?? []).filter(
-        (p) => p.nivel === nivelAtivo,
-      );
-      if (partidasDaUltima.length === 1 && partidasDaUltima[0].status === "ENCERRADA") {
-        const nomeCampeao = equipePorId.get(partidasDaUltima[0].vencedor_id ?? "") ?? "?";
-        return `Campeão: ${nomeCampeao}`;
-      }
-      return null;
-    }
-
+    // Mata-mata nao ganha banner de campeao: montado na mao (out/2026), a
+    // ultima rodada existente pode ser uma semifinal ainda sem par. Quem
+    // venceu aparece no card e no ranking.
     if (formatoDoNivel === "TODOS_CONTRA_TODOS") {
       const finalizado = partidasDoNivel.every(
         (p) => p.status === "ENCERRADA" || p.status === "EMPATADA",
@@ -285,9 +273,9 @@ export function ChaveamentoPage() {
           )}
 
           {banner && (
-            <p className="mb-4 rounded bg-emerald-50 px-4 py-2 font-medium text-emerald-800">
+            <Aviso tipo="sucesso" className="mb-4 font-medium">
               {banner}
-            </p>
+            </Aviso>
           )}
 
           {rodadas && rodadas.length > 0 && (

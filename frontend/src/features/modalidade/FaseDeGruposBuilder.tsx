@@ -2,6 +2,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { rotuloNivel } from "../../lib/nivel";
 
 interface EquipeItem {
@@ -209,13 +210,13 @@ export function FaseDeGruposBuilder({
             type="button"
             onClick={criarChave}
             disabled={enviando || !nomeNovaChave.trim()}
-            className="rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="btn-primary text-sm"
           >
             Criar chave
           </button>
         </div>
 
-        {erro && <p className="mb-4 text-sm text-red-600">{erro}</p>}
+        {erro && <Aviso tipo="erro" className="mb-4">{erro}</Aviso>}
 
         <ul className="mb-6 space-y-3">
           {chavesDoNivel.map((chave) => (

@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { useAuthStore } from "../../lib/auth-store";
 import { rotuloNivel } from "../../lib/nivel";
 
@@ -106,18 +107,18 @@ export function InscricaoPage() {
   }
 
   if (!modalidade || !equipes || !inscricoes) {
-    return <main className="p-8 text-slate-500">Carregando...</main>;
+    return <main className="px-4 py-6 text-slate-500 sm:p-8">Carregando...</main>;
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <Link
         to={`/eventos/${eventoId}/modalidades`}
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
       >
         ← Voltar para modalidades
       </Link>
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">
+      <h1 className="mb-6 text-3xl font-bold">
         Inscricoes de {modalidade?.nome ?? "..."}
       </h1>
 
@@ -170,13 +171,13 @@ export function InscricaoPage() {
           <button
             type="submit"
             disabled={!equipeSelecionada}
-            className="rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="btn-primary"
           >
             Inscrever
           </button>
         </form>
       )}
-      {erro && <p className="mt-2 text-sm text-red-600">{erro}</p>}
+      {erro && <Aviso tipo="erro" className="mt-2">{erro}</Aviso>}
     </main>
   );
 }

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { ResetarChaveamentoModal } from "../chaveamento/ResetarChaveamentoModal";
 import { VoltarAdmin } from "./VoltarAdmin";
 
@@ -31,21 +32,19 @@ export function ResetarChaveamentoAdminPage() {
   const combates = (modalidades ?? []).filter((m) => m.tipo_disputa === "CONFRONTO");
 
   return (
-    <main className="mx-auto max-w-3xl p-4 sm:p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <VoltarAdmin />
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">Resetar chaveamento</h1>
-      <div className="mb-6 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-        <p className="mb-1 font-semibold">⚠️ Use só se o chaveamento foi montado errado.</p>
+      <h1 className="mb-2 text-3xl font-bold">Resetar chaveamento</h1>
+      <Aviso tipo="erro" className="mb-6">
+        <p className="mb-1 font-semibold">Use só se o chaveamento foi montado errado.</p>
         <p>
           Apaga <strong>todos</strong> os confrontos, rodadas e notas da modalidade escolhida,
           pra montar de novo do zero. As equipes e inscrições continuam. Uma cópia de tudo que foi
           apagado fica guardada no histórico do sistema, mas não volta pra tela.
         </p>
-      </div>
+      </Aviso>
 
-      {aviso && (
-        <p className="mb-4 rounded bg-emerald-100 p-3 font-medium text-emerald-900">{aviso}</p>
-      )}
+      {aviso && <Aviso tipo="sucesso" className="mb-4">{aviso}</Aviso>}
       {isLoading && <p className="text-slate-500">Carregando...</p>}
 
       <ul className="space-y-2">

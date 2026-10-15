@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { VoltarAdmin } from "./VoltarAdmin";
 
 interface Relatorio {
@@ -26,16 +27,16 @@ function ResumoRelatorio({ relatorio }: { relatorio: Relatorio }) {
         </li>
       </ul>
       {relatorio.erros.length > 0 && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <Aviso tipo="alerta">
           <p className="mb-1 font-semibold">
-            ⚠️ {relatorio.erros.length} linha(s) com problema — essas não entram:
+            {relatorio.erros.length} linha(s) com problema — essas não entram:
           </p>
           <ul className="list-disc pl-5">
             {relatorio.erros.map((erro) => (
               <li key={erro}>{erro}</li>
             ))}
           </ul>
-        </div>
+        </Aviso>
       )}
     </div>
   );
@@ -81,9 +82,9 @@ export function ImportarEquipesPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-4 sm:p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <VoltarAdmin />
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">Importar equipes da planilha</h1>
+      <h1 className="mb-2 text-3xl font-bold">Importar equipes da planilha</h1>
       <div className="mb-6 text-sm text-slate-500">
         <p className="mb-1">
           Use a planilha oficial de inscrições (.xlsx). O sistema lê a coluna A (desafio), B
@@ -115,7 +116,7 @@ export function ImportarEquipesPage() {
           type="button"
           onClick={verPrevia}
           disabled={!arquivo || enviando}
-          className="min-h-12 rounded bg-slate-800 px-4 font-medium text-white disabled:opacity-50"
+          className="btn-primary min-h-12"
         >
           {enviando && !previa ? "Lendo..." : "2. Ver prévia"}
         </button>
@@ -124,7 +125,7 @@ export function ImportarEquipesPage() {
         </p>
       </div>
 
-      {erro && <p className="mb-4 rounded bg-red-50 p-3 font-medium text-red-700">{erro}</p>}
+      {erro && <Aviso tipo="erro" className="mb-4 font-medium">{erro}</Aviso>}
 
       {previa && (
         <>
@@ -134,7 +135,7 @@ export function ImportarEquipesPage() {
             type="button"
             onClick={confirmar}
             disabled={enviando}
-            className="min-h-12 rounded bg-emerald-700 px-4 font-medium text-white disabled:opacity-50"
+            className="btn-success min-h-12"
           >
             {enviando ? "Importando..." : "3. Confirmar importação"}
           </button>

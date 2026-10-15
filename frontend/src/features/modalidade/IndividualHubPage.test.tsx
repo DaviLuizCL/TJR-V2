@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { IndividualHubPage } from "./IndividualHubPage";
 
 vi.mock("../../api/client", () => ({
@@ -39,6 +40,19 @@ beforeEach(() => {
 });
 
 describe("IndividualHubPage", () => {
+  it("juiz ve so os cards de Pontuar, sem as abas (sequencia e coisa da coordenacao)", async () => {
+    useAuthStore.setState({
+      accessToken: "t",
+      refreshToken: "r",
+      usuario: { id: "u1", nome: "Juiz", email: "j@tjr.app", papel: "ARBITRO" },
+    });
+    renderPage("/eventos/evt-1/individual?sub=ordem");
+
+    expect(await screen.findByRole("link", { name: /^pontuar$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    useAuthStore.setState({ usuario: null });
+  });
+
   it("mostra a aba Pontuar selecionada por padrao", async () => {
     renderPage();
 

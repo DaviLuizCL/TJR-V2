@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,6 +112,30 @@ describe("ModalidadeListPage", () => {
     renderPage();
 
     expect(await screen.findByText(/ficha: publicada/i)).toBeInTheDocument();
+  });
+
+  it("nao tem mais o botao 'Abrir evento' (rodadas se geram por modalidade)", async () => {
+    // Pedido do coordenador (14/10/2026): o botao confundia. Rodada de
+    // individual nasce junto com a modalidade, ou por "Gerar rodadas".
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: {
+            itens: [{ id: "m1", nome: "Danca", tipo_disputa: "INDIVIDUAL", status: "RASCUNHO" }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+          error: undefined,
+        } as never;
+      }
+      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
+    });
+
+    renderPage();
+
+    await screen.findByRole("link", { name: /danca/i });
+    expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
   });
 
   it("cada modalidade linka para a tela de edicao dela", async () => {
@@ -241,46 +265,6 @@ describe("ModalidadeListPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clicar em 'Abrir evento' abre o modal com uma linha por modalidade individual", async () => {
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [
-              { id: "m1", nome: "Sumo", tipo_disputa: "CONFRONTO", status: "RASCUNHO" },
-              { id: "m2", nome: "Danca", tipo_disputa: "INDIVIDUAL", status: "RASCUNHO" },
-            ],
-            total: 2,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-
-    renderPage();
-    await screen.findByText("Sumo");
-    await userEvent.click(screen.getByRole("button", { name: /abrir evento/i }));
-
-    const modal = await screen.findByRole("dialog", { name: /abrir evento/i });
-    expect(within(modal).queryByLabelText("Sumo")).not.toBeInTheDocument();
-    expect(within(modal).getByLabelText("Danca")).toBeInTheDocument();
-  });
-
-  it("botao 'Abrir evento' nao aparece sem modalidade cadastrada", async () => {
-    vi.mocked(api.GET).mockResolvedValue({
-      data: { itens: [], total: 0, page: 1, size: 50 },
-      error: undefined,
-    } as never);
-
-    renderPage();
-
-    await waitFor(() => expect(screen.getByText(/nenhuma modalidade cadastrada/i)).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
-  });
-
   it("arbitro nao ve 'Gerenciar equipes' nem 'Nova modalidade'", async () => {
     logarComo("ARBITRO");
     vi.mocked(api.GET).mockResolvedValue({
@@ -322,49 +306,4 @@ describe("ModalidadeListPage", () => {
     expect(screen.getByRole("link", { name: /nova modalidade/i })).toBeInTheDocument();
   });
 
-  it("arbitro nao ve o botao 'Abrir evento' mesmo com modalidade cadastrada", async () => {
-    logarComo("ARBITRO");
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [{ id: "m1", nome: "Sumo", tipo_disputa: "CONFRONTO", status: "RASCUNHO" }],
-            total: 1,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-
-    renderPage();
-
-    await screen.findByText("Sumo");
-    expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
-  });
-
-  it("secretaria tambem nao ve o botao 'Abrir evento'", async () => {
-    logarComo("SECRETARIA");
-    vi.mocked(api.GET).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/modalidades") {
-        return {
-          data: {
-            itens: [{ id: "m1", nome: "Sumo", tipo_disputa: "CONFRONTO", status: "RASCUNHO" }],
-            total: 1,
-            page: 1,
-            size: 50,
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: { itens: [], total: 0, page: 1, size: 50 }, error: undefined } as never;
-    });
-
-    renderPage();
-
-    await screen.findByText("Sumo");
-    expect(screen.queryByRole("button", { name: /abrir evento/i })).not.toBeInTheDocument();
-  });
 });

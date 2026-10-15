@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAvisosStore } from "../../lib/avisos";
 import { db } from "../../lib/db";
 import { queryClient } from "../../lib/query-client";
 import { _resetarSincronizacaoParaTeste } from "../../lib/sync";
@@ -154,7 +155,7 @@ describe("LancamentoFormPage", () => {
     expect(await screen.findByText("Lombada")).toBeInTheDocument();
   });
 
-  it("registra o lancamento com os itens preenchidos e mostra o total persistido", async () => {
+  it("registra o lancamento com os itens preenchidos e libera o formulario pra proxima equipe", async () => {
     mockGet();
     vi.mocked(api.POST).mockImplementation(async (path: string) => {
       if (path === "/api/v1/fichas/{ficha_id}/simular") {
@@ -184,7 +185,7 @@ describe("LancamentoFormPage", () => {
     await userEvent.selectOptions(await screen.findByLabelText(/equipe/i), "eq-1");
     await screen.findByText("Lombada");
     await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith(
@@ -200,8 +201,11 @@ describe("LancamentoFormPage", () => {
       ),
     );
 
-    const blocoTotal = (await screen.findByText(/total persistido/i)).closest("div")!;
-    expect(within(blocoTotal).getByText("30")).toBeInTheDocument();
+    // Registrar ja confirma (14/10/2026): o formulario reseta pra proxima equipe.
+    await waitFor(() => {
+      const select = screen.getByLabelText(/equipe/i) as HTMLSelectElement;
+      expect(select.value).toBe("");
+    });
   });
 
   it("modalidade individual mostra o campo de tempo gasto e envia junto no registro", async () => {
@@ -234,7 +238,7 @@ describe("LancamentoFormPage", () => {
     await userEvent.selectOptions(await screen.findByLabelText(/equipe/i), "eq-1");
     await screen.findByText("Lombada");
     await userEvent.type(await screen.findByLabelText(/tempo gasto/i), "87");
-    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith(
@@ -264,53 +268,7 @@ describe("LancamentoFormPage", () => {
     expect(screen.queryByLabelText(/tempo gasto/i)).not.toBeInTheDocument();
   });
 
-  it("depois de registrar, os criterios ficam desabilitados (editar nao muda o que sera confirmado)", async () => {
-    // Bug achado testando de verdade: depois de "Registrar lancamento", os
-    // campos de criterio continuavam clicaveis e atualizavam o "Preview" na
-    // tela, mas isso nunca chegava no lancamento que o "Confirmar" de fato
-    // envia (o servidor confirma os itens de quando foi registrado, nao os
-    // editados depois) - o arbitro via um numero diferente do que ia ser
-    // confirmado, sem aviso nenhum.
-    mockGet();
-    vi.mocked(api.POST).mockImplementation(async (path: string) => {
-      if (path === "/api/v1/fichas/{ficha_id}/simular") {
-        return { data: { total: 10 }, error: undefined } as never;
-      }
-      if (path === "/api/v1/lancamentos") {
-        return {
-          data: {
-            id: "lanc-1",
-            ficha_id: "ficha-1",
-            rodada_id: "rod-1",
-            equipe_id: "eq-1",
-            tentativa: 1,
-            revision: 1,
-            status: "PENDENTE",
-            total: 10,
-            itens: [],
-          },
-          error: undefined,
-        } as never;
-      }
-      return { data: undefined, error: undefined } as never;
-    });
-
-    renderPage();
-
-    await userEvent.selectOptions(await screen.findByLabelText(/equipe/i), "eq-1");
-    await screen.findByText("Lombada");
-    await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-
-    await screen.findByText(/total persistido/i);
-
-    const botaoAumentar = screen.getByRole("button", { name: /aumentar lombada/i });
-    expect(botaoAumentar).toBeDisabled();
-    const botaoDiminuir = screen.getByRole("button", { name: /diminuir lombada/i });
-    expect(botaoDiminuir).toBeDisabled();
-  });
-
-  it("confirma o lancamento depois de criado", async () => {
+  it("registrar tambem confirma o lancamento depois de criado, sem botao de confirmar", async () => {
     mockGet();
     vi.mocked(api.POST).mockImplementation(async (path: string) => {
       if (path === "/api/v1/fichas/{ficha_id}/simular") {
@@ -356,10 +314,7 @@ describe("LancamentoFormPage", () => {
     await userEvent.selectOptions(await screen.findByLabelText(/equipe/i), "eq-1");
     await screen.findByText("Lombada");
     await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-
-    await screen.findByText(/total persistido/i);
-    await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith(
@@ -469,7 +424,7 @@ describe("LancamentoFormPage", () => {
     await screen.findByText("Lombada");
     await userEvent.selectOptions(await screen.findByLabelText(/tentativa/i), "2");
     await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith(
@@ -688,9 +643,7 @@ describe("LancamentoFormPage", () => {
     await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
     await screen.findByText("Lombada");
     await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-    await screen.findByText(/total persistido/i);
-    await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
     await waitFor(() => {
       const select = screen.getByLabelText(/^equipe$/i) as HTMLSelectElement;
@@ -860,7 +813,7 @@ describe("LancamentoFormPage", () => {
     await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
     await screen.findByText("Lombada");
     await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-    await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+    await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith(
@@ -1048,7 +1001,7 @@ describe("LancamentoFormPage", () => {
 
       const bloco = (await screen.findByText(/pontuação enviada e confirmada/i)).closest("div")!;
       expect(within(bloco).getByText("42")).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /registrar lancamento/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /registrar lan[cç]amento/i })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: /aumentar lombada/i })).toBeDisabled();
     });
 
@@ -1154,7 +1107,7 @@ describe("LancamentoFormPage", () => {
       expect(screen.queryByLabelText(/tentativa/i)).not.toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       await waitFor(() =>
         expect(api.POST).toHaveBeenCalledWith(
@@ -1244,12 +1197,16 @@ describe("LancamentoFormPage", () => {
         "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1",
       );
 
-      const blocoTotal = (await screen.findByText(/total persistido/i)).closest("div")!;
+      const blocoTotal = (await screen.findByText(/nota registrada/i)).closest("div")!;
       expect(within(blocoTotal).getByText("10")).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /registrar lancamento/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /registrar lan[cç]amento/i })).not.toBeInTheDocument();
       expect(api.POST).not.toHaveBeenCalledWith("/api/v1/lancamentos", expect.anything());
+      // Ja existe nota: os criterios travam (editar ali nao mudaria o que vai ser
+      // confirmado - bug real achado em QA, ver secao 12 do CLAUDE.md).
+      expect(screen.getByRole("button", { name: /aumentar lombada/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /diminuir lombada/i })).toBeDisabled();
 
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /confirmar lan[cç]amento/i }));
 
       await waitFor(() =>
         expect(api.POST).toHaveBeenCalledWith(
@@ -1260,7 +1217,7 @@ describe("LancamentoFormPage", () => {
       expect(api.POST).not.toHaveBeenCalledWith("/api/v1/lancamentos", expect.anything());
     });
 
-    it("depois de confirmar, volta pra tela de Pontuar da modalidade", async () => {
+    it("depois de registrar, volta pra tela de Pontuar da modalidade", async () => {
       mockGet();
       vi.mocked(api.POST).mockImplementation(async (path: string) => {
         if (path === "/api/v1/fichas/{ficha_id}/simular") {
@@ -1307,11 +1264,102 @@ describe("LancamentoFormPage", () => {
 
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-      await screen.findByText(/total persistido/i);
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       expect(await screen.findByText("TELA DE PONTUAR")).toBeInTheDocument();
+    });
+
+    it("registrar ja envia e confirma num toque so, sem passo de confirmar, e volta pra tela de Pontuar", async () => {
+      // Pedido do coordenador (14/10/2026): o passo "Confirmar lancamento" so
+      // atrasava o juiz. Registrar enfileira o criar E o confirmar de uma vez;
+      // erro depois disso e corrigido pelo coordenador.
+      mockGet();
+      vi.mocked(api.POST).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/fichas/{ficha_id}/simular") {
+          return { data: { total: 10 }, error: undefined } as never;
+        }
+        const status = path === "/api/v1/lancamentos" ? "PENDENTE" : "CONFIRMADO";
+        return {
+          data: {
+            id: "lanc-1",
+            ficha_id: "ficha-1",
+            rodada_id: "rod-1",
+            equipe_id: "eq-1",
+            tentativa: 1,
+            revision: 1,
+            status,
+            total: 10,
+            itens: [],
+          },
+          error: undefined,
+        } as never;
+      });
+
+      renderPage(
+        "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1",
+      );
+
+      await screen.findByText("Lombada");
+      await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
+
+      expect(await screen.findByText("TELA DE PONTUAR")).toBeInTheDocument();
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith(
+          "/api/v1/lancamentos/{lancamento_id}/confirmar",
+          expect.anything(),
+        ),
+      );
+    });
+
+    it("registrar avisa 'Pontuação enviada!' (toast verde)", async () => {
+      useAvisosStore.setState({ avisos: [] });
+      mockGet();
+      vi.mocked(api.POST).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/fichas/{ficha_id}/simular") {
+          return { data: { total: 10 }, error: undefined } as never;
+        }
+        return { data: undefined, error: undefined } as never;
+      });
+
+      renderPage(
+        "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1",
+      );
+
+      await screen.findByText("Lombada");
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
+
+      await waitFor(() =>
+        expect(useAvisosStore.getState().avisos).toContainEqual(
+          expect.objectContaining({ tipo: "sucesso", mensagem: "Pontuação enviada!" }),
+        ),
+      );
+    });
+
+    it("sem internet, o aviso diz que a nota ficou guardada (azul), nao que foi enviada", async () => {
+      useAvisosStore.setState({ avisos: [] });
+      const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+      mockGet();
+      vi.mocked(api.POST).mockImplementation(async (path: string) => {
+        if (path === "/api/v1/fichas/{ficha_id}/simular") {
+          return { data: { total: 10 }, error: undefined } as never;
+        }
+        return new Promise(() => {}) as never;
+      });
+
+      renderPage(
+        "/eventos/evt-1/modalidades/mod-1/rodadas/rod-1/lancamentos/novo?equipeId=eq-1&tentativa=1",
+      );
+
+      await screen.findByText("Lombada");
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
+
+      await waitFor(() =>
+        expect(useAvisosStore.getState().avisos).toContainEqual(
+          expect.objectContaining({ tipo: "info", mensagem: expect.stringMatching(/sem internet/i) }),
+        ),
+      );
+      onLine.mockRestore();
     });
 
     it("preserva o filtro de nivel (?nivel=) da url ao voltar pra tela de Pontuar", async () => {
@@ -1361,9 +1409,7 @@ describe("LancamentoFormPage", () => {
 
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-      await screen.findByText(/total persistido/i);
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       expect(await screen.findByText("TELA DE PONTUAR?nivel=2")).toBeInTheDocument();
     });
@@ -1415,9 +1461,7 @@ describe("LancamentoFormPage", () => {
 
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-      await screen.findByText(/total persistido/i);
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       expect(await screen.findByText("TELA DE PONTUAR?nivel=2&rodada=1")).toBeInTheDocument();
     });
@@ -1486,7 +1530,7 @@ describe("LancamentoFormPage", () => {
       await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       await waitFor(() =>
         expect(api.POST).toHaveBeenCalledWith(
@@ -1555,9 +1599,7 @@ describe("LancamentoFormPage", () => {
       await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-      await screen.findByText(/total persistido/i);
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       expect(await screen.findByText("TELA DE PONTUAR")).toBeInTheDocument();
     });
@@ -1585,16 +1627,16 @@ describe("LancamentoFormPage", () => {
       await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
-      const blocoTotal = (await screen.findByText(/total persistido/i)).closest("div")!;
+      const blocoTotal = (await screen.findByText(/nota registrada/i)).closest("div")!;
       expect(within(blocoTotal).getByText("10")).toBeInTheDocument();
       expect(within(blocoTotal).getByText(/na fila/i)).toBeInTheDocument();
       // O botao "Registrar lancamento" nao pode ficar preso desabilitado -
       // ele simplesmente some, porque ja existe um lancamento ativo (na
       // fila) pra essa equipe/tentativa.
       expect(
-        screen.queryByRole("button", { name: /registrar lancamento/i }),
+        screen.queryByRole("button", { name: /registrar lan[cç]amento/i }),
       ).not.toBeInTheDocument();
 
       // Espera a chamada de fato acontecer (mesmo sem resolver) antes do
@@ -1608,7 +1650,7 @@ describe("LancamentoFormPage", () => {
       );
     });
 
-    it("confirmar tambem nao espera a rede: reseta o formulario mesmo que o POST de confirmar nunca responda", async () => {
+    it("registrar nao espera a rede do confirmar: reseta o formulario mesmo que o POST de confirmar nunca responda", async () => {
       mockGet();
       vi.mocked(api.POST).mockImplementation(async (path: string) => {
         if (path === "/api/v1/fichas/{ficha_id}/simular") {
@@ -1641,9 +1683,7 @@ describe("LancamentoFormPage", () => {
       await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-      await screen.findByText(/total persistido/i);
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       await waitFor(() => {
         const select = screen.getByLabelText(/^equipe$/i) as HTMLSelectElement;
@@ -1698,9 +1738,7 @@ describe("LancamentoFormPage", () => {
       await userEvent.selectOptions(await screen.findByLabelText(/^equipe$/i), "eq-1");
       await screen.findByText("Lombada");
       await userEvent.click(screen.getByRole("button", { name: /aumentar lombada/i }));
-      await userEvent.click(screen.getByRole("button", { name: /registrar lancamento/i }));
-      await screen.findByText(/total persistido/i);
-      await userEvent.click(screen.getByRole("button", { name: /confirmar lancamento/i }));
+      await userEvent.click(screen.getByRole("button", { name: /registrar lan[cç]amento/i }));
 
       // A tela ja segue otimista pro proximo lancamento (contrato "a UI
       // confirma na hora" - secao 8 do CLAUDE.md), mas o erro nao pode ser

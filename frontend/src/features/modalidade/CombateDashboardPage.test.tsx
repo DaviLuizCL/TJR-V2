@@ -52,19 +52,18 @@ describe("CombateDashboardPage", () => {
     expect(await screen.findByText("Sumo de Robos")).toBeInTheDocument();
     expect(await screen.findByText("Mata-Mata")).toBeInTheDocument();
 
-    const link = screen.getByRole("link", { name: /ver rodadas/i });
+    const link = screen.getByRole("link", { name: /ver confrontos/i });
     expect(link).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/rodadas");
 
     const linkPontuar = screen.getByRole("link", { name: /^pontuar$/i });
     expect(linkPontuar).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/pontuar");
   });
 
-  it("formato_chaveamento nulo mostra 'Automático por nível', nao 'Sem formato definido'", async () => {
-    // formato_chaveamento=null numa modalidade CONFRONTO nao significa mais
-    // "sem formato" -- desde o chaveamento por nivel (gerar_chaveamento_confronto),
-    // null e o normal: decide sozinho por nivel (<=5 equipes = todos-contra-
-    // todos, 6+ = mata-mata). "Sem formato definido" sugeria erro de
-    // configuracao, o que confundiu o coordenador ao olhar a tela.
+  it("formato_chaveamento nulo mostra 'Montado na mão', nao 'Automático por nível'", async () => {
+    // Desde 05/10/2026 nao existe geracao automatica de chaveamento: com
+    // formato nulo, cada confronto e criado na mao pelo coordenador, que
+    // escolhe ali o tipo (fase de grupos / eliminatoria). "Automático por
+    // nível" ficou mentindo depois dessa mudança.
     vi.mocked(api.GET).mockResolvedValue({
       data: {
         itens: [
@@ -84,8 +83,8 @@ describe("CombateDashboardPage", () => {
 
     renderPage("evt-1");
 
-    expect(await screen.findByText(/autom[aá]tico por n[ií]vel/i)).toBeInTheDocument();
-    expect(screen.queryByText(/sem formato definido/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/montado na m[aã]o/i)).toBeInTheDocument();
+    expect(screen.queryByText(/autom[aá]tico/i)).not.toBeInTheDocument();
   });
 
   it("nao mostra modalidades individuais (elas ficam na aba Rodadas)", async () => {

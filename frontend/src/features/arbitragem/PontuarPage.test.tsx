@@ -279,6 +279,31 @@ describe("PontuarPage", () => {
     expect(nomes).toEqual(["Beta", "Gama", "Alfa"]);
   });
 
+  it("equipe ausente vai pro fim da fila com selo, mas continua clicavel", async () => {
+    // Se ela aparecer atrasada, o juiz ainda consegue pontuar (pedido 14/10/2026).
+    mockGet({
+      equipes: [
+        { id: "eq-1", nome: "Alfa", nivel: 1, ativo: true, presente: false },
+        { id: "eq-2", nome: "Beta", nivel: 1, ativo: true, presente: true },
+        { id: "eq-3", nome: "Gama", nivel: 1, ativo: true, presente: true },
+      ],
+      inscricoes: [
+        { id: "ins-1", equipe_id: "eq-1", modalidade_id: "mod-1", ordem_apresentacao: 1 },
+        { id: "ins-2", equipe_id: "eq-2", modalidade_id: "mod-1", ordem_apresentacao: 2 },
+        { id: "ins-3", equipe_id: "eq-3", modalidade_id: "mod-1", ordem_apresentacao: 3 },
+      ],
+    });
+
+    renderPage();
+
+    await screen.findByText("Alfa");
+    const nomes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(nomes).toEqual(["Beta", "Gama", "Alfa"]);
+    const cardAlfa = screen.getByText("Alfa").closest("a")!;
+    expect(within(cardAlfa).getByText(/^ausente$/i)).toBeInTheDocument();
+    expect(within(cardAlfa).queryByText(/pr[oó]xima/i)).not.toBeInTheDocument();
+  });
+
   it("mostra a posicao da equipe na sequencia de competicao no card", async () => {
     mockGet({
       inscricoes: [

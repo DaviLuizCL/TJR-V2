@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 
+import { AvisosFlutuantes } from "./components/Aviso";
 import { Header } from "./components/Header";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { useSincronizarOutbox } from "./lib/use-sincronizar-outbox";
@@ -44,126 +45,144 @@ export default function App() {
   useSincronizarOutbox();
 
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/eventos/:eventoId/ranking" element={<RankingPage />} />
+    <>
+      <AvisosFlutuantes />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/eventos/:eventoId/ranking" element={<RankingPage />} />
 
-      <Route element={<AppLayout />}>
-        <Route path="/eventos" element={<EventoSelectPage />} />
-        <Route
-          path="/usuarios"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
-              <UsuarioListPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/equipes" element={<EquipeListPage />} />
-        <Route path="/equipes/:equipeId/submissoes" element={<EquipeSubmissoesPage />} />
-        <Route
-          path="/lancamentos/:lancamentoId/corrigir"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
-              <LancamentoCorrecaoPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/eventos/:eventoId/modalidades" element={<ModalidadeListPage />} />
-        <Route path="/eventos/:eventoId/modalidades/novo" element={<ModalidadeWizardPage />} />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/editar"
-          element={<ModalidadeWizardPage />}
-        />
-        <Route path="/eventos/:eventoId/fichas" element={<FichaDashboardPage />} />
-        <Route path="/eventos/:eventoId/competicoes" element={<CompeticoesPage />} />
-        <Route path="/eventos/:eventoId/painel" element={<PainelPage />} />
-        <Route
-          path="/eventos/:eventoId/admin"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
-              <AdminPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/eventos/:eventoId/admin/checklist"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR", "SECRETARIA"]}>
-              <ChecklistPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/eventos/:eventoId/admin/corrigir"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
-              <CorrigirPontuacaoPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/eventos/:eventoId/admin/importar"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
-              <ImportarEquipesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/eventos/:eventoId/admin/resetar-chaveamento"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
-              <ResetarChaveamentoAdminPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/ordem"
-          element={<OrdemApresentacaoPage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/pontuar"
-          element={<PontuarRoutePage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/fichas"
-          element={<FichaListPage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/inscricoes"
-          element={<InscricaoPage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas"
-          element={<RodadaListPage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas/:rodadaId/lancamentos/novo"
-          element={<LancamentoFormPage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas/:rodadaId/partidas/:partidaId/pontuar"
-          element={<PartidaScorerPage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas/:rodadaId/submissoes"
-          element={<RodadaSubmissoesPage />}
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/fichas/:fichaId/editar"
-          element={
-            <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
-              <FichaEditorPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/eventos/:eventoId/modalidades/:modalidadeId/fichas/:fichaId/preview"
-          element={<FichaPreviewPage />}
-        />
-      </Route>
+        <Route element={<AppLayout />}>
+          <Route path="/eventos" element={<EventoSelectPage />} />
+          <Route
+            path="/usuarios"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <UsuarioListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/equipes" element={<EquipeListPage />} />
+          <Route
+            path="/equipes/:equipeId/submissoes"
+            element={<EquipeSubmissoesPage />}
+          />
+          <Route
+            path="/lancamentos/:lancamentoId/corrigir"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <LancamentoCorrecaoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades"
+            element={<ModalidadeListPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/novo"
+            element={<ModalidadeWizardPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/editar"
+            element={<ModalidadeWizardPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/fichas"
+            element={<FichaDashboardPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/competicoes"
+            element={<CompeticoesPage />}
+          />
+          <Route path="/eventos/:eventoId/painel" element={<PainelPage />} />
+          <Route
+            path="/eventos/:eventoId/admin"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <AdminPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/admin/checklist"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR", "SECRETARIA"]}>
+                <ChecklistPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/admin/corrigir"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <CorrigirPontuacaoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/admin/importar"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <ImportarEquipesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/admin/resetar-chaveamento"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <ResetarChaveamentoAdminPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/ordem"
+            element={<OrdemApresentacaoPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/pontuar"
+            element={<PontuarRoutePage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/fichas"
+            element={<FichaListPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/inscricoes"
+            element={<InscricaoPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas"
+            element={<RodadaListPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas/:rodadaId/lancamentos/novo"
+            element={<LancamentoFormPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas/:rodadaId/partidas/:partidaId/pontuar"
+            element={<PartidaScorerPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/rodadas/:rodadaId/submissoes"
+            element={<RodadaSubmissoesPage />}
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/fichas/:fichaId/editar"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <FichaEditorPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/modalidades/:modalidadeId/fichas/:fichaId/preview"
+            element={<FichaPreviewPage />}
+          />
+        </Route>
 
-      <Route path="*" element={<Navigate to="/eventos" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/eventos" replace />} />
+      </Routes>
+    </>
   );
 }

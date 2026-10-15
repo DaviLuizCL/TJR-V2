@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 
 export function ResetarChaveamentoModal({
   modalidadeId,
@@ -61,7 +62,7 @@ export function ResetarChaveamentoModal({
           className="mb-4 w-full rounded border border-slate-300 px-3 py-2 text-sm"
         />
 
-        {erro && <p className="mb-4 text-sm text-red-600">{erro}</p>}
+        {erro && <Aviso tipo="erro" className="mb-4">{erro}</Aviso>}
 
         <div className="flex justify-end gap-3">
           <button
@@ -76,7 +77,7 @@ export function ResetarChaveamentoModal({
             type="button"
             onClick={confirmar}
             disabled={enviando || justificativa.trim().length === 0}
-            className="rounded bg-red-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="btn-danger text-sm"
           >
             {enviando ? "Resetando..." : "Confirmar reset"}
           </button>

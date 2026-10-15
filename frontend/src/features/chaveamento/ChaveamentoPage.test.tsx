@@ -312,7 +312,7 @@ describe("ChaveamentoPage", () => {
     expect(screen.queryByText("Equipe Nivel 1 A")).not.toBeInTheDocument();
   });
 
-  it("mostra banner de campeao quando o mata-mata do nivel ja tem 1 partida encerrada na ultima rodada", async () => {
+  it("nao mostra banner de campeao no mata-mata: montado na mao, a ultima rodada pode nao ser a final", async () => {
     vi.mocked(api.GET).mockImplementation(async (path: string) => {
       if (path === "/api/v1/modalidades") {
         return {
@@ -368,8 +368,9 @@ describe("ChaveamentoPage", () => {
 
     renderPage();
 
-    expect(await screen.findByText(/campe[ãa]o/i)).toBeInTheDocument();
-    expect(screen.getByText(/campe[ãa]o/i).textContent).toMatch(/Equipe Campea/);
+    // Pedido do coordenador (14/10/2026): quem venceu fica no ranking.
+    expect((await screen.findAllByText(/Equipe Campea/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/campe[ãa]o:/i)).not.toBeInTheDocument();
   });
 
   it("mostra banner de returno finalizado quando todas as partidas do nivel ja foram decididas", async () => {

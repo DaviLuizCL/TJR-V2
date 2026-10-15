@@ -17,6 +17,7 @@ import { type FormEvent, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { reordenarPorArrasto } from "../../lib/reordenar";
 
 const TIPOS_COM_PONTOS = ["CONTADOR", "BOOLEANO"];
@@ -261,7 +262,7 @@ function CriterioForm({
       )}
 
       <div className="flex gap-2">
-        <button type="submit" className="rounded bg-slate-800 px-3 py-1 text-sm text-white">
+        <button type="submit" className="btn-primary text-sm">
           Salvar criterio
         </button>
         <button
@@ -513,13 +514,13 @@ export function FichaEditorPage() {
   }
 
   if (!ficha) {
-    return <main className="p-8 text-slate-500">Carregando...</main>;
+    return <main className="px-4 py-6 text-slate-500 sm:p-8">Carregando...</main>;
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-800">Editor de ficha</h1>
+        <h1 className="text-3xl font-bold">Editor de ficha</h1>
         <div className="flex items-center gap-3">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
             v{ficha.versao} · {ficha.status}
@@ -534,13 +535,13 @@ export function FichaEditorPage() {
       </div>
 
       {ficha.status === "PUBLICADA" && (
-        <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <Aviso tipo="alerta" className="mb-4">
           <p className="font-semibold">Esta ficha está publicada (em uso pelos juízes).</p>
           <p>
             Qualquer edição cria uma nova versão automaticamente, e as próximas notas já usam a
             versão nova. As notas já lançadas não mudam: continuam valendo pela versão antiga.
           </p>
-        </div>
+        </Aviso>
       )}
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -577,7 +578,7 @@ export function FichaEditorPage() {
         </div>
         <button
           type="submit"
-          className="rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white"
+          className="btn-primary text-sm"
         >
           Adicionar grupo
         </button>
@@ -587,7 +588,7 @@ export function FichaEditorPage() {
         <button
           type="button"
           onClick={publicar}
-          className="mt-6 rounded bg-emerald-700 px-4 py-2 font-medium text-white"
+          className="btn-success mt-6"
         >
           Publicar ficha
         </button>

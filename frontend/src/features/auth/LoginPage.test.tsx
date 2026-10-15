@@ -49,7 +49,7 @@ describe("LoginPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /entrar/i }));
 
-    expect(await screen.findByText(/informe um e-mail valido/i)).toBeInTheDocument();
+    expect(await screen.findByText(/informe um e-mail v[aá]lido/i)).toBeInTheDocument();
   });
 
   it("loga com sucesso, guarda a sessao e navega direto pro evento (competicoes)", async () => {

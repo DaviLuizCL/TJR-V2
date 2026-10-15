@@ -26,7 +26,7 @@ export function EquipeSubmissoesPage() {
   });
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <Link to="/equipes" className="mb-4 inline-block text-sm font-medium text-slate-600 underline">
         ← Voltar para equipes
       </Link>
@@ -35,7 +35,7 @@ export function EquipeSubmissoesPage() {
         <p className="text-slate-500">Carregando...</p>
       ) : (
         <>
-          <h1 className="mb-1 text-2xl font-semibold text-slate-800">{equipe.nome}</h1>
+          <h1 className="mb-1 text-3xl font-bold">{equipe.nome}</h1>
           <p className="mb-6 text-sm text-slate-500">{rotuloNivel(equipe.nivel)} · Submissões</p>
           <ListaSubmissoes
             equipeId={equipeId}

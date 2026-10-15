@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
+import { BarraFixa } from "../../components/BarraFixa";
+import { PageHeader } from "../../components/PageHeader";
+import { avisarPontuacaoRegistrada } from "../../lib/avisos";
 import { db, type LancamentoOutboxItem } from "../../lib/db";
 import { derivarLancamentoAtivo, type LancamentoAtivoView } from "../../lib/lancamento-outbox-view";
 import { enfileirarConfirmarLancamento, enfileirarCriarLancamento } from "../../lib/outbox";
@@ -354,7 +358,10 @@ export function LancamentoFormPage() {
       // Grava na fila local (outbox) e resolve na hora, sem esperar a rede -
       // e o que resolve o BUG-01 do relatorio: o clique nunca mais fica preso
       // esperando fetch, porque nao ha mais fetch nenhum neste caminho.
-      await enfileirarCriarLancamento({
+      // Desde 14/10/2026 registrar ja confirma no mesmo toque (pedido do
+      // coordenador): o CONFIRMAR entra na fila logo atras do CRIAR e o sync
+      // so o envia depois que o criar voltar do servidor (dependeDe).
+      const { lancamentoLocalId } = await enfileirarCriarLancamento({
         fichaId,
         rodadaId,
         equipeId,
@@ -365,12 +372,16 @@ export function LancamentoFormPage() {
         tempoGastoSeg:
           !isConfronto && tempoGastoSeg !== "" ? Number(tempoGastoSeg) : undefined,
       });
+      await enfileirarConfirmarLancamento({ lancamentoLocalId, revision: 1 });
       void sincronizar();
     } catch {
       setErro("Não foi possível registrar o lançamento neste dispositivo. Tente novamente.");
-    } finally {
       setEnviando(false);
+      return;
     }
+    setEnviando(false);
+    avisarPontuacaoRegistrada();
+    seguirDepoisDeConfirmar();
   }
 
   async function confirmarLancamento() {
@@ -393,7 +404,11 @@ export function LancamentoFormPage() {
       return;
     }
     setConfirmando(false);
+    avisarPontuacaoRegistrada();
+    seguirDepoisDeConfirmar();
+  }
 
+  function seguirDepoisDeConfirmar() {
     if (voltarParaPontuar) {
       navigate(destinoPontuar);
       return;
@@ -414,24 +429,23 @@ export function LancamentoFormPage() {
     !lancamentosDaRodada ||
     (isConfronto && !partidas)
   ) {
-    return <main className="p-8 text-slate-500">Carregando...</main>;
+    return <main className="px-4 py-6 text-slate-500 sm:p-8">Carregando...</main>;
   }
 
+  const equipeAtual = equipePorId.get(equipeId);
+
   return (
-    <main className="mx-auto max-w-2xl p-8">
-      <Link
-        to={
-          voltarParaPontuar
+    <main className="mx-auto max-w-2xl px-4 pb-44 pt-6 sm:px-6">
+      <PageHeader
+        voltar={{
+          para: voltarParaPontuar
             ? destinoPontuar
-            : `/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas`
-        }
-        className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
-      >
-        ← Voltar {voltarParaPontuar ? "para pontuar" : "para rodadas"}
-      </Link>
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">
-        Lancar pontuacao — Rodada {rodada.numero}
-      </h1>
+            : `/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas`,
+          rotulo: voltarParaPontuar ? "Voltar para pontuar" : "Voltar para rodadas",
+        }}
+        sobretitulo={`${modalidade.nome} · Rodada ${rodada.numero}`}
+        titulo={veioPreselecionado && equipeAtual ? equipeAtual.nome : "Lançar pontuação"}
+      />
 
       {isConfronto ? (
         partidaVeioPreselecionada ? (
@@ -454,7 +468,7 @@ export function LancamentoFormPage() {
                 setPartidaId(e.target.value);
                 setEquipeId("");
               }}
-              className="w-full rounded border border-slate-300 px-3 py-2"
+              className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="">Selecione uma partida</option>
               {partidasAbertas.map((partida) => (
@@ -485,9 +499,9 @@ export function LancamentoFormPage() {
               id="filtro-nivel"
               value={nivelFiltro}
               onChange={(e) => setNivelFiltro(e.target.value)}
-              className="w-full rounded border border-slate-300 px-3 py-2"
+              className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Todos os niveis</option>
+              <option value="">Todos os níveis</option>
               {niveisDisponiveis.map((nivel) => (
                 <option key={nivel} value={nivel}>
                   {rotuloNivel(nivel)}
@@ -498,11 +512,14 @@ export function LancamentoFormPage() {
         )
       )}
 
-      {veioPreselecionado && equipePorId.get(equipeId) && (
-        <p className="mb-6 text-sm text-slate-600">
-          Pontuando: <span className="font-medium text-slate-800">{equipePorId.get(equipeId)!.nome}</span>{" "}
-          ({rotuloNivel(equipePorId.get(equipeId)!.nivel)})
-          {modalidade.tentativas_por_rodada > 1 ? ` · ${tentativa}ª tentativa` : ""}
+      {veioPreselecionado && equipeAtual && (
+        <p className="-mt-3 mb-6 flex flex-wrap gap-1.5">
+          <span className="chip border-slate-300 bg-slate-100 text-slate-700">
+            {rotuloNivel(equipeAtual.nivel)}
+          </span>
+          {modalidade.tentativas_por_rodada > 1 && (
+            <span className="chip border-neon/40 bg-neon-soft text-neon">{tentativa}ª tentativa</span>
+          )}
         </p>
       )}
 
@@ -515,7 +532,7 @@ export function LancamentoFormPage() {
             id="equipe"
             value={equipeId}
             onChange={(e) => setEquipeId(e.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
+            className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2"
           >
             <option value="">Selecione uma equipe</option>
             {equipesElegiveis.map((equipe) => (
@@ -526,7 +543,7 @@ export function LancamentoFormPage() {
           </select>
           {equipesElegiveis.length === 0 && (
             <p className="mt-1 text-sm text-slate-500">
-              Nenhuma equipe pendente de lancamento para esta rodada
+              Nenhuma equipe pendente de lançamento para esta rodada
               {tentativa > 1 ? ` (tentativa ${tentativa})` : ""}
               {nivelFiltro ? ` no nivel ${nivelFiltro}` : ""}.
             </p>
@@ -543,7 +560,7 @@ export function LancamentoFormPage() {
             id="tentativa"
             value={tentativa}
             onChange={(e) => setTentativa(Number(e.target.value))}
-            className="w-full rounded border border-slate-300 px-3 py-2"
+            className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2"
           >
             {Array.from({ length: modalidade.tentativas_por_rodada }, (_, i) => i + 1).map((n) => (
               <option key={n} value={n}>
@@ -558,9 +575,7 @@ export function LancamentoFormPage() {
         <div className="space-y-4">
           {ficha.grupos.map((grupo) => (
             <section key={grupo.id}>
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {grupo.nome}
-              </h2>
+              <h2 className="eyebrow mb-2">{grupo.nome}</h2>
               <div className="space-y-2">
                 {grupo.criterios.map((criterio) => (
                   <CriterioPreview
@@ -591,7 +606,7 @@ export function LancamentoFormPage() {
                 className="mb-1 block text-sm font-medium text-slate-700"
                 htmlFor="tempo-gasto-seg"
               >
-                Tempo gasto (segundos)
+                Tempo gasto (segundos) <span className="text-slate-500">— opcional</span>
               </label>
               <input
                 id="tempo-gasto-seg"
@@ -601,39 +616,41 @@ export function LancamentoFormPage() {
                 value={tempoGastoSeg}
                 onChange={(e) => setTempoGastoSeg(e.target.value)}
                 disabled={!!lancamentoAtivo}
-                className="w-32 rounded border border-slate-300 px-3 py-2 disabled:opacity-50"
+                className="min-h-12 w-36 rounded-lg border border-slate-300 px-3 py-2 text-lg disabled:opacity-50"
               />
             </div>
           )}
 
-          {!lancamentoAtivo && (
-            <p className="text-sm text-slate-500">
-              Preview: <span className="font-semibold text-slate-800">{totalPreview ?? 0}</span>
-            </p>
-          )}
 
           {erro && (
-            <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 p-3">
-              <span className="text-lg leading-none text-red-600" aria-hidden="true">
-                ⚠
-              </span>
-              <p className="text-sm text-red-700">{erro}</p>
-            </div>
+            <Aviso tipo="erro">
+              <p>{erro}</p>
+            </Aviso>
           )}
 
           {!lancamentoAtivo && (
-            <button
-              type="button"
-              onClick={registrarLancamento}
-              disabled={enviando}
-              className="rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
-            >
-              {enviando ? "Enviando..." : "Registrar lancamento"}
-            </button>
+            <BarraFixa>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Prévia da nota
+                </p>
+                <p className="font-display text-4xl font-bold leading-none text-neon">
+                  {totalPreview ?? 0}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={registrarLancamento}
+                disabled={enviando}
+                className="btn-primary min-h-14 flex-1 text-base sm:flex-none sm:px-8"
+              >
+                {enviando ? "Enviando..." : "Registrar lançamento"}
+              </button>
+            </BarraFixa>
           )}
 
           {lancamentoAtivo && lancamentoAtivo.estadoSincronizacao === "conflito" && (
-            <div className="rounded border border-red-300 bg-red-50 p-4">
+            <Aviso tipo="erro">
               <p className="text-sm font-semibold text-red-800">
                 Conflito ao sincronizar este lançamento
               </p>
@@ -642,41 +659,45 @@ export function LancamentoFormPage() {
                 O lançamento não foi sobrescrito. Fale com a secretaria ou a coordenação antes de
                 tentar novamente.
               </p>
-            </div>
+            </Aviso>
           )}
 
           {lancamentoAtivo && lancamentoAtivo.estadoSincronizacao !== "conflito" && (
-            <div
-              className={`rounded border p-4 ${
+            <BarraFixa
+              tom={
                 lancamentoAtivo.status === "CONFIRMADO"
-                  ? "border-emerald-200 bg-emerald-50"
+                  ? "sucesso"
                   : lancamentoAtivo.estadoSincronizacao === "pendente" ||
                       lancamentoAtivo.estadoSincronizacao === "enviando"
-                    ? "border-amber-200 bg-amber-50"
-                    : "border-slate-200 bg-white"
-              }`}
+                    ? "aviso"
+                    : "neutro"
+              }
             >
-              <p className="text-sm text-slate-500">
-                {lancamentoAtivo.status === "CONFIRMADO" && (
-                  <span className="mr-1 text-emerald-700" aria-hidden="true">
-                    ✓
-                  </span>
-                )}
-                Total persistido — {rotuloEstadoSincronizacao(lancamentoAtivo)}
-              </p>
-              <p className="text-3xl font-bold text-slate-900">{lancamentoAtivo.total}</p>
-              <p className="mt-1 text-sm text-slate-600">Status: {lancamentoAtivo.status}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-slate-600">
+                  {lancamentoAtivo.status === "CONFIRMADO" && (
+                    <span className="mr-1 text-emerald-700" aria-hidden="true">
+                      ✓
+                    </span>
+                  )}
+                  Nota registrada — {rotuloEstadoSincronizacao(lancamentoAtivo)}
+                </p>
+                <p className="font-display text-4xl font-bold leading-none text-slate-900">
+                  {lancamentoAtivo.total}
+                </p>
+                <p className="sr-only">Status: {lancamentoAtivo.status}</p>
+              </div>
               {lancamentoAtivo.status === "PENDENTE" && (
                 <button
                   type="button"
                   onClick={confirmarLancamento}
                   disabled={confirmando}
-                  className="mt-3 rounded bg-emerald-700 px-4 py-2 font-medium text-white disabled:opacity-50"
+                  className="btn-success min-h-14 flex-1 text-base sm:flex-none sm:px-8"
                 >
-                  {confirmando ? "Confirmando..." : "Confirmar lancamento"}
+                  {confirmando ? "Confirmando..." : "✓ Confirmar lançamento"}
                 </button>
               )}
-            </div>
+            </BarraFixa>
           )}
         </div>
       )}

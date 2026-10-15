@@ -236,12 +236,9 @@ async def gerar_sequencia_pdf(db: AsyncSession, modalidade_id: UUID) -> bytes:
                 ]
             )
         )
+        # Nivel sem sorteio sai em ordem alfabetica, sem aviso: o PDF vai pro
+        # telao e "ordem nao sorteada" ficaria feio na frente do publico.
         elementos.append(tabela)
-        if not nivel.sorteada:
-            elementos += [
-                Spacer(1, 0.4 * cm),
-                Paragraph("Ordem ainda não sorteada (lista em ordem alfabética).", subtitulo),
-            ]
 
     documento.build(elementos)
     return buffer.getvalue()

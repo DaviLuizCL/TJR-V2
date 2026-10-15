@@ -6,6 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import type { components } from "../../api/types";
 import { rotuloNivel } from "../../lib/nivel";
 
@@ -556,8 +557,8 @@ export function ModalidadeWizardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">
+    <main className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-2 text-3xl font-bold">
         {modoEdicao ? "Editar modalidade" : "Nova modalidade"}
       </h1>
       <p className="mb-6 text-sm text-slate-500">
@@ -571,7 +572,7 @@ export function ModalidadeWizardPage() {
         {etapa === 3 && <EtapaRodadas form={form} />}
         {etapa === 4 && <EtapaConsolidacao form={form} />}
 
-        {erroGeral && <p className="mt-4 text-sm text-red-600">{erroGeral}</p>}
+        {erroGeral && <Aviso tipo="erro" className="mt-4">{erroGeral}</Aviso>}
 
         <div className="mt-6 flex justify-between">
           <button
@@ -586,7 +587,7 @@ export function ModalidadeWizardPage() {
             <button
               type="button"
               onClick={avancar}
-              className="rounded bg-slate-800 px-4 py-2 font-medium text-white"
+              className="btn-primary"
             >
               Avancar
             </button>
@@ -594,7 +595,7 @@ export function ModalidadeWizardPage() {
             <button
               type="submit"
               disabled={form.formState.isSubmitting}
-              className="rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
+              className="btn-primary"
             >
               {modoEdicao ? "Salvar" : "Criar modalidade"}
             </button>

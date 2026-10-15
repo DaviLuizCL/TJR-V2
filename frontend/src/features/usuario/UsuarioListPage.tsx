@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { CampoSenha } from "../../components/CampoSenha";
 
 const PAPEIS = ["ARBITRO", "SECRETARIA", "COORDENADOR"] as const;
@@ -123,7 +124,7 @@ function LinhaUsuario({
               type="button"
               onClick={trocarSenha}
               disabled={enviando || senha.length < 6}
-              className="min-h-12 rounded bg-slate-800 px-4 text-sm font-medium text-white disabled:opacity-50"
+              className="btn-primary min-h-12 text-sm"
             >
               Salvar senha
             </button>
@@ -153,7 +154,7 @@ function LinhaUsuario({
               type="button"
               onClick={() => atualizar({ papel }, "Papel atualizado.")}
               disabled={enviando || papel === usuario.papel}
-              className="min-h-12 rounded bg-slate-800 px-4 text-sm font-medium text-white disabled:opacity-50"
+              className="btn-primary min-h-12 text-sm"
             >
               Salvar papel
             </button>
@@ -187,8 +188,8 @@ function LinhaUsuario({
             </p>
           </div>
 
-          {erro && <p className="text-sm font-medium text-red-600 sm:col-span-3">{erro}</p>}
-          {aviso && <p className="text-sm font-medium text-emerald-700 sm:col-span-3">{aviso}</p>}
+          {erro && <Aviso tipo="erro" className="sm:col-span-3">{erro}</Aviso>}
+          {aviso && <Aviso tipo="sucesso" className="sm:col-span-3">{aviso}</Aviso>}
         </div>
       )}
     </li>
@@ -232,8 +233,8 @@ export function UsuarioListPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">Staff</h1>
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-3xl font-bold">Staff</h1>
 
       <section className="mb-10 rounded-lg border border-slate-200 bg-white p-6">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-slate-500">
@@ -290,12 +291,12 @@ export function UsuarioListPage() {
             </select>
           </div>
 
-          {erroGeral && <p className="text-sm text-red-600 sm:col-span-2">{erroGeral}</p>}
+          {erroGeral && <Aviso tipo="erro" className="sm:col-span-2">{erroGeral}</Aviso>}
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50 sm:col-span-2 sm:w-fit"
+            className="btn-primary sm:col-span-2 sm:w-fit"
           >
             {isSubmitting ? "Cadastrando..." : "Cadastrar"}
           </button>

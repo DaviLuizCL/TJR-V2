@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { Tabs } from "../../components/Tabs";
+import { useAuthStore } from "../../lib/auth-store";
 import { ChaveamentoPage } from "../chaveamento/ChaveamentoPage";
 import { CombateDashboardPage } from "./CombateDashboardPage";
 
@@ -15,35 +17,22 @@ function abaValida(valor: string | null): Aba {
 export function ConfrontoHubPage() {
   const [searchParams] = useSearchParams();
   const [aba, setAba] = useState<Aba>(abaValida(searchParams.get("sub")));
+  // Juiz so pontua: chaveamento e ferramenta da coordenacao.
+  const ehArbitro = useAuthStore((state) => state.usuario?.papel) === "ARBITRO";
 
-  function classesAba(valor: Aba): string {
-    return `min-h-12 rounded-t px-4 py-2 text-sm font-medium ${
-      aba === valor ? "border-b-2 border-slate-800 text-slate-900" : "text-slate-500"
-    }`;
-  }
+  if (ehArbitro) return <CombateDashboardPage />;
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div role="tablist" className="mb-6 flex gap-2 border-b border-slate-200">
-        <button
-          role="tab"
-          type="button"
-          aria-selected={aba === "modalidades"}
-          onClick={() => setAba("modalidades")}
-          className={classesAba("modalidades")}
-        >
-          Modalidades
-        </button>
-        <button
-          role="tab"
-          type="button"
-          aria-selected={aba === "chaveamento"}
-          onClick={() => setAba("chaveamento")}
-          className={classesAba("chaveamento")}
-        >
-          Chaveamento
-        </button>
-      </div>
+    <div>
+      <Tabs
+        tamanho="pequeno"
+        itens={[
+          { valor: "modalidades", rotulo: "Modalidades", icone: "📝" },
+          { valor: "chaveamento", rotulo: "Chaveamento", icone: "🏆" },
+        ]}
+        valor={aba}
+        onChange={setAba}
+      />
 
       {aba === "modalidades" && <CombateDashboardPage />}
       {aba === "chaveamento" && <ChaveamentoPage />}

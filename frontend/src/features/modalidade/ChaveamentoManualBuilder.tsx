@@ -2,6 +2,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { rotuloNivel } from "../../lib/nivel";
 
 const BYE = "__BYE__";
@@ -271,13 +272,13 @@ export function ChaveamentoManualBuilder({
           </div>
         </div>
 
-        {erro && <p className="mb-4 text-sm text-red-600">{erro}</p>}
+        {erro && <Aviso tipo="erro" className="mb-4">{erro}</Aviso>}
 
         <button
           type="button"
           onClick={salvar}
           disabled={enviando || !equipeAId || !equipeBId || !rodadaValida}
-          className="mb-6 rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="btn-primary mb-6 text-sm"
         >
           {enviando ? "Salvando..." : "Salvar confronto"}
         </button>

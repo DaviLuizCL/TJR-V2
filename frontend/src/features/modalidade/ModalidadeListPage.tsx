@@ -1,11 +1,11 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { useAuthStore } from "../../lib/auth-store";
 import { useEventoStore } from "../../lib/evento-store";
-import { AbrirEventoModal } from "./AbrirEventoModal";
 
 interface ModalidadeResumo {
   id: string;
@@ -94,8 +94,6 @@ function ModalidadeItem({
 export function ModalidadeListPage() {
   const { eventoId } = useParams<{ eventoId: string }>();
   const definirEventoAtual = useEventoStore((state) => state.definirEventoAtual);
-  const queryClient = useQueryClient();
-  const [mostrarAbrirEvento, setMostrarAbrirEvento] = useState(false);
   const [erroRelatorio, setErroRelatorio] = useState<string | null>(null);
   const ehCoordenador = useAuthStore((state) => state.usuario?.papel) === "COORDENADOR";
 
@@ -138,9 +136,9 @@ export function ModalidadeListPage() {
   });
 
   return (
-    <main className="mx-auto max-w-4xl p-8">
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-800">Modalidades</h1>
+        <h1 className="text-3xl font-bold">Modalidades</h1>
         <div className="flex items-center gap-3">
           {ehCoordenador && (
             <Link
@@ -149,15 +147,6 @@ export function ModalidadeListPage() {
             >
               Gerenciar equipes
             </Link>
-          )}
-          {ehCoordenador && !!modalidades?.length && (
-            <button
-              type="button"
-              onClick={() => setMostrarAbrirEvento(true)}
-              className="rounded border border-slate-300 px-4 py-2 font-medium text-slate-700"
-            >
-              Abrir evento
-            </button>
           )}
           {ehCoordenador && !!modalidades?.length && (
             <button
@@ -171,7 +160,7 @@ export function ModalidadeListPage() {
           {ehCoordenador && (
             <Link
               to={`/eventos/${eventoId}/modalidades/novo`}
-              className="rounded bg-slate-800 px-4 py-2 font-medium text-white"
+              className="btn-primary"
             >
               Nova modalidade
             </Link>
@@ -179,7 +168,7 @@ export function ModalidadeListPage() {
         </div>
       </div>
 
-      {erroRelatorio && <p className="mb-4 text-sm text-red-600">{erroRelatorio}</p>}
+      {erroRelatorio && <Aviso tipo="erro" className="mb-4">{erroRelatorio}</Aviso>}
 
       {isLoading && <p className="text-slate-500">Carregando...</p>}
       {!isLoading && modalidades?.length === 0 && (
@@ -192,15 +181,6 @@ export function ModalidadeListPage() {
         ))}
       </ul>
 
-      {mostrarAbrirEvento && modalidades && (
-        <AbrirEventoModal
-          modalidades={modalidades}
-          onFechar={() => setMostrarAbrirEvento(false)}
-          onConcluido={() => {
-            void queryClient.invalidateQueries({ queryKey: ["rodadas"] });
-          }}
-        />
-      )}
     </main>
   );
 }

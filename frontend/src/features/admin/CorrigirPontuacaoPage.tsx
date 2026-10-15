@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { rotuloNivel } from "../../lib/nivel";
 import { VoltarAdmin } from "./VoltarAdmin";
 
@@ -98,7 +99,7 @@ function LinhaLancamento({
       </div>
 
       {anulando && (
-        <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        <Aviso tipo="erro" className="mt-3">
           <p className="mb-2">
             A nota de <strong>{lancamento.equipe_nome}</strong> deixa de contar e a equipe volta a
             aparecer como pendente pra ser pontuada de novo nesta rodada. O registro não é apagado:
@@ -114,13 +115,13 @@ function LinhaLancamento({
             rows={2}
             className="mb-2 w-full rounded border border-red-300 bg-white px-3 py-2 text-slate-800"
           />
-          {erro && <p className="mb-2 font-medium text-red-700">{erro}</p>}
+          {erro && <Aviso tipo="erro" className="mb-2">{erro}</Aviso>}
           <div className="flex gap-2">
             <button
               type="button"
               onClick={anular}
               disabled={!justificativa.trim() || enviando}
-              className="min-h-12 rounded bg-red-700 px-4 font-medium text-white disabled:opacity-50"
+              className="btn-danger min-h-12"
             >
               {enviando ? "Anulando..." : "Sim, anular"}
             </button>
@@ -135,7 +136,7 @@ function LinhaLancamento({
               Cancelar
             </button>
           </div>
-        </div>
+        </Aviso>
       )}
     </li>
   );
@@ -179,9 +180,9 @@ export function CorrigirPontuacaoPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-4 sm:p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <VoltarAdmin />
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">Corrigir pontuação</h1>
+      <h1 className="mb-2 text-3xl font-bold">Corrigir pontuação</h1>
       <p className="mb-6 text-sm text-slate-500">
         Escolha a modalidade e ache a equipe. <strong>Corrigir</strong> muda os pontos de uma
         nota já confirmada. <strong>Anular</strong> descarta a nota (por exemplo, se o juiz

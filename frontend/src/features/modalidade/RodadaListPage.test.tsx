@@ -339,51 +339,6 @@ describe("RodadaListPage", () => {
     expect(await screen.findByRole("button", { name: /^fase de grupos$/i })).toBeInTheDocument();
   });
 
-  it("mata-mata de 1 rodada que comeca so na rodada 2 (pos fase de grupos) mostra 'Final', nao 'Rodada 2'", async () => {
-    // Mesmo bug de PontuarCombatePage.test.tsx, so que no card de rodada:
-    // nomeFase precisa do numero RELATIVO ao inicio do mata-mata daquele
-    // nivel, nao o numero absoluto da modalidade.
-    mockGetChaveamento(
-      [
-        { id: "rod-1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" },
-        { id: "rod-2", modalidade_id: "mod-1", numero: 2, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" },
-      ],
-      {
-        "rod-1": [
-          {
-            id: "par-grupo",
-            rodada_id: "rod-1",
-            equipe_a_id: "eq-1",
-            equipe_b_id: "eq-2",
-            vencedor_id: "eq-1",
-            status: "ENCERRADA",
-            nivel: 1,
-            formato_chaveamento: "TODOS_CONTRA_TODOS",
-          },
-        ],
-        "rod-2": [
-          {
-            id: "par-final",
-            rodada_id: "rod-2",
-            equipe_a_id: "eq-1",
-            equipe_b_id: "eq-2",
-            vencedor_id: null,
-            status: "AGENDADA",
-            nivel: 1,
-            formato_chaveamento: "MATA_MATA",
-          },
-        ],
-      },
-    );
-
-    renderPage();
-
-    // "Rodada 2" tambem aparece como titulo do card (sempre, correto) --
-    // o que prova o bug/fix e o SELO de fase (pill), que so existe quando
-    // nomeFase acerta o numero relativo.
-    expect(await screen.findByText("Final")).toBeInTheDocument();
-  });
-
   it("partida de fase de grupos mostra o nome da chave, pra ficar facil de ler quem e de qual grupo", async () => {
     mockGetChaveamento(
       [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
@@ -501,7 +456,7 @@ describe("RodadaListPage", () => {
     );
   });
 
-  it("mostra o campeao quando o nivel do chaveamento chega na rodada final", async () => {
+  it("nao adivinha campeao nem nome de fase (final/semifinal): chaveamento e montado na mao", async () => {
     mockGetChaveamento(
       [
         { id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" },
@@ -517,6 +472,7 @@ describe("RodadaListPage", () => {
             vencedor_id: "eq-1",
             status: "ENCERRADA",
             nivel: 1,
+            formato_chaveamento: "MATA_MATA",
           },
         ],
         r2: [
@@ -528,6 +484,7 @@ describe("RodadaListPage", () => {
             vencedor_id: "eq-2",
             status: "ENCERRADA",
             nivel: 1,
+            formato_chaveamento: "MATA_MATA",
           },
         ],
       },
@@ -535,123 +492,12 @@ describe("RodadaListPage", () => {
 
     renderPage();
 
-    const rodada2 = (await screen.findByText(/rodada 2/i)).closest("li")!;
-    expect(within(rodada2).getByText(/campe[aã]o/i)).toBeInTheDocument();
-
-    const rodada1 = screen.getByText(/rodada 1/i).closest("li")!;
-    expect(within(rodada1).queryByText(/campe[aã]o/i)).not.toBeInTheDocument();
-  });
-
-  it("nao mostra campeao numa semifinal so porque uma das duas partidas ja fechou (regressao)", async () => {
-    // Nivel com 4 equipes: rodada 1 e a semifinal, com 2 partidas. So a
-    // primeira ja fechou - a segunda ainda nao. A rodada 2 (final) ainda nem
-    // existe, porque o chaveamento so avanca quando a rodada inteira fecha.
-    // O vencedor da 1a partida NAO pode aparecer como campeao aqui, mesmo
-    // sendo (coincidentemente) quem depois vence o torneio.
-    mockGetChaveamento(
-      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
-      {
-        r1: [
-          {
-            id: "p1",
-            rodada_id: "r1",
-            equipe_a_id: "eq-1",
-            equipe_b_id: "eq-2",
-            vencedor_id: "eq-1",
-            status: "ENCERRADA",
-            nivel: 1,
-          },
-          {
-            id: "p2",
-            rodada_id: "r1",
-            equipe_a_id: "eq-3",
-            equipe_b_id: "eq-4",
-            vencedor_id: null,
-            status: "AGENDADA",
-            nivel: 1,
-          },
-        ],
-      },
-    );
-
-    renderPage();
-
-    await screen.findByText(/Equipe A.*Equipe B/);
+    // Pedido do coordenador (14/10/2026): a rodada 2 de um chaveamento montado
+    // na mao pode ser a final ou uma semifinal incompleta -- o sistema nao
+    // sabe, entao nao chuta. Quem venceu fica no card e no ranking.
+    await screen.findByText(/rodada 2/i);
     expect(screen.queryByText(/campe[aã]o/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Vencedor: Equipe A/i)).toBeInTheDocument();
-  });
-
-  it("mostra o nome da fase (semifinal/final) baseado na quantidade de equipes do nivel", async () => {
-    mockGetChaveamento(
-      [
-        { id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" },
-        { id: "r2", modalidade_id: "mod-1", numero: 2, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" },
-      ],
-      {
-        r1: [
-          {
-            id: "p1",
-            rodada_id: "r1",
-            equipe_a_id: "eq-1",
-            equipe_b_id: "eq-2",
-            vencedor_id: "eq-1",
-            status: "ENCERRADA",
-            nivel: 1,
-          },
-          {
-            id: "p2",
-            rodada_id: "r1",
-            equipe_a_id: "eq-3",
-            equipe_b_id: "eq-4",
-            vencedor_id: "eq-3",
-            status: "ENCERRADA",
-            nivel: 1,
-          },
-        ],
-        r2: [
-          {
-            id: "p3",
-            rodada_id: "r2",
-            equipe_a_id: "eq-1",
-            equipe_b_id: "eq-3",
-            vencedor_id: null,
-            status: "AGENDADA",
-            nivel: 1,
-          },
-        ],
-      },
-    );
-
-    renderPage();
-
-    const rodada1 = (await screen.findByText(/rodada 1/i)).closest("li")!;
-    expect(within(rodada1).getByText(/semifinal/i)).toBeInTheDocument();
-
-    const rodada2 = screen.getByText(/rodada 2/i).closest("li")!;
-    expect(within(rodada2).getByText(/^final$/i)).toBeInTheDocument();
-  });
-
-  it("usa 'Rodada N' quando o bracket e grande demais pra ter nome de fase padrao", async () => {
-    const partidasR1 = Array.from({ length: 10 }, (_, i) => ({
-      id: `p${i}`,
-      rodada_id: "r1",
-      equipe_a_id: `eq-${i * 2}`,
-      equipe_b_id: `eq-${i * 2 + 1}`,
-      vencedor_id: null,
-      status: "AGENDADA",
-      nivel: 1,
-    }));
-    mockGetChaveamento(
-      [{ id: "r1", modalidade_id: "mod-1", numero: 1, modo_horario: "AUTOMATICO", horario_inicio: null, status: "AGENDADA" }],
-      { r1: partidasR1 },
-    );
-
-    renderPage();
-
-    const rodada1 = (await screen.findByText(/rodada 1/i)).closest("li")!;
-    expect(
-      within(rodada1).queryByText(/final|semifinal|quartas|oitavas/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/final/i)).not.toBeInTheDocument();
   });
 
   it("nao mostra o link generico 'Lancar notas' na visao de chaveamento (so o Pontuar por partida)", async () => {
@@ -846,98 +692,4 @@ describe("RodadaListPage", () => {
     );
   });
 
-  it("mesma rodada com um nivel mata-mata (mostra fase/campeao) e outro todos-contra-todos (nao mostra)", async () => {
-    // formato_chaveamento=null na modalidade = decisao automatica por nivel
-    // (gerar_chaveamento_confronto) -- cada partida ja vem com o formato do
-    // proprio nivel gravado (Partida.formato_chaveamento), a tela nao
-    // precisa mais de um unico campo pra modalidade inteira.
-    vi.mocked(api.GET).mockImplementation(async (path: string, opts?: unknown) => {
-      if (path === "/api/v1/modalidades/{modalidade_id}") {
-        return {
-          data: {
-            id: "mod-1",
-            nome: "Combate Misto",
-            qtd_rodadas: 5,
-            tipo_disputa: "CONFRONTO",
-            formato_chaveamento: null,
-          },
-          error: undefined,
-        } as never;
-      }
-      if (path === "/api/v1/rodadas") {
-        return {
-          data: {
-            itens: [
-              {
-                id: "r1",
-                modalidade_id: "mod-1",
-                numero: 1,
-                modo_horario: "AUTOMATICO",
-                horario_inicio: null,
-                status: "AGENDADA",
-              },
-            ],
-            total: 1,
-            page: 1,
-            size: 200,
-          },
-          error: undefined,
-        } as never;
-      }
-      if (path === "/api/v1/rodadas/{rodada_id}/partidas") {
-        return {
-          data: [
-            {
-              id: "p1",
-              rodada_id: "r1",
-              equipe_a_id: "eq-1",
-              equipe_b_id: "eq-2",
-              vencedor_id: "eq-1",
-              status: "ENCERRADA",
-              nivel: 1,
-              formato_chaveamento: "MATA_MATA",
-            },
-            {
-              id: "p2",
-              rodada_id: "r1",
-              equipe_a_id: "eq-3",
-              equipe_b_id: "eq-4",
-              vencedor_id: "eq-3",
-              status: "ENCERRADA",
-              nivel: 2,
-              formato_chaveamento: "TODOS_CONTRA_TODOS",
-            },
-          ],
-          error: undefined,
-        } as never;
-      }
-      if (path === "/api/v1/equipes") {
-        return {
-          data: {
-            itens: [
-              { id: "eq-1", nome: "Equipe A", nivel: 1, ativo: true },
-              { id: "eq-2", nome: "Equipe B", nivel: 1, ativo: true },
-              { id: "eq-3", nome: "Equipe C", nivel: 2, ativo: true },
-              { id: "eq-4", nome: "Equipe D", nivel: 2, ativo: true },
-            ],
-            total: 4,
-            page: 1,
-            size: 1000,
-          },
-          error: undefined,
-        } as never;
-      }
-      void opts;
-      return { data: undefined, error: undefined } as never;
-    });
-
-    renderPage();
-
-    const nivel1 = (await screen.findByText("ABSOLUTO")).closest("div")!.parentElement!;
-    expect(within(nivel1).getByText(/campe[aã]o/i)).toBeInTheDocument();
-
-    const nivel2 = screen.getByText(/nível 2/i).closest("div")!.parentElement!;
-    expect(within(nivel2).queryByText(/campe[aã]o/i)).not.toBeInTheDocument();
-    expect(within(nivel2).getByText(/Vencedor: Equipe C/i)).toBeInTheDocument();
-  });
 });

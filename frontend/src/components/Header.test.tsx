@@ -48,7 +48,6 @@ describe("Header", () => {
     renderHeader();
 
     expect(screen.getByRole("link", { name: /modalidades/i })).toHaveAttribute("href", "/eventos");
-    expect(screen.getByRole("link", { name: /^fichas$/i })).toHaveAttribute("href", "/eventos");
     expect(screen.getByRole("link", { name: /competi[cç][oõ]es/i })).toHaveAttribute(
       "href",
       "/eventos",
@@ -64,10 +63,6 @@ describe("Header", () => {
     expect(screen.getByRole("link", { name: /modalidades/i })).toHaveAttribute(
       "href",
       "/eventos/evt-9/modalidades",
-    );
-    expect(screen.getByRole("link", { name: /^fichas$/i })).toHaveAttribute(
-      "href",
-      "/eventos/evt-9/fichas",
     );
     expect(screen.getByRole("link", { name: /competi[cç][oõ]es/i })).toHaveAttribute(
       "href",
@@ -103,6 +98,14 @@ describe("Header", () => {
     expect(screen.queryByRole("link", { name: /^fichas$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /painel/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /administra/i })).not.toBeInTheDocument();
+  });
+
+  it("nao tem mais link Fichas (ficha se ve e edita pela tela de Modalidades)", () => {
+    logarComo("COORDENADOR");
+
+    renderHeader();
+
+    expect(screen.queryByRole("link", { name: /^fichas$/i })).not.toBeInTheDocument();
   });
 
   it("secretaria mantem acesso amplo de leitura, igual coordenador, mas sem Administracao", () => {

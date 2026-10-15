@@ -2,6 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { EmptyState } from "../../components/EmptyState";
+import { ModalidadeCard } from "../../components/ModalidadeCard";
+import { useAuthStore } from "../../lib/auth-store";
 
 interface ModalidadeResumo {
   id: string;
@@ -22,36 +25,44 @@ function ModalidadeCombateItem({
   modalidade: ModalidadeResumo;
   eventoId: string;
 }) {
+  const ehArbitro = useAuthStore((state) => state.usuario?.papel) === "ARBITRO";
   return (
-    <li className="flex items-center justify-between rounded border border-slate-200 bg-white px-4 py-3">
-      <p className="font-medium text-slate-800">{modalidade.nome}</p>
-      <div className="flex items-center gap-3">
+    <ModalidadeCard
+      nome={modalidade.nome}
+      selo={
         <span
-          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+          className="chip border-plasma/40 bg-plasma-soft text-plasma"
           title={
             modalidade.formato_chaveamento
               ? undefined
-              : "Decidido por nível ao gerar o chaveamento: até 5 equipes vira todos-contra-todos, 6 ou mais vira mata-mata."
+              : "Os confrontos são criados na mão pela coordenação, que escolhe em cada um se é fase de grupos ou eliminatória."
           }
         >
           {modalidade.formato_chaveamento
-            ? (LABELS_FORMATO[modalidade.formato_chaveamento] ?? "Sem formato definido")
-            : "Automático por nível"}
+            ? (LABELS_FORMATO[modalidade.formato_chaveamento] ??
+              "Sem formato definido")
+            : "Montado na mão"}
         </span>
+      }
+      acaoPrincipal={
         <Link
           to={`/eventos/${eventoId}/modalidades/${modalidade.id}/pontuar`}
-          className="text-sm font-medium text-slate-700 underline"
+          className="btn-primary flex-1"
         >
           Pontuar
         </Link>
-        <Link
-          to={`/eventos/${eventoId}/modalidades/${modalidade.id}/rodadas`}
-          className="text-sm font-medium text-slate-700 underline"
-        >
-          Ver rodadas
-        </Link>
-      </div>
-    </li>
+      }
+      acoesSecundarias={
+        !ehArbitro && (
+          <Link
+            to={`/eventos/${eventoId}/modalidades/${modalidade.id}/rodadas`}
+            className="btn-secondary flex-1"
+          >
+            Ver confrontos
+          </Link>
+        )
+      }
+    />
   );
 }
 
@@ -75,12 +86,21 @@ export function CombateDashboardPage() {
     <div>
       {isLoading && <p className="text-slate-500">Carregando...</p>}
       {!isLoading && combates?.length === 0 && (
-        <p className="text-slate-500">Nenhuma modalidade de combate cadastrada ainda neste evento.</p>
+        <EmptyState
+          icone="⚔️"
+          titulo="Nenhuma modalidade de combate cadastrada ainda neste evento."
+        >
+          A coordenação cria as modalidades em Modalidades → Nova modalidade.
+        </EmptyState>
       )}
 
-      <ul className="space-y-2">
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {combates?.map((modalidade) => (
-          <ModalidadeCombateItem key={modalidade.id} modalidade={modalidade} eventoId={eventoId!} />
+          <ModalidadeCombateItem
+            key={modalidade.id}
+            modalidade={modalidade}
+            eventoId={eventoId!}
+          />
         ))}
       </ul>
     </div>

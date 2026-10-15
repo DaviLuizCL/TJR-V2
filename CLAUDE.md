@@ -264,6 +264,27 @@ O árbitro opera **de pé, no celular, com pressa**. A tela de lançamento manda
 - Ação destrutiva (anular, fechar ficha) exige confirmação explícita.
 - Painel do coordenador pode ser desktop-first; app do árbitro é mobile-first, sem exceção.
 
+**Tema escuro "Arena" (desde 14/10/2026).** As paletas `slate`/`white`/`red`/`emerald`/`green`/
+`amber` estão **invertidas** em `frontend/tailwind.config.js`: `bg-white` é a superfície escura de
+card, `slate-50` é o fundo mais escuro, `slate-900` o texto mais claro, e `bg-red-50`/`text-red-700`
+continuam significando "fundo suave"/"texto forte" de erro. Por isso o código antigo virou escuro sem
+reescrever tela por tela, e os testes que conferem `text-emerald-700`/`bg-red-600` continuam
+valendo. Paleta padrão do Tailwind que não esteja invertida (`sky`, `blue`, `gray`...) sai clara:
+não use, ou inverta lá também. Cores novas: `neon` (ciano) e `plasma` (violeta). Classes prontas
+em `src/index.css` (`card`, `btn-primary`/`btn-secondary`/`btn-danger`/`btn-success`, `chip`,
+`eyebrow`) e componentes em `src/components/` (`PageHeader`, `Tabs`, `EmptyState`, `ModalidadeCard`,
+`BarraFixa`), que você deve preferir a montar classe crua. As fontes (Rajdhani nos títulos, Inter
+no texto) ficam em `src/assets/fonts`, empacotadas sem CDN, porque o ginásio não tem internet.
+
+**Avisos:** todo aviso usa a mesma linguagem, com fundo translúcido na cor do tipo e ícone: `sucesso`
+verde, `erro` vermelho, `alerta` amarelo, `info` azul. Pra aviso fixo na tela, use
+`<Aviso tipo="...">` (`components/Aviso.tsx`). Pra mensagem que some sozinha (toast), use
+`avisar(tipo, mensagem)` de `lib/avisos.ts`; o `<AvisosFlutuantes />` fica montado no `App`. Ao
+registrar nota, chame `avisarPontuacaoRegistrada()`: ela diz "Pontuação enviada!" com rede e avisa
+em azul que a nota ficou guardada no celular quando está offline. Erro de validação de campo
+continua como texto vermelho simples embaixo do campo. Nunca monte o nome da classe de cor
+dinamicamente (`aviso-${tipo}`): o Tailwind descarta classe que não está escrita por extenso.
+
 ---
 
 ## 11. TDD — teste primeiro, sempre
@@ -1528,3 +1549,31 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
      coluna por rodada (maior total da equipe na rodada, "-" se não tem nota) + "Nota final". No
      confronto, a coluna "Pontos marcados" (soma de todos os combates) + uma tabela "Confrontos"
      (rodada, equipes, placar somado, vencedor).
+
+   **Redesign "Arena" + simplificação do juiz** (14/10/2026). Tema escuro gamer (ver seção 10) e
+   quatro mudanças de fluxo pedidas pelo usuário:
+   - **Registrar já confirma.** `LancamentoFormPage.registrarLancamento` enfileira o CRIAR e, logo
+     atrás, o CONFIRMAR (o sync só manda o confirmar depois do criar, via `dependeDe`) e volta pra
+     fila. Sem passo de revisão, por decisão explícita: erro de juiz se corrige pelo coordenador
+     (Administração → Corrigir pontuação). O backend não mudou: o estado `PENDENTE` continua
+     existindo, e o botão "Confirmar" só aparece pra lançamento `PENDENTE` antigo ou que ficou
+     pela metade.
+   - **Juiz só vê os cards de Pontuar.** `IndividualHubPage`/`ConfrontoHubPage` renderizam direto
+     o dashboard de Pontuar pra `ARBITRO` (sem aba Sequência/Chaveamento, mesmo vindo com `?sub=`),
+     e `CombateDashboardPage` esconde "Ver confrontos" pra ele. Competições continua separada em
+     Individual/Combate.
+   - **Ausente vai pro fim da fila** do Pontuar individual, esmaecido e com selo "Ausente", mas
+     continua clicável (a equipe pode chegar atrasada) e nunca é a "Próxima".
+   - **Equipes:** o botão grande "✓ Presente / ✗ Ausente" fica na linha; Submissões/Editar/Desativar
+     foram pro menu "⋯ Mais ações" (`<details>`).
+   - **Simplificações pedidas testando como coordenador (mesmo dia):** o link "Fichas" saiu do
+     Header, porque a ficha se vê e se edita pelo link "Fichas" de cada linha em Modalidades (a
+     rota `/eventos/:id/fichas` continua existindo). O botão "Abrir evento" e o `AbrirEventoModal`
+     foram apagados: rodada de individual nasce junto com a modalidade, ou sai por "Gerar rodadas".
+     O PDF do telão não escreve mais "Ordem ainda não sorteada": nível sem sorteio sai em ordem
+     alfabética, sem comentário. **Combate não adivinha mais nome de fase nem campeão**: saíram
+     Final/Semifinal/Quartas/Oitavas (`lib/fase-chaveamento.ts` foi apagado), o selo "🏆 Campeão"
+     da `RodadaListPage` e o banner de campeão de mata-mata da `ChaveamentoPage`. Com chaveamento
+     montado na mão, o sistema não sabe se a última rodada é a final. Eliminatória aparece como
+     "Rodada N"; "Fase de Grupos" e nome de chave continuam, porque o coordenador escolhe isso ao
+     criar o confronto. Quem venceu fica no card de cada partida e no ranking.

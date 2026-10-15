@@ -21,7 +21,7 @@ export function PontuarRoutePage() {
 
   if (!modalidade) {
     return (
-      <main className="p-8">
+      <main className="px-4 py-6 sm:p-8">
         <p className="animate-pulse text-slate-500">Carregando...</p>
       </main>
     );

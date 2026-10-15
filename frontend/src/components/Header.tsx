@@ -1,13 +1,32 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuthStore } from "../lib/auth-store";
 import { useEventoStore } from "../lib/evento-store";
 
+const ROTULO_PAPEL: Record<string, string> = {
+  COORDENADOR: "Coordenação",
+  ARBITRO: "Juiz",
+  SECRETARIA: "Secretaria",
+};
+
+function classesLink({ isActive }: { isActive: boolean }) {
+  return `inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 font-display text-[15px] font-bold uppercase tracking-wider ${
+    isActive
+      ? "bg-neon/10 text-neon ring-1 ring-neon/40"
+      : "text-slate-600 hover:bg-slate-200/60 hover:text-slate-900"
+  }`;
+}
+
 export function Header() {
   const eventoAtualId = useEventoStore((state) => state.eventoAtualId);
-  const papel = useAuthStore((state) => state.usuario?.papel);
+  const usuario = useAuthStore((state) => state.usuario);
+  const papel = usuario?.papel;
   const sair = useAuthStore((state) => state.sair);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // Pontuar/rodadas/sequencia moram debaixo de /modalidades/:id na URL, mas pro
+  // usuario fazem parte de Competicoes - acende o link certo.
+  const emCompeticao = /\/(competicoes|pontuar|rodadas|ordem|lancamentos|partidas)/.test(pathname);
 
   function sairDaConta() {
     sair();
@@ -21,62 +40,70 @@ export function Header() {
   const ehCoordenador = papel === "COORDENADOR";
 
   const linkModalidades = eventoAtualId ? `/eventos/${eventoAtualId}/modalidades` : "/eventos";
-  const linkFichas = eventoAtualId ? `/eventos/${eventoAtualId}/fichas` : "/eventos";
   const linkCompeticoes = eventoAtualId ? `/eventos/${eventoAtualId}/competicoes` : "/eventos";
   const linkPainel = eventoAtualId ? `/eventos/${eventoAtualId}/painel` : "/eventos";
   const linkAdmin = eventoAtualId ? `/eventos/${eventoAtualId}/admin` : "/eventos";
 
   return (
-    <header className="border-b border-slate-200 bg-white px-6 py-3">
-      <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2">
-        <span className="text-sm font-semibold uppercase tracking-wide text-slate-400">TJR</span>
-        {!ehArbitro && (
-          <Link to="/equipes" className="text-sm font-medium text-slate-700 hover:text-slate-900">
-            Equipes
-          </Link>
-        )}
-        {!ehArbitro && (
-          <Link
-            to={linkModalidades}
-            className="text-sm font-medium text-slate-700 hover:text-slate-900"
-          >
-            Modalidades
-          </Link>
-        )}
-        {!ehArbitro && (
-          <Link
-            to={linkFichas}
-            className="text-sm font-medium text-slate-700 hover:text-slate-900"
-          >
-            Fichas
-          </Link>
-        )}
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/85 backdrop-blur">
+      <div className="h-0.5 bg-gradient-to-r from-neon via-plasma to-neon" aria-hidden="true" />
+      <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-1 gap-y-2 px-4 py-2 sm:px-6">
         <Link
           to={linkCompeticoes}
-          className="text-sm font-medium text-slate-700 hover:text-slate-900"
+          aria-label="Início"
+          className="mr-3 flex items-center gap-2 font-display text-2xl font-bold tracking-widest"
         >
-          Competições
+          <span aria-hidden="true" className="text-xl">
+            🤖
+          </span>
+          <span className="bg-gradient-to-r from-neon to-plasma bg-clip-text text-transparent">
+            TJR
+          </span>
         </Link>
+        <NavLink
+          to={linkCompeticoes}
+          className={({ isActive }) => classesLink({ isActive: isActive || emCompeticao })}
+        >
+          <span aria-hidden="true">🏁</span>Competições
+        </NavLink>
         {!ehArbitro && (
-          <Link
-            to={linkPainel}
-            className="text-sm font-medium text-slate-700 hover:text-slate-900"
+          <NavLink to="/equipes" className={classesLink}>
+            Equipes
+          </NavLink>
+        )}
+        {!ehArbitro && (
+          <NavLink
+            to={linkModalidades}
+            className={({ isActive }) => classesLink({ isActive: isActive && !emCompeticao })}
           >
+            Modalidades
+          </NavLink>
+        )}
+        {!ehArbitro && (
+          <NavLink to={linkPainel} className={classesLink}>
             Painel
-          </Link>
+          </NavLink>
         )}
         {ehCoordenador && (
-          <Link to={linkAdmin} className="text-sm font-semibold text-slate-900 hover:text-slate-700">
-            Administração
-          </Link>
+          <NavLink to={linkAdmin} className={classesLink}>
+            <span aria-hidden="true">⚙️</span>Administração
+          </NavLink>
         )}
-        <button
-          type="button"
-          onClick={sairDaConta}
-          className="ml-auto text-sm font-medium text-slate-700 hover:text-slate-900"
-        >
-          Sair
-        </button>
+        <div className="ml-auto flex items-center gap-3">
+          {usuario?.nome && (
+            <span className="hidden text-right text-xs leading-tight text-slate-500 sm:block">
+              <span className="block font-semibold text-slate-700">{usuario.nome}</span>
+              {ROTULO_PAPEL[papel ?? ""] ?? papel}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={sairDaConta}
+            className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-600 hover:border-red-400 hover:text-red-700"
+          >
+            Sair
+          </button>
+        </div>
       </nav>
     </header>
   );

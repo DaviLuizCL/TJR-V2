@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { EmptyState } from "../../components/EmptyState";
+import { ModalidadeCard } from "../../components/ModalidadeCard";
 
 interface ModalidadeResumo {
   id: string;
@@ -29,23 +31,25 @@ export function PontuarDashboardPage() {
     <div>
       {isLoading && <p className="text-slate-500">Carregando...</p>}
       {!isLoading && individuais?.length === 0 && (
-        <p className="text-slate-500">Nenhuma modalidade individual cadastrada ainda neste evento.</p>
+        <EmptyState icone="🎯" titulo="Nenhuma modalidade individual cadastrada ainda neste evento.">
+          A coordenação cria as modalidades em Modalidades → Nova modalidade.
+        </EmptyState>
       )}
 
-      <ul className="space-y-2">
+      <ul className="grid gap-4 sm:grid-cols-2">
         {individuais?.map((modalidade) => (
-          <li
+          <ModalidadeCard
             key={modalidade.id}
-            className="flex items-center justify-between rounded border border-slate-200 bg-white px-4 py-3"
-          >
-            <p className="font-medium text-slate-800">{modalidade.nome}</p>
-            <Link
-              to={`/eventos/${eventoId}/modalidades/${modalidade.id}/pontuar`}
-              className="text-sm font-medium text-slate-700 underline"
-            >
-              Pontuar
-            </Link>
-          </li>
+            nome={modalidade.nome}
+            acaoPrincipal={
+              <Link
+                to={`/eventos/${eventoId}/modalidades/${modalidade.id}/pontuar`}
+                className="btn-primary w-full"
+              >
+                Pontuar
+              </Link>
+            }
+          />
         ))}
       </ul>
     </div>

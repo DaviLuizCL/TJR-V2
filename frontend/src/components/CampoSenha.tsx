@@ -25,7 +25,7 @@ export function CampoSenha({
         <input
           id={id}
           type={visivel ? "text" : "password"}
-          className="w-full rounded border border-slate-300 px-3 py-2 pr-20"
+          className="min-h-12 w-full rounded-lg border border-slate-300 px-3 py-2 pr-20"
           {...registro}
         />
         <button

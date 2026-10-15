@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { CriterioPreview, type CriterioItem, type ValorEstado } from "../ficha/FichaPreviewPage";
 
 interface ItemLancamento {
@@ -154,12 +155,12 @@ export function LancamentoCorrecaoPage() {
   }
 
   if (!lancamento || !ficha) {
-    return <main className="p-8 text-slate-500">Carregando...</main>;
+    return <main className="px-4 py-6 text-slate-500 sm:p-8">Carregando...</main>;
   }
 
   if (lancamento.status !== "CONFIRMADO") {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
         <p className="text-slate-600">
           Só é possível corrigir um lançamento já confirmado (status atual: {lancamento.status}).
         </p>
@@ -168,7 +169,7 @@ export function LancamentoCorrecaoPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
       <button
         type="button"
         onClick={() => navigate(-1)}
@@ -176,7 +177,7 @@ export function LancamentoCorrecaoPage() {
       >
         ← Voltar
       </button>
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">Corrigir lançamento</h1>
+      <h1 className="mb-2 text-3xl font-bold">Corrigir lançamento</h1>
       <p className="mb-6 text-sm text-slate-500">
         Alterar um lançamento já confirmado fica registrado no histórico de auditoria.
       </p>
@@ -223,13 +224,13 @@ export function LancamentoCorrecaoPage() {
           />
         </div>
 
-        {erro && <p className="text-sm text-red-600">{erro}</p>}
+        {erro && <Aviso tipo="erro">{erro}</Aviso>}
 
         <button
           type="button"
           onClick={enviarCorrecao}
           disabled={enviando}
-          className="rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="btn-primary"
         >
           {enviando ? "Salvando..." : "Salvar correção"}
         </button>

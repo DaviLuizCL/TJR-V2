@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
+import { PageHeader } from "../../components/PageHeader";
 import { useEventoStore } from "../../lib/evento-store";
 
 interface Cartao {
@@ -127,31 +129,41 @@ export function AdminPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">Administração</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        Tudo que o coordenador precisa pra tocar o evento. Em dúvida, comece pelo checklist do
-        dia.
-      </p>
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        sobretitulo="Coordenação"
+        titulo="Administração"
+        descricao="Tudo que o coordenador precisa pra tocar o evento. Em dúvida, comece pelo checklist do dia."
+      />
 
       {cartoes(eventoId!).map(({ secao, itens }) => (
         <section key={secao} className="mb-8">
-          <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">
+          <h2 className="eyebrow mb-3">
             {secao}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            {itens.map((cartao) => (
+            {itens.map((cartao, indice) => (
               <Link
                 key={cartao.titulo}
                 to={cartao.destino}
-                className="flex min-h-24 items-start gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
+                className={`card group flex min-h-24 items-start gap-4 p-5 hover:border-neon/60 hover:shadow-glow ${
+                  secao === "No dia do evento" && indice === 0 ? "border-neon/50 sm:col-span-2" : ""
+                }`}
               >
-                <span aria-hidden="true" className="text-3xl">
+                <span
+                  aria-hidden="true"
+                  className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-slate-100 text-3xl ring-1 ring-slate-200 group-hover:ring-neon/40"
+                >
                   {cartao.icone}
                 </span>
                 <span>
-                  <span className="block text-lg font-semibold text-slate-800">
+                  <span className="block font-display text-xl font-bold text-slate-900">
                     {cartao.titulo}
+                    {secao === "No dia do evento" && indice === 0 && (
+                      <span className="chip ml-2 border-neon/40 bg-neon-soft align-middle text-neon">
+                        Comece aqui
+                      </span>
+                    )}
                   </span>
                   <span className="block text-sm text-slate-500">{cartao.descricao}</span>
                 </span>
@@ -162,7 +174,7 @@ export function AdminPage() {
       ))}
 
       <section className="mb-8">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">
+        <h2 className="eyebrow mb-3">
           Arquivos
         </h2>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -170,13 +182,16 @@ export function AdminPage() {
             type="button"
             onClick={baixarBackup}
             disabled={baixando !== null}
-            className="flex min-h-24 items-start gap-4 rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-slate-400 disabled:opacity-50"
+            className="card group flex min-h-24 items-start gap-4 p-5 text-left hover:border-neon/60 hover:shadow-glow disabled:opacity-50"
           >
-            <span aria-hidden="true" className="text-3xl">
+            <span
+              aria-hidden="true"
+              className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-slate-100 text-3xl ring-1 ring-slate-200 group-hover:ring-neon/40"
+            >
               💾
             </span>
             <span>
-              <span className="block text-lg font-semibold text-slate-800">
+              <span className="block font-display text-xl font-bold text-slate-900">
                 {baixando === "backup" ? "Gerando backup..." : "Baixar backup"}
               </span>
               <span className="block text-sm text-slate-500">
@@ -188,13 +203,16 @@ export function AdminPage() {
             type="button"
             onClick={baixarRelatorio}
             disabled={baixando !== null}
-            className="flex min-h-24 items-start gap-4 rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-slate-400 disabled:opacity-50"
+            className="card group flex min-h-24 items-start gap-4 p-5 text-left hover:border-neon/60 hover:shadow-glow disabled:opacity-50"
           >
-            <span aria-hidden="true" className="text-3xl">
+            <span
+              aria-hidden="true"
+              className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-slate-100 text-3xl ring-1 ring-slate-200 group-hover:ring-neon/40"
+            >
               📄
             </span>
             <span>
-              <span className="block text-lg font-semibold text-slate-800">
+              <span className="block font-display text-xl font-bold text-slate-900">
                 {baixando === "relatorio" ? "Gerando relatório..." : "Relatório geral (PDF)"}
               </span>
               <span className="block text-sm text-slate-500">
@@ -203,8 +221,8 @@ export function AdminPage() {
             </span>
           </button>
         </div>
-        {aviso && <p className="mt-3 font-medium text-emerald-700">{aviso}</p>}
-        {erro && <p className="mt-3 font-medium text-red-600">{erro}</p>}
+        {aviso && <Aviso tipo="sucesso" className="mt-3">{aviso}</Aviso>}
+        {erro && <Aviso tipo="erro" className="mt-3">{erro}</Aviso>}
       </section>
     </main>
   );

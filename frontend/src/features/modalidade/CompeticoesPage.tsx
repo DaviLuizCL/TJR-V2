@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
+import { PageHeader } from "../../components/PageHeader";
+import { Tabs } from "../../components/Tabs";
 import { useEventoStore } from "../../lib/evento-store";
 import { ConfrontoHubPage } from "./ConfrontoHubPage";
 import { IndividualHubPage } from "./IndividualHubPage";
@@ -27,36 +29,22 @@ export function CompeticoesPage() {
     if (eventoId) definirEventoAtual(eventoId);
   }, [eventoId, definirEventoAtual]);
 
-  function classesAba(valor: Aba): string {
-    return `min-h-12 rounded-t px-4 py-2 text-sm font-medium ${
-      aba === valor ? "border-b-2 border-slate-800 text-slate-900" : "text-slate-500"
-    }`;
-  }
-
   return (
-    <main className="mx-auto max-w-6xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">Competições</h1>
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        sobretitulo="TJR 2026"
+        titulo="Competições"
+        descricao="Escolha o tipo de prova e depois a modalidade que você vai pontuar."
+      />
 
-      <div role="tablist" className="mb-6 flex gap-2 border-b border-slate-200">
-        <button
-          role="tab"
-          type="button"
-          aria-selected={aba === "individual"}
-          onClick={() => setAba("individual")}
-          className={classesAba("individual")}
-        >
-          Individual
-        </button>
-        <button
-          role="tab"
-          type="button"
-          aria-selected={aba === "combate"}
-          onClick={() => setAba("combate")}
-          className={classesAba("combate")}
-        >
-          Combate
-        </button>
-      </div>
+      <Tabs
+        itens={[
+          { valor: "individual", rotulo: "Individual", icone: "🎯" },
+          { valor: "combate", rotulo: "Combate", icone: "⚔️" },
+        ]}
+        valor={aba}
+        onChange={setAba}
+      />
 
       {aba === "individual" && <IndividualHubPage />}
       {aba === "combate" && <ConfrontoHubPage />}

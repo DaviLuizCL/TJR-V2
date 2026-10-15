@@ -1,15 +1,11 @@
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 const MODOS_HORARIO = ["MANUAL", "AUTOMATICO"] as const;
 
 import { api, extrairErro } from "../../api/client";
-import {
-  calcularTotalRodadasPorNivel,
-  nomeFase,
-  primeiraRodadaMataMataPorNivel,
-} from "../../lib/fase-chaveamento";
+import { Aviso } from "../../components/Aviso";
 import { rotuloNivel } from "../../lib/nivel";
 import { ChaveamentoManualBuilder } from "./ChaveamentoManualBuilder";
 import { FaseDeGruposBuilder } from "./FaseDeGruposBuilder";
@@ -124,11 +120,11 @@ function CriarRodadaForm({
       <button
         type="button"
         onClick={salvar}
-        className="rounded bg-slate-800 px-3 py-1 text-sm text-white"
+        className="btn-primary text-sm"
       >
         Salvar
       </button>
-      {erro && <p className="w-full text-sm text-red-600">{erro}</p>}
+      {erro && <Aviso tipo="erro" className="w-full">{erro}</Aviso>}
     </div>
   );
 }
@@ -173,7 +169,7 @@ function RodadaSlot({
           <button
             type="button"
             onClick={() => setCriando(true)}
-            className="rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+            className="btn-primary text-sm"
           >
             Criar rodada
           </button>
@@ -202,14 +198,12 @@ function PartidaLinha({
   modalidadeId,
   rodadaId,
   equipePorId,
-  rotuloVencedor,
 }: {
   partida: PartidaItem;
   eventoId: string;
   modalidadeId: string;
   rodadaId: string;
   equipePorId: Map<string, string>;
-  rotuloVencedor?: string | null;
 }) {
   const decidida = partida.status === "ENCERRADA" || partida.status === "EMPATADA";
   const pendente = !decidida && partida.equipe_b_id !== null;
@@ -225,7 +219,7 @@ function PartidaLinha({
           <span className="text-xs font-medium text-slate-600">Empate</span>
         ) : (
           <span className="text-xs font-medium text-emerald-700">
-            {rotuloVencedor ?? `Vencedor: ${equipePorId.get(partida.vencedor_id ?? "") ?? "?"}`}
+            {`Vencedor: ${equipePorId.get(partida.vencedor_id ?? "") ?? "?"}`}
           </span>
         ))}
       {pendente && (
@@ -245,18 +239,12 @@ function CombateRodada({
   eventoId,
   modalidadeId,
   equipePorId,
-  ultimaRodadaPorNivel,
-  totalRodadasPorNivel,
-  inicioMataMataPorNivel,
   chavePorId,
 }: {
   rodada: RodadaItem;
   eventoId: string;
   modalidadeId: string;
   equipePorId: Map<string, string>;
-  ultimaRodadaPorNivel: Map<number, number>;
-  totalRodadasPorNivel: Map<number, number>;
-  inicioMataMataPorNivel: Map<number, number>;
   chavePorId: Map<string, string>;
 }) {
   const { data: partidas } = useQuery({
@@ -291,36 +279,11 @@ function CombateRodada({
       <div className="space-y-3">
         {niveis.map((nivel) => {
           const partidasDoNivel = partidasPorNivel.get(nivel)!;
-          // Cada nivel tem UM formato so (Partida.formato_chaveamento e
-          // gravado no momento em que gerar_chaveamento_confronto decide,
-          // por nivel) -- olhar a primeira partida basta.
-          const ehBracket = partidasDoNivel[0]?.formato_chaveamento === "MATA_MATA";
-          // numero relativo ao inicio do mata-mata daquele nivel, nao o
-          // absoluto da modalidade -- depois de fase de grupos o bracket
-          // pode comecar numa rodada != 1 (ver lib/fase-chaveamento.ts).
-          const inicio = nivel != null ? inicioMataMataPorNivel.get(nivel) : undefined;
-          const numeroRelativo = inicio != null ? rodada.numero - inicio + 1 : rodada.numero;
-          const fase =
-            ehBracket && nivel != null
-              ? nomeFase(numeroRelativo, totalRodadasPorNivel.get(nivel))
-              : null;
-          const ehRodadaFinalDoNivel =
-            ehBracket &&
-            nivel != null &&
-            rodada.numero === ultimaRodadaPorNivel.get(nivel) &&
-            partidasDoNivel.length === 1;
           return (
             <div key={String(nivel)}>
               {nivel != null && (
                 <div className="mb-1 flex items-center gap-2">
                   <span className="text-xs font-medium text-slate-500">{rotuloNivel(nivel)}</span>
-                  {fase && (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${fase.classes}`}
-                    >
-                      {fase.nome}
-                    </span>
-                  )}
                 </div>
               )}
               {(() => {
@@ -333,13 +296,6 @@ function CombateRodada({
                       modalidadeId={modalidadeId}
                       rodadaId={rodada.id}
                       equipePorId={equipePorId}
-                      rotuloVencedor={
-                        ehRodadaFinalDoNivel &&
-                        partida.status === "ENCERRADA" &&
-                        partida.vencedor_id
-                          ? `🏆 Campeão: ${equipePorId.get(partida.vencedor_id) ?? "?"}`
-                          : undefined
-                      }
                     />
                   );
                 }
@@ -437,52 +393,6 @@ export function RodadaListPage() {
   const chavePorId = new Map((chavesTodas ?? []).map((c) => [c.id, c.nome]));
 
   const rodadasOrdenadas = [...(rodadas ?? [])].sort((a, b) => a.numero - b.numero);
-  const partidasQueries = useQueries({
-    queries: isCombate
-      ? rodadasOrdenadas.map((rodada) => ({
-          queryKey: ["partidas-da-rodada", rodada.id],
-          queryFn: async () => {
-            const { data } = await api.GET("/api/v1/rodadas/{rodada_id}/partidas", {
-              params: { path: { rodada_id: rodada.id } },
-            });
-            return (data ?? []) as PartidaItem[];
-          },
-        }))
-      : [],
-  });
-
-  // Ultima rodada em que cada nivel tem alguma partida gerada ate agora.
-  // Uma partida so e a decisao do campeao se estiver nessa rodada E for a
-  // UNICA partida do nivel ali - senao pode ser so a rodada mais recente
-  // conhecida (ex.: semifinal com 2 jogos, um ja fechado) e nao a final de
-  // verdade. Comparar so o vencedor_id com "quem e campeao" e um erro: o
-  // proprio campeao tambem venceu rodadas anteriores, e aquelas partidas nao
-  // podem herdar o troféu.
-  const rodadaPorId = new Map(rodadasOrdenadas.map((r) => [r.id, r]));
-  const todasPartidas = isCombate ? partidasQueries.flatMap((q) => q.data ?? []) : [];
-
-  const ultimaRodadaPorNivel = new Map<number, number>();
-  if (isCombate) {
-    for (const partida of todasPartidas) {
-      if (partida.nivel == null) continue;
-      const numero = rodadaPorId.get(partida.rodada_id ?? "")?.numero;
-      if (numero == null) continue;
-      if (numero > (ultimaRodadaPorNivel.get(partida.nivel) ?? -1)) {
-        ultimaRodadaPorNivel.set(partida.nivel, numero);
-      }
-    }
-  }
-
-  let totalRodadasPorNivel = new Map<number, number>();
-  let inicioMataMataPorNivel = new Map<number, number>();
-  if (isCombate) {
-    const partidasComNumero = todasPartidas.flatMap((p) => {
-      const numero = rodadaPorId.get(p.rodada_id ?? "")?.numero;
-      return numero == null ? [] : [{ ...p, nivel: p.nivel ?? null, numero }];
-    });
-    totalRodadasPorNivel = calcularTotalRodadasPorNivel(partidasComNumero);
-    inicioMataMataPorNivel = primeiraRodadaMataMataPorNivel(partidasComNumero);
-  }
 
   const [mostrarChaveamentoManual, setMostrarChaveamentoManual] = useState(false);
   const [mostrarFaseDeGrupos, setMostrarFaseDeGrupos] = useState(false);
@@ -497,13 +407,13 @@ export function RodadaListPage() {
   }
 
   if (!modalidade || !rodadas || (isCombate && !equipesTodas)) {
-    return <main className="p-8 text-slate-500">Carregando...</main>;
+    return <main className="px-4 py-6 text-slate-500 sm:p-8">Carregando...</main>;
   }
 
   const numeros = Array.from({ length: modalidade.qtd_rodadas }, (_, i) => i + 1);
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <Link
         to={`/eventos/${eventoId}/modalidades`}
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
@@ -511,7 +421,7 @@ export function RodadaListPage() {
         ← Voltar para modalidades
       </Link>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-800">Rodadas de {modalidade.nome}</h1>
+        <h1 className="text-3xl font-bold">Rodadas de {modalidade.nome}</h1>
         {isCombate ? (
           <div className="flex gap-2">
             <button
@@ -533,7 +443,7 @@ export function RodadaListPage() {
           <button
             type="button"
             onClick={gerarRodadas}
-            className="rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white"
+            className="btn-primary text-sm"
           >
             Gerar rodadas
           </button>
@@ -549,9 +459,6 @@ export function RodadaListPage() {
               eventoId={eventoId!}
               modalidadeId={modalidadeId!}
               equipePorId={equipePorId}
-              ultimaRodadaPorNivel={ultimaRodadaPorNivel}
-              totalRodadasPorNivel={totalRodadasPorNivel}
-              inicioMataMataPorNivel={inicioMataMataPorNivel}
               chavePorId={chavePorId}
             />
           ))}

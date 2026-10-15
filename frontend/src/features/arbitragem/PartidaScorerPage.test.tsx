@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAvisosStore } from "../../lib/avisos";
 import { useAuthStore } from "../../lib/auth-store";
 import { PartidaScorerPage } from "./PartidaScorerPage";
 
@@ -335,6 +336,32 @@ describe("PartidaScorerPage - ficha com um criterio booleano", () => {
       expect(api.POST).toHaveBeenCalledWith(
         "/api/v1/lancamentos/{lancamento_id}/confirmar",
         expect.anything(),
+      ),
+    );
+  });
+
+  it("depois de registrar o combate, avisa 'Pontuação enviada!'", async () => {
+    useAvisosStore.setState({ avisos: [] });
+    mockGet();
+    vi.mocked(api.POST).mockImplementation(async (path: string, opts?: unknown) => {
+      if (path === "/api/v1/lancamentos") {
+        const body = (opts as { body: { equipe_id: string } }).body;
+        return {
+          data: { id: `lanc-${body.equipe_id}`, status: "PENDENTE", total: 0 },
+          error: undefined,
+        } as never;
+      }
+      return { data: { id: "lanc-1", status: "CONFIRMADO", total: 0 }, error: undefined } as never;
+    });
+
+    renderPage();
+
+    const combate1 = (await screen.findByText(/combate 1/i)).closest("li")!;
+    await userEvent.click(within(combate1).getByRole("button", { name: /^equipe x$/i }));
+
+    await waitFor(() =>
+      expect(useAvisosStore.getState().avisos).toContainEqual(
+        expect.objectContaining({ tipo: "sucesso", mensagem: "Pontuação enviada!" }),
       ),
     );
   });

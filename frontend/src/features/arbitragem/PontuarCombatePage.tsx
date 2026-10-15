@@ -3,11 +3,8 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { useAuthStore } from "../../lib/auth-store";
-import {
-  calcularTotalRodadasPorNivel,
-  nomeFase,
-  primeiraRodadaMataMataPorNivel,
-} from "../../lib/fase-chaveamento";
+import { PageHeader } from "../../components/PageHeader";
+import { iconeModalidade } from "../../lib/modalidade-icone";
 import { rotuloNivel } from "../../lib/nivel";
 
 interface ModalidadeInfo {
@@ -118,7 +115,7 @@ export function PontuarCombatePage() {
 
   if (carregando) {
     return (
-      <main className="p-8">
+      <main className="px-4 py-6 sm:p-8">
         <p className="animate-pulse text-slate-500">Carregando...</p>
       </main>
     );
@@ -142,52 +139,22 @@ export function PontuarCombatePage() {
     (p) => nivelFiltro === "" || p.nivel === Number(nivelFiltro),
   );
 
-  const partidasComNumero = todasPartidas.map((p) => ({
-    ...p,
-    numero: rodadaPorId.get(p.rodada_id)?.numero ?? 0,
-  }));
-  const totalRodadasPorNivel = calcularTotalRodadasPorNivel(partidasComNumero);
-  const inicioMataMataPorNivel = primeiraRodadaMataMataPorNivel(partidasComNumero);
-
   function grupoDaPartida(partida: PartidaItem): { label: string; classes: string; ordem: number } {
-    // Partida de fase de grupos (Chave, criada por gerar_fase_de_grupos) --
-    // rotula pelo nome da chave, e fica sempre no fim (ordem alta): assim
-    // que o mata-mata pos-grupos existe, e ele que importa olhar primeiro.
+    // Partida de fase de grupos (com chave) -- rotula pelo nome da chave, e
+    // fica sempre no fim (ordem alta): o mata-mata pos-grupos e o que importa.
     if (partida.chave_id != null) {
       const nomeChave = chavePorId.get(partida.chave_id) ?? "Fase de Grupos";
       return { label: nomeChave, classes: CLASSES_FASE_NEUTRA, ordem: 1000 };
     }
-    // Formato e por partida (nivel), nao mais um campo unico da modalidade
-    // inteira -- uma modalidade pode ter nivel em mata-mata e outro em
-    // todos-contra-todos ao mesmo tempo (gerar_chaveamento_confronto). Essa
-    // e a liga automatica por contagem (sem chave), continua ordem 0.
     if (partida.formato_chaveamento === "TODOS_CONTRA_TODOS") {
       return { label: "Fase de Grupos", classes: CLASSES_FASE_NEUTRA, ordem: 0 };
     }
+    // Eliminatoria: so "Rodada N". O chaveamento e montado na mao (out/2026),
+    // entao o sistema nao tem como saber se uma rodada e final ou semifinal;
+    // chutar o nome confundia o coordenador na hora (pedido de 14/10/2026).
+    // Rodada mais nova primeiro (ordem menor).
     const numero = rodadaPorId.get(partida.rodada_id)?.numero ?? 0;
-    if (partida.nivel == null) {
-      return { label: `Rodada ${numero}`, classes: CLASSES_FASE_NEUTRA, ordem: -numero };
-    }
-    const total = totalRodadasPorNivel.get(partida.nivel);
-    // numero e o ABSOLUTO da modalidade, mas nomeFase espera o numero
-    // RELATIVO ao inicio do mata-mata daquele nivel -- depois de uma fase de
-    // grupos, o bracket pode comecar numa rodada != 1 (ex.: grupos usam a
-    // rodada 1, mata-mata comeca na 2). Sem isso, um bracket de 1 rodada so
-    // que comeca na rodada 2 calcula distancia negativa e cai no fallback
-    // generico "Rodada 2" em vez de "Final" (bug real achado testando ao
-    // vivo com Cabo de Guerra).
-    const inicio = inicioMataMataPorNivel.get(partida.nivel);
-    const numeroRelativo = inicio != null ? numero - inicio + 1 : numero;
-    // "ordem" tem que ficar numa escala unica (distancia ate a final), senao
-    // uma secao sem nome (fallback "Rodada N", bracket grande demais) nao
-    // intercala certo com as secoes nomeadas (Oitavas/Quartas/Semi/Final) -
-    // regressao ja vista: "Oitavas" ficando depois de "Rodada 1" na tela.
-    const distancia = (total ?? 0) - numeroRelativo;
-    const fase = nomeFase(numeroRelativo, total);
-    if (!fase) {
-      return { label: `Rodada ${numero}`, classes: CLASSES_FASE_NEUTRA, ordem: distancia };
-    }
-    return { label: fase.nome, classes: fase.classes, ordem: distancia };
+    return { label: `Rodada ${numero}`, classes: CLASSES_FASE_NEUTRA, ordem: -numero };
   }
 
   const grupos: { label: string; classes: string; ordem: number; itens: PartidaItem[] }[] = [];
@@ -213,19 +180,21 @@ export function PontuarCombatePage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <Link
-        to={`/eventos/${eventoId}/competicoes?aba=combate`}
-        className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
-      >
-        ← Voltar para combates
-      </Link>
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">
-        Pontuar {modalidade!.nome}
-      </h1>
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        voltar={{ para: `/eventos/${eventoId}/competicoes?aba=combate`, rotulo: "Voltar para combates" }}
+        sobretitulo="Pontuar combate"
+        titulo={
+          <>
+            <span aria-hidden="true">{iconeModalidade(modalidade!.nome)} </span>
+            {modalidade!.nome}
+          </>
+        }
+        descricao="Toque num confronto em aberto pra lançar o resultado. Os já decididos ficam esmaecidos no fim de cada rodada."
+      />
 
       {niveisDisponiveis.length > 1 && (
-        <div className="mb-4">
+        <div className="card mb-6 p-4">
           <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="filtro-nivel">
             Filtrar por nivel
           </label>
@@ -236,9 +205,9 @@ export function PontuarCombatePage() {
               const valor = e.target.value;
               setSearchParams(valor ? { nivel: valor } : {});
             }}
-            className="w-full max-w-xs rounded border border-slate-300 px-3 py-2"
+            className="min-h-12 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2"
           >
-            <option value="">Todos os niveis</option>
+            <option value="">Todos os níveis</option>
             {niveisDisponiveis.map((nivel) => (
               <option key={nivel} value={nivel}>
                 {rotuloNivel(nivel)}
@@ -249,8 +218,12 @@ export function PontuarCombatePage() {
       )}
 
       {todasPartidas.length === 0 && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
-          <p>Nenhuma partida gerada ainda: gere o chaveamento/rodadas primeiro.</p>
+        <div className="card p-6 text-center text-slate-600">
+          <p className="text-4xl" aria-hidden="true">⚔️</p>
+          <p className="mt-2">
+            Nenhuma partida criada ainda. A coordenação monta os confrontos em Ver confrontos →
+            Montar chaveamento manual.
+          </p>
         </div>
       )}
       {todasPartidas.length > 0 && partidas.length === 0 && (
@@ -264,7 +237,7 @@ export function PontuarCombatePage() {
         {grupos.map((grupo) => (
           <section key={grupo.label}>
             <h2
-              className={`mb-3 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${grupo.classes}`}
+              className={`mb-3 inline-block rounded-full px-4 py-1 font-display text-sm font-bold uppercase tracking-widest ${grupo.classes}`}
             >
               {grupo.label}
             </h2>
@@ -279,27 +252,34 @@ export function PontuarCombatePage() {
 
                 const corpo = (
                   <>
-                    <p className="text-sm text-slate-500">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                       Rodada {rodada?.numero}
                       {partida.nivel != null ? ` · ${rotuloNivel(partida.nivel)}` : ""}
                     </p>
-                    <p className="mt-2 text-sm font-medium">
-                      <span className={corDaEquipe(partida, partida.equipe_a_id)}>{nomeA}</span>
-                      {" vs "}
-                      {nomeB ? (
-                        <span className={corDaEquipe(partida, partida.equipe_b_id!)}>
-                          {nomeB}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">(bye)</span>
-                      )}
-                    </p>
+                    <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                      <p className="min-w-0 break-words font-display text-lg font-bold leading-tight">
+                        <span className={corDaEquipe(partida, partida.equipe_a_id)}>{nomeA}</span>
+                      </p>
+                      <span
+                        aria-label="contra"
+                        className="rounded-md bg-slate-100 px-2 py-1 font-display text-xs font-bold text-plasma ring-1 ring-plasma/40"
+                      >
+                        VS
+                      </span>
+                      <p className="min-w-0 break-words text-right font-display text-lg font-bold leading-tight">
+                        {nomeB ? (
+                          <span className={corDaEquipe(partida, partida.equipe_b_id!)}>{nomeB}</span>
+                        ) : (
+                          <span className="text-slate-400">(bye)</span>
+                        )}
+                      </p>
+                    </div>
                     {partida.status === "EMPATADA" && (
-                      <p className="mt-1 text-xs font-medium text-slate-500">Empate</p>
+                      <p className="mt-3 text-sm font-semibold text-slate-500">Empate</p>
                     )}
                     {partida.status === "ENCERRADA" && partida.vencedor_id && (
-                      <p className="mt-1 text-xs font-medium text-emerald-700">
-                        Vencedor: {equipePorId.get(partida.vencedor_id) ?? "?"}
+                      <p className="mt-3 text-sm font-semibold text-emerald-700">
+                        🏆 Vencedor: {equipePorId.get(partida.vencedor_id) ?? "?"}
                       </p>
                     )}
                   </>
@@ -310,14 +290,14 @@ export function PontuarCombatePage() {
                 if (decidida) {
                   return (
                     <li key={partida.id}>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                        <div className="opacity-80">{corpo}</div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-100/60 p-4">
+                        <div className="opacity-75">{corpo}</div>
                         {ehCoordenador && partida.equipe_b_id && (
                           <Link
                             to={linkPartida}
-                            className="mt-2 inline-block text-sm font-medium text-slate-700 underline"
+                            className="btn-secondary mt-3 min-h-10"
                           >
-                            Corrigir
+                            ✏️ Corrigir
                           </Link>
                         )}
                       </div>
@@ -329,7 +309,7 @@ export function PontuarCombatePage() {
                   <li key={partida.id}>
                     <Link
                       to={linkPartida}
-                      className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-400"
+                      className="card block p-4 hover:border-neon/60 hover:shadow-glow"
                     >
                       {corpo}
                     </Link>

@@ -557,6 +557,26 @@ describe("EquipeListPage", () => {
     );
   });
 
+  it("botao de presenca grande mostra o estado atual, e o resto das acoes fica no menu 'Mais ações'", async () => {
+    // Pedido 14/10/2026: no dia, o coordenador so precisa achar rapido o
+    // presente/ausente; editar/desativar/submissoes sairam da linha.
+    mockGetEquipes({
+      itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true, presente: true }],
+      total: 1,
+      page: 1,
+      size: 50,
+    });
+
+    renderPage();
+
+    const presenca = await screen.findByRole("button", { name: /marcar ausente/i });
+    expect(presenca).toHaveTextContent(/^✓ ?presente/i);
+    const menu = screen.getByText(/mais a[cç][oõ]es/i).closest("details")!;
+    expect(within(menu).getByRole("button", { name: /desativar/i })).toBeInTheDocument();
+    expect(within(menu).getByRole("button", { name: /editar/i })).toBeInTheDocument();
+    expect(within(menu).getByRole("link", { name: /submiss/i })).toBeInTheDocument();
+  });
+
   it("equipe ausente mostra o selo 'Ausente' e permite marcar presente de novo", async () => {
     mockGetEquipes({
       itens: [{ id: "eq1", nome: "Equipe Alpha", nivel: 2, ativo: true, presente: false }],

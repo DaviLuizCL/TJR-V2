@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
+import { useAuthStore } from "../../lib/auth-store";
 import { ConfrontoHubPage } from "./ConfrontoHubPage";
 
 vi.mock("../../api/client", () => ({
@@ -57,6 +58,20 @@ beforeEach(() => {
 });
 
 describe("ConfrontoHubPage", () => {
+  it("juiz ve so os cards de Pontuar, sem a aba Chaveamento", async () => {
+    useAuthStore.setState({
+      accessToken: "t",
+      refreshToken: "r",
+      usuario: { id: "u1", nome: "Juiz", email: "j@tjr.app", papel: "ARBITRO" },
+    });
+    renderPage("/eventos/evt-1/combates?sub=chaveamento");
+
+    expect(await screen.findByRole("link", { name: /^pontuar$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /ver confrontos/i })).not.toBeInTheDocument();
+    useAuthStore.setState({ usuario: null });
+  });
+
   it("mostra a aba Modalidades selecionada por padrao", async () => {
     renderPage();
 

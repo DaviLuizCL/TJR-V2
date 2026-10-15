@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { useAuthStore } from "../../lib/auth-store";
 import { rotuloNivel } from "../../lib/nivel";
 
@@ -100,7 +101,7 @@ function SecaoNivel({
             type="button"
             onClick={sortear}
             disabled={salvando}
-            className="min-h-12 rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="btn-primary min-h-12 text-sm"
           >
             🎲 Sortear ordem
           </button>
@@ -118,7 +119,7 @@ function SecaoNivel({
       </div>
 
       {confirmandoSorteio && (
-        <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <Aviso tipo="alerta" className="mb-3">
           <p className="mb-2">
             A ordem atual deste nível vai ser substituída por um sorteio novo. Tem certeza?
           </p>
@@ -126,7 +127,7 @@ function SecaoNivel({
             <button
               type="button"
               onClick={sortear}
-              className="min-h-12 rounded bg-amber-700 px-4 py-2 font-medium text-white"
+              className="btn bg-amber-500 text-slate-50 min-h-12"
             >
               Sim, sortear de novo
             </button>
@@ -138,7 +139,7 @@ function SecaoNivel({
               Cancelar
             </button>
           </div>
-        </div>
+        </Aviso>
       )}
 
       {!jaSorteada && (
@@ -147,7 +148,7 @@ function SecaoNivel({
           ordem alfabética.
         </p>
       )}
-      {erro && <p className="mb-3 text-sm text-red-600">{erro}</p>}
+      {erro && <Aviso tipo="erro" className="mb-3">{erro}</Aviso>}
 
       <ol className="space-y-2">
         {equipes.map((equipe, indice) => (
@@ -253,7 +254,7 @@ export function OrdemApresentacaoPage() {
 
   if (!modalidade || !inscricoes || !equipes) {
     return (
-      <main className="p-8">
+      <main className="px-4 py-6 sm:p-8">
         <p className="animate-pulse text-slate-500">Carregando...</p>
       </main>
     );
@@ -271,14 +272,14 @@ export function OrdemApresentacaoPage() {
   const niveis = [...porNivel.keys()].sort((a, b) => a - b);
 
   return (
-    <main className="mx-auto max-w-3xl p-4 sm:p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <Link
         to={`/eventos/${eventoId}/competicoes?aba=individual&sub=ordem`}
         className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
       >
         ← Voltar
       </Link>
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">
+      <h1 className="mb-2 text-3xl font-bold">
         Sequência de competição · {modalidade.nome}
       </h1>
       <p className="mb-4 text-sm text-slate-500">
@@ -297,7 +298,7 @@ export function OrdemApresentacaoPage() {
         <p className="mt-1 text-xs text-slate-500">
           Uma página por nível, com letra grande pra projetar.
         </p>
-        {erroPdf && <p className="mt-1 text-sm font-medium text-red-600">{erroPdf}</p>}
+        {erroPdf && <Aviso tipo="erro" className="mt-1">{erroPdf}</Aviso>}
       </div>
 
       {niveis.length === 0 && (

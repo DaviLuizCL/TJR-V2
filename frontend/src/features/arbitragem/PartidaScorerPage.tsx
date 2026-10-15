@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
+import { avisar } from "../../lib/avisos";
 import { useAuthStore } from "../../lib/auth-store";
 import { randomUUID } from "../../lib/uuid";
 
@@ -18,6 +20,7 @@ interface PartidaItem {
 
 interface ModalidadeInfo {
   id: string;
+  nome: string;
   ficha_unica_entre_niveis: boolean;
   tentativas_por_rodada: number;
   decisao_partida: string;
@@ -115,7 +118,7 @@ function ColunaEquipeMultiCriterio({
 }) {
   return (
     <div>
-      <p className="mb-1 text-xs font-semibold text-slate-700">{nome}</p>
+      <p className="mb-2 truncate font-display text-base font-bold text-slate-900">{nome}</p>
       <div className="flex flex-col gap-2">
         {criterios.map((criterio) =>
           criterio.tipo === "BOOLEANO" ? (
@@ -125,7 +128,7 @@ function ColunaEquipeMultiCriterio({
               disabled={desabilitado}
               aria-pressed={!!estado[criterio.id]}
               onClick={() => onAlternar(criterio.id)}
-              className={`min-h-12 w-full rounded border px-3 py-2 text-left text-sm font-medium disabled:opacity-50 ${corCriterio(
+              className={`min-h-14 w-full rounded-xl border-2 px-3 py-2 text-left text-sm font-semibold disabled:opacity-50 ${corCriterio(
                 criterio.categoria,
                 !!estado[criterio.id],
               )}`}
@@ -135,22 +138,23 @@ function ColunaEquipeMultiCriterio({
           ) : (
             <div
               key={criterio.id}
-              className={`flex min-h-12 w-full items-center gap-2 rounded border px-2 py-1 ${corCriterio(
+              className={`flex w-full flex-col gap-2 rounded-xl border-2 px-3 py-2 ${corCriterio(
                 criterio.categoria,
                 false,
               )}`}
             >
-              <span className="flex-1 text-sm text-slate-800">{criterio.nome}</span>
+              <span className="text-sm font-semibold text-slate-800">{criterio.nome}</span>
+              <span className="flex items-center justify-between gap-2">
               <button
                 type="button"
                 disabled={desabilitado}
                 aria-label={`Diminuir ${criterio.nome} - ${nome}`}
                 onClick={() => onAlterar(criterio.id, -1, criterio.max_ocorrencias)}
-                className="flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-lg leading-none disabled:opacity-50"
+                className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-xl leading-none disabled:opacity-50"
               >
                 −
               </button>
-              <span className="w-4 text-center text-sm font-semibold">
+              <span className="w-6 text-center font-display text-2xl font-bold text-slate-900">
                 {estado[criterio.id] ?? 0}
               </span>
               <button
@@ -158,10 +162,11 @@ function ColunaEquipeMultiCriterio({
                 disabled={desabilitado}
                 aria-label={`Aumentar ${criterio.nome} - ${nome}`}
                 onClick={() => onAlterar(criterio.id, 1, criterio.max_ocorrencias)}
-                className="flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-lg leading-none disabled:opacity-50"
+                className="flex h-11 w-11 items-center justify-center rounded-lg bg-neon text-xl font-bold leading-none text-slate-50 disabled:opacity-50"
               >
                 +
               </button>
+              </span>
             </div>
           ),
         )}
@@ -231,7 +236,7 @@ function MultiCriterioScorer({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <ColunaEquipeMultiCriterio
           criterios={criterios}
           nome={nomeA}
@@ -255,7 +260,7 @@ function MultiCriterioScorer({
         type="button"
         disabled={desabilitado}
         onClick={() => onRegistrar(itensDe(estadoA), itensDe(estadoB))}
-        className="min-h-12 rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="btn-primary min-h-14 w-full text-base"
       >
         Registrar
       </button>
@@ -492,6 +497,7 @@ export function PartidaScorerPage() {
     }
 
     setEnviando(null);
+    avisar("sucesso", corrigindo.has(tentativa) ? "Correção salva!" : "Pontuação enviada!");
     setCorrigindo((atual) => {
       const proximo = new Set(atual);
       proximo.delete(tentativa);
@@ -595,12 +601,12 @@ export function PartidaScorerPage() {
 
     if (criterioUnico?.tipo === "BOOLEANO") {
       const botoes = (
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <button
             type="button"
             disabled={enviando === tentativa}
             onClick={() => enviarBooleano(tentativa, "A")}
-            className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+            className="min-h-14 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 font-display text-lg font-bold text-slate-800 hover:border-emerald-400 hover:bg-emerald-50/60 active:scale-[.98] disabled:opacity-50"
           >
             {nomeA}
           </button>
@@ -608,7 +614,7 @@ export function PartidaScorerPage() {
             type="button"
             disabled={enviando === tentativa}
             onClick={() => enviarBooleano(tentativa, "B")}
-            className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+            className="min-h-14 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 font-display text-lg font-bold text-slate-800 hover:border-emerald-400 hover:bg-emerald-50/60 active:scale-[.98] disabled:opacity-50"
           >
             {nomeB}
           </button>
@@ -617,7 +623,7 @@ export function PartidaScorerPage() {
               type="button"
               disabled={enviando === tentativa}
               onClick={() => enviarBooleano(tentativa, "EMPATE")}
-              className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
+              className="col-span-2 min-h-12 rounded-xl border border-dashed border-slate-300 px-3 py-2 text-sm font-semibold text-slate-500 hover:text-slate-800 disabled:opacity-50 sm:col-span-1"
             >
               Empate
             </button>
@@ -627,7 +633,7 @@ export function PartidaScorerPage() {
       if (desempate) return botoes;
       return (
         <div>
-          <p className="mb-2 text-xs font-medium text-slate-500">Defina o vencedor</p>
+          <p className="mb-2 text-sm font-medium text-slate-500">Defina o vencedor</p>
           {botoes}
         </div>
       );
@@ -636,7 +642,7 @@ export function PartidaScorerPage() {
     if (criterioUnico?.tipo === "ESCALA") {
       const coluna = (lado: "A" | "B", nome: string | null) => (
         <div>
-          <p className="mb-1 text-xs text-slate-600">{nome}</p>
+          <p className="mb-2 truncate text-center font-display text-base font-bold text-slate-900">{nome}</p>
           <div className="flex flex-col gap-2">
             {valoresNaoZero.map((v) => (
               <button
@@ -644,7 +650,7 @@ export function PartidaScorerPage() {
                 type="button"
                 disabled={enviando === tentativa}
                 onClick={() => enviarEscala(tentativa, lado, v)}
-                className="min-h-12 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-50"
+                className="min-h-14 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 font-display text-lg font-bold text-slate-800 hover:border-emerald-400 hover:bg-emerald-50/60 active:scale-[.98] disabled:opacity-50"
               >
                 {rotuloEscala(criterioUnico.nome, v)}
               </button>
@@ -662,15 +668,15 @@ export function PartidaScorerPage() {
       }
       return (
         <div>
-          <p className="mb-2 text-xs font-medium text-slate-500">Defina o resultado</p>
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <p className="mb-2 text-sm font-medium text-slate-500">Defina o resultado</p>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2 sm:gap-3">
             {coluna("A", nomeA)}
             {permiteEmpate && (
               <button
                 type="button"
                 disabled={enviando === tentativa}
                 onClick={() => enviarEscala(tentativa, "EMPATE")}
-                className="min-h-12 rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 disabled:opacity-50"
+                className="min-h-14 rounded-xl border border-dashed border-slate-300 px-2 py-2 text-sm font-semibold text-slate-500 hover:text-slate-800 disabled:opacity-50"
               >
                 Empate
               </button>
@@ -696,7 +702,7 @@ export function PartidaScorerPage() {
     return (
       <Link
         to={`/eventos/${eventoId}/modalidades/${modalidadeId}/rodadas/${rodadaId}/lancamentos/novo?partidaId=${partidaId}`}
-        className="text-sm font-medium text-slate-700 underline"
+        className="btn-secondary"
       >
         Lançar pela ficha completa →
       </Link>
@@ -723,12 +729,12 @@ export function PartidaScorerPage() {
     if (corrigindo.has(tentativa)) {
       return (
         <div>
-          <p className="mb-2 text-xs font-medium text-amber-700">Corrigindo este combate</p>
+          <p className="chip mb-3 border-amber-300 bg-amber-50 text-amber-800">✏️ Corrigindo este combate</p>
           {renderControles(tentativa, desempate, nomeA, nomeB)}
           <button
             type="button"
             onClick={() => cancelarCorrecao(tentativa)}
-            className="mt-2 text-sm font-medium text-slate-600 underline"
+            className="btn-secondary mt-3"
           >
             Cancelar correção
           </button>
@@ -741,9 +747,11 @@ export function PartidaScorerPage() {
 
     return (
       <>
-        <p className="text-sm font-medium">
+        <p className="flex flex-wrap items-center gap-x-2 font-display text-lg font-bold">
           <span className={corResultado(lancA!.total, lancB!.total, "A")}>{nomeA}</span>
-          {" vs "}
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-sm text-slate-600">
+            {lancA!.total} × {lancB!.total}
+          </span>
           <span className={corResultado(lancA!.total, lancB!.total, "B")}>{nomeB}</span>
         </p>
         {!desempate && lancA!.total === lancB!.total && (
@@ -754,7 +762,7 @@ export function PartidaScorerPage() {
             type="button"
             aria-label={desempate ? "Corrigir combate extra" : `Corrigir combate ${tentativa}`}
             onClick={() => iniciarCorrecao(tentativa)}
-            className="mt-2 text-sm font-medium text-slate-700 underline"
+            className="btn-secondary mt-3 min-h-10"
           >
             Corrigir
           </button>
@@ -768,7 +776,7 @@ export function PartidaScorerPage() {
 
   if (carregando || !partida) {
     return (
-      <main className="p-8">
+      <main className="px-4 py-6 sm:p-8">
         <p className="animate-pulse text-slate-500">Carregando...</p>
       </main>
     );
@@ -778,61 +786,66 @@ export function PartidaScorerPage() {
   const nomeB = partida.equipe_b_id ? (equipePorId.get(partida.equipe_b_id)?.nome ?? "?") : null;
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
       <Link
         to={`/eventos/${eventoId}/modalidades/${modalidadeId}/pontuar${nivelFiltro ? `?nivel=${nivelFiltro}` : ""}`}
-        className="mb-4 inline-block text-sm font-medium text-slate-600 underline"
+        className="mb-3 inline-flex min-h-10 items-center text-sm font-medium text-slate-500 hover:text-neon"
       >
         ← Voltar para pontuar
       </Link>
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">
-        {nomeA} vs {nomeB ?? "?"}
+      {modalidade && <p className="eyebrow mb-2">{modalidade.nome}</p>}
+      <h1 className="mb-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-neon-soft via-white to-plasma-soft p-4 text-xl font-bold leading-tight sm:text-2xl">
+        <span className="min-w-0 break-words">{nomeA}</span>
+        <span className="font-display text-base text-plasma" aria-label="contra">
+          VS
+        </span>
+        <span className="min-w-0 break-words text-right">{nomeB ?? "?"}</span>
       </h1>
 
       {partida.status === "ENCERRADA" && (
-        <p className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-3 font-medium text-emerald-800">
-          Vencedor: {equipePorId.get(partida.vencedor_id ?? "")?.nome ?? "?"}
+        <p className="mb-6 rounded-xl border border-emerald-300 bg-emerald-50 p-4 font-display text-lg font-bold text-emerald-800">
+          🏆 Vencedor: {equipePorId.get(partida.vencedor_id ?? "")?.nome ?? "?"}
         </p>
       )}
       {partida.status === "EMPATADA" && (
-        <p className="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-3 font-medium text-slate-700">
+        <p className="mb-6 rounded-xl border border-slate-300 bg-slate-100 p-4 font-medium text-slate-700">
           Partida empatada
         </p>
       )}
       {empateTecnico && !empatouNoDesempate && (
-        <p className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-800">
+        <Aviso tipo="alerta" className="mb-6 font-medium">
           {usaSomaPontos
             ? "Empate na soma dos pontos — decida com o combate extra de desempate abaixo."
             : "Empate na contagem de combates — decida com o combate extra de desempate abaixo."}
-        </p>
+        </Aviso>
       )}
       {empatouNoDesempate && (
-        <p className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-800">
+        <Aviso tipo="alerta" className="mb-6 font-medium">
           Também empatou no combate de desempate — esta partida precisa de correção do
           coordenador.
-        </p>
+        </Aviso>
       )}
       {erro && (
-        <div className="mb-4 flex items-start gap-2 rounded border border-red-200 bg-red-50 p-3">
-          <span className="text-lg leading-none text-red-600" aria-hidden="true">
-            ⚠
-          </span>
-          <p className="text-sm text-red-700">{erro}</p>
-        </div>
+        <Aviso tipo="erro" className="mb-4">
+          <p>{erro}</p>
+        </Aviso>
       )}
 
-      <ul className="space-y-3">
+      <ul className="space-y-4">
         {tentativasArr.map((tentativa) => (
-          <li key={tentativa} className="rounded-lg border border-slate-200 bg-white p-4">
-            <p className="mb-2 text-sm font-semibold text-slate-700">Combate {tentativa}</p>
+          <li key={tentativa} className="card p-4">
+            <p className="eyebrow mb-3">Combate {tentativa}</p>
             {renderCombate(tentativa, false, nomeA, nomeB)}
           </li>
         ))}
       </ul>
 
       {(empateTecnico || temCombateExtraLancado) && (
-        <div className="mt-4 rounded-lg border-2 border-amber-300 bg-white p-4">
-          <p className="mb-2 text-sm font-semibold text-amber-700">Combate extra (desempate)</p>
+        <div className="mt-4 rounded-xl border-2 border-amber-400 bg-amber-50 p-4">
+          <p className="mb-3 font-display text-sm font-bold uppercase tracking-[0.2em] text-amber-700">
+            <span aria-hidden="true">⚡ </span>
+            <span>Combate extra (desempate)</span>
+          </p>
           {renderCombate(tentativaDesempate, true, nomeA, nomeB)}
         </div>
       )}

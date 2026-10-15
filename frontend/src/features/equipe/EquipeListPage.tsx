@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { useAuthStore } from "../../lib/auth-store";
 import { rotuloNivel } from "../../lib/nivel";
 
@@ -75,7 +76,7 @@ function EquipeEditForm({
         type="button"
         onClick={() => onSalvar({ nome, nivel })}
         disabled={salvando}
-        className="rounded bg-slate-800 px-3 py-1 text-sm text-white disabled:opacity-60"
+        className="btn-primary text-sm"
       >
         {salvando ? "Salvando..." : "Salvar"}
       </button>
@@ -174,7 +175,7 @@ function EquipeModalidadesPanel({
             onAdicionar(modalidadeSelecionada);
             setModalidadeSelecionada("");
           }}
-          className="rounded bg-slate-800 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="btn-primary text-sm"
         >
           Adicionar
         </button>
@@ -412,17 +413,15 @@ export function EquipeListPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">Equipes</h1>
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-3xl font-bold">Equipes</h1>
 
       <section className="mb-10">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Equipes cadastradas
-          </h2>
-          <div className="flex items-center gap-4">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <h2 className="eyebrow">Equipes cadastradas</h2>
+          <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="mr-2 text-sm text-slate-600" htmlFor="busca-nome">
+              <label className="mb-1 block text-sm text-slate-600" htmlFor="busca-nome">
                 Buscar equipe
               </label>
               <input
@@ -431,18 +430,18 @@ export function EquipeListPage() {
                 value={buscaNome}
                 onChange={(e) => setBuscaNome(e.target.value)}
                 placeholder="Nome da equipe"
-                className="rounded border border-slate-300 px-2 py-1 text-sm"
+                className="min-h-11 w-full max-w-[16rem] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="mr-2 text-sm text-slate-600" htmlFor="filtro-nivel">
+              <label className="mb-1 block text-sm text-slate-600" htmlFor="filtro-nivel">
                 Filtrar por nivel
               </label>
               <select
                 id="filtro-nivel"
                 value={filtroNivel}
                 onChange={(e) => setFiltroNivel(e.target.value)}
-                className="rounded border border-slate-300 px-2 py-1 text-sm"
+                className="min-h-11 w-full max-w-[16rem] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               >
                 <option value="">Todos</option>
                 {NIVEIS.map((n) => (
@@ -453,14 +452,14 @@ export function EquipeListPage() {
               </select>
             </div>
             <div>
-              <label className="mr-2 text-sm text-slate-600" htmlFor="filtro-modalidade">
+              <label className="mb-1 block text-sm text-slate-600" htmlFor="filtro-modalidade">
                 Filtrar por modalidade
               </label>
               <select
                 id="filtro-modalidade"
                 value={filtroModalidadeId}
                 onChange={(e) => setFiltroModalidadeId(e.target.value)}
-                className="rounded border border-slate-300 px-2 py-1 text-sm"
+                className="min-h-11 w-full max-w-[16rem] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               >
                 <option value="">Todas</option>
                 {modalidades?.map((m) => (
@@ -482,16 +481,16 @@ export function EquipeListPage() {
         )}
 
         {erroLista && (
-          <p role="alert" className="mb-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <Aviso tipo="erro" className="mb-3">
             {erroLista}
-          </p>
+          </Aviso>
         )}
 
         <ul className="space-y-2">
           {dataFiltrada?.map((equipe) => (
             <li
               key={equipe.id}
-              className="flex flex-col rounded border border-slate-200 bg-white px-4 py-3"
+              className="card flex flex-col px-4 py-3"
             >
               {ehCoordenador && equipeEditandoId === equipe.id ? (
                 <>
@@ -513,12 +512,28 @@ export function EquipeListPage() {
                 </>
               ) : (
                 <>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-medium text-slate-800">{equipe.nome}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 grow basis-60">
+                      <span className="font-display text-lg font-bold text-slate-900">
+                        {equipe.nome}
+                      </span>
                       <span className="ml-2 text-sm text-slate-500">
                         {rotuloNivel(equipe.nivel)}
                       </span>
+                      <span
+                        className={`chip ml-2 ${
+                          equipe.ativo
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                            : "border-slate-300 bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {equipe.ativo ? "Ativa" : "Inativa"}
+                      </span>
+                      {!ehCoordenador && equipe.presente === false && (
+                        <span className="chip ml-2 border-red-300 bg-red-50 text-red-700">
+                          Ausente
+                        </span>
+                      )}
                       <p className="mt-1 text-sm text-slate-500">
                         {modalidadesPorEquipe.get(equipe.id)?.length ? (
                           <>Modalidades: {modalidadesPorEquipe.get(equipe.id)!.join(", ")}</>
@@ -527,62 +542,68 @@ export function EquipeListPage() {
                         )}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${
-                          equipe.ativo
-                            ? "bg-green-100 text-green-800"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {equipe.ativo ? "Ativa" : "Inativa"}
-                      </span>
-                      {equipe.presente === false && (
-                        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
-                          Ausente
-                        </span>
-                      )}
-                      <Link
-                        to={`/equipes/${equipe.id}/submissoes`}
-                        className="text-sm font-medium text-slate-700 underline"
-                      >
-                        Submissões
-                      </Link>
-                      {ehCoordenador && (
-                        <button
-                          type="button"
-                          onClick={() => setEquipeEditandoId(equipe.id)}
-                          className="text-sm font-medium text-slate-700 underline"
-                        >
-                          Editar
-                        </button>
-                      )}
-                      {ehCoordenador && (
-                        <button
-                          type="button"
-                          onClick={() => alternarAtivo(equipe)}
-                          disabled={equipeEmAlteracaoId === equipe.id}
-                          className="text-sm font-medium text-slate-700 underline disabled:no-underline disabled:opacity-60"
-                        >
-                          {equipeEmAlteracaoId === equipe.id
-                            ? equipe.ativo
-                              ? "Desativando..."
-                              : "Ativando..."
-                            : equipe.ativo
-                              ? "Desativar"
-                              : "Ativar"}
-                        </button>
-                      )}
+                    <div className="flex items-center gap-2">
                       {ehCoordenador && (
                         <button
                           type="button"
                           onClick={() => alternarPresenca(equipe)}
                           disabled={equipeEmAlteracaoId === equipe.id}
-                          className="text-sm font-medium text-slate-700 underline disabled:no-underline disabled:opacity-60"
+                          className={`flex min-h-12 min-w-[9.5rem] flex-col items-center justify-center rounded-xl border-2 px-3 py-1 leading-tight disabled:opacity-60 ${
+                            equipe.presente === false
+                              ? "border-red-400 bg-red-50 text-red-700"
+                              : "border-emerald-400 bg-emerald-50 text-emerald-700"
+                          }`}
                         >
-                          {equipe.presente === false ? "Marcar presente" : "Marcar ausente"}
+                          <span className="font-display text-base font-bold">
+                            <span aria-hidden="true">{equipe.presente === false ? "✗ " : "✓ "}</span>
+                            {equipe.presente === false ? "Ausente" : "Presente"}
+                          </span>
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {equipe.presente === false ? "toque: marcar presente" : "toque: marcar ausente"}
+                          </span>
                         </button>
                       )}
+                      <details className="relative">
+                        <summary className="flex min-h-12 cursor-pointer list-none items-center rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm font-semibold text-slate-700 hover:border-neon/60 [&::-webkit-details-marker]:hidden">
+                          <span aria-hidden="true" className="mr-1">
+                            ⋯
+                          </span>
+                          Mais ações
+                        </summary>
+                        <div className="card absolute right-0 z-10 mt-2 flex w-48 flex-col p-1">
+                          <Link
+                            to={`/equipes/${equipe.id}/submissoes`}
+                            className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
+                          >
+                            Submissões
+                          </Link>
+                          {ehCoordenador && (
+                            <button
+                              type="button"
+                              onClick={() => setEquipeEditandoId(equipe.id)}
+                              className="rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-200"
+                            >
+                              Editar
+                            </button>
+                          )}
+                          {ehCoordenador && (
+                            <button
+                              type="button"
+                              onClick={() => alternarAtivo(equipe)}
+                              disabled={equipeEmAlteracaoId === equipe.id}
+                              className="rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                            >
+                              {equipeEmAlteracaoId === equipe.id
+                                ? equipe.ativo
+                                  ? "Desativando..."
+                                  : "Ativando..."
+                                : equipe.ativo
+                                  ? "Desativar"
+                                  : "Ativar"}
+                            </button>
+                          )}
+                        </div>
+                      </details>
                     </div>
                   </div>
                 </>
@@ -648,12 +669,12 @@ export function EquipeListPage() {
             </div>
           </div>
 
-          {erroGeral && <p className="text-sm text-red-600">{erroGeral}</p>}
+          {erroGeral && <Aviso tipo="erro">{erroGeral}</Aviso>}
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="mt-2 rounded bg-slate-800 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="btn-primary mt-2"
           >
             Criar equipe
           </button>

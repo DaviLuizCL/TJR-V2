@@ -75,8 +75,8 @@ export function FichaDashboardPage() {
   });
 
   return (
-    <main className="mx-auto max-w-4xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">Fichas</h1>
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-3xl font-bold">Fichas</h1>
 
       {isLoading && <p className="text-slate-500">Carregando...</p>}
       {!isLoading && modalidades?.length === 0 && (

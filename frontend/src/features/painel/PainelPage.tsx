@@ -35,8 +35,8 @@ export function PainelPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">Painel</h1>
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-3xl font-bold">Painel</h1>
 
       <div role="tablist" className="mb-6 flex gap-2 border-b border-slate-200">
         <button

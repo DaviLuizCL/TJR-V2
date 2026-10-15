@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { rotuloNivel } from "../../lib/nivel";
 
 export interface CriterioItem {
@@ -47,11 +48,57 @@ interface SimulacaoResultado {
   total: number;
 }
 
+const BASE_CONTAINER =
+  "flex min-h-16 items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-colors";
+
 function estiloContainer(ativo: boolean, categoria: string): string {
   if (ativo && categoria === "PENALIDADE") {
-    return "flex min-h-12 items-center justify-between rounded border border-red-300 bg-red-50 px-3 py-2";
+    return `${BASE_CONTAINER} border-red-300 bg-red-50`;
   }
-  return "flex min-h-12 items-center justify-between rounded border border-slate-200 bg-white px-3 py-2";
+  if (ativo) {
+    return `${BASE_CONTAINER} border-emerald-300 bg-emerald-50`;
+  }
+  return `${BASE_CONTAINER} border-slate-200 bg-white`;
+}
+
+function SeloPontos({ pontos, categoria }: { pontos: number | null; categoria: string }) {
+  if (pontos === null) return null;
+  if (pontos === 0) {
+    return <span className="chip mt-1 border-slate-300 bg-slate-100 text-slate-500">só registro</span>;
+  }
+  const penalidade = categoria === "PENALIDADE";
+  return (
+    <span
+      className={`chip mt-1 ${
+        penalidade ? "border-red-300 bg-red-50 text-red-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"
+      }`}
+    >
+      {penalidade ? "−" : "+"}
+      {Math.abs(pontos)} pts
+    </span>
+  );
+}
+
+// Interruptor grande (o checkbox de verdade fica escondido, mas continua sendo o controle).
+function Interruptor({ ligado, perigo }: { ligado: boolean; perigo: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`relative inline-flex h-9 w-16 shrink-0 items-center rounded-full border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-neon/60 ${
+        ligado
+          ? perigo
+            ? "border-red-500 bg-red-500"
+            : "border-emerald-500 bg-emerald-500"
+          : "border-slate-300 bg-slate-100"
+      }`}
+    >
+      <span
+        className={`absolute h-6 w-6 rounded-full bg-slate-900 shadow transition-transform ${
+          ligado ? "translate-x-8" : "translate-x-1"
+        }`}
+      />
+    </span>
+  );
 }
 
 export function CriterioPreview({
@@ -78,16 +125,17 @@ export function CriterioPreview({
     return (
       <label
         data-testid={`criterio-${criterio.id}`}
-        className={estiloContainer(aplicado, criterio.categoria)}
+        className={`${estiloContainer(aplicado, criterio.categoria)} cursor-pointer`}
       >
-        <span className="text-sm text-slate-800">{criterio.nome}</span>
+        <span className="font-medium text-slate-800">{criterio.nome}</span>
         <input
           type="checkbox"
-          className="h-6 w-6"
+          className="peer sr-only"
           checked={aplicado}
           disabled={disabled}
           onChange={(evento) => onAlternarModificador(evento.target.checked)}
         />
+        <Interruptor ligado={aplicado} perigo={criterio.categoria === "PENALIDADE"} />
       </label>
     );
   }
@@ -99,21 +147,20 @@ export function CriterioPreview({
     return (
       <label
         data-testid={`criterio-${criterio.id}`}
-        className={estiloContainer(marcado, criterio.categoria)}
+        className={`${estiloContainer(marcado, criterio.categoria)} cursor-pointer`}
       >
-        <div>
-          <p className="text-sm text-slate-800">{criterio.nome}</p>
-          {criterio.pontos !== null && (
-            <p className="text-xs text-slate-500">{criterio.pontos} pts</p>
-          )}
+        <div className="min-w-0">
+          <p className="font-medium text-slate-800">{criterio.nome}</p>
+          <SeloPontos pontos={criterio.pontos} categoria={criterio.categoria} />
         </div>
         <input
           type="checkbox"
-          className="h-6 w-6"
+          className="peer sr-only"
           checked={marcado}
           disabled={disabled}
           onChange={(evento) => onAlternarBooleano(evento.target.checked)}
         />
+        <Interruptor ligado={marcado} perigo={criterio.categoria === "PENALIDADE"} />
       </label>
     );
   }
@@ -122,24 +169,24 @@ export function CriterioPreview({
     return (
       <div
         data-testid={`criterio-${criterio.id}`}
-        className="rounded border border-slate-200 bg-white p-3"
+        className="rounded-xl border border-slate-200 bg-white px-4 py-3"
       >
-        <p className="mb-2 text-sm text-slate-800">{criterio.nome}</p>
+        <p className="mb-2 font-medium text-slate-800">{criterio.nome}</p>
         <div className="flex flex-wrap gap-2">
           {(criterio.valores_permitidos ?? []).map((opcao) => {
             const selecionado = valor?.valor === opcao;
             const corSelecionado =
               criterio.categoria === "PENALIDADE"
                 ? "border-red-600 bg-red-600 text-white"
-                : "border-slate-800 bg-slate-800 text-white";
+                : "border-neon bg-neon text-slate-50 shadow-glow";
             return (
               <button
                 key={opcao}
                 type="button"
                 onClick={() => onSelecionarEscala(opcao)}
                 disabled={disabled}
-                className={`flex min-h-12 min-w-12 items-center justify-center rounded border px-3 font-semibold disabled:opacity-50 ${
-                  selecionado ? corSelecionado : "border-slate-300 text-slate-700"
+                className={`flex min-h-12 min-w-14 items-center justify-center rounded-lg border px-3 font-display text-xl font-bold disabled:opacity-50 ${
+                  selecionado ? corSelecionado : "border-slate-300 bg-slate-100 text-slate-700"
                 }`}
               >
                 {opcao}
@@ -158,23 +205,21 @@ export function CriterioPreview({
       data-testid={`criterio-${criterio.id}`}
       className={estiloContainer(ocorrencias > 0, criterio.categoria)}
     >
-      <div>
-        <p className="text-sm text-slate-800">{criterio.nome}</p>
-        {criterio.pontos !== null && (
-          <p className="text-xs text-slate-500">{criterio.pontos} pts</p>
-        )}
+      <div className="min-w-0">
+        <p className="font-medium text-slate-800">{criterio.nome}</p>
+        <SeloPontos pontos={criterio.pontos} categoria={criterio.categoria} />
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
           onClick={onDecrementar}
           aria-label={`Diminuir ${criterio.nome}`}
           disabled={disabled}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl font-bold text-slate-700 disabled:opacity-50"
+          className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-2xl font-bold text-slate-700 active:scale-95 disabled:opacity-40"
         >
           −
         </button>
-        <span className="w-6 text-center text-lg font-semibold text-slate-800">
+        <span className="w-8 text-center font-display text-2xl font-bold text-slate-900">
           {ocorrencias}
         </span>
         <button
@@ -182,7 +227,9 @@ export function CriterioPreview({
           onClick={onIncrementar}
           aria-label={`Aumentar ${criterio.nome}`}
           disabled={disabled}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-800 text-2xl font-bold text-white disabled:opacity-50"
+          className={`flex h-12 w-12 items-center justify-center rounded-xl text-2xl font-bold text-slate-50 active:scale-95 disabled:opacity-40 ${
+            criterio.categoria === "PENALIDADE" ? "bg-red-500" : "bg-neon shadow-glow"
+          }`}
         >
           +
         </button>
@@ -290,7 +337,7 @@ export function FichaPreviewPage() {
         >
           ← Voltar para o editor
         </Link>
-        <h1 className="text-lg font-semibold text-slate-800">Preview da ficha</h1>
+        <h1 className="text-2xl font-bold">Preview da ficha</h1>
         <p className="mb-2 text-xs text-slate-500">Simulacao — nao lanca pontuacao real</p>
 
         {fichasDaModalidade && fichasDaModalidade.length > 1 && (
@@ -346,7 +393,7 @@ export function FichaPreviewPage() {
         ))}
       </div>
 
-      {erro && <p className="mx-4 mb-2 rounded bg-red-100 px-3 py-2 text-sm text-red-800">{erro}</p>}
+      {erro && <Aviso tipo="erro" className="mx-4 mb-2">{erro}</Aviso>}
 
       <footer className="sticky bottom-0 z-10 border-t border-slate-200 bg-white px-4 py-4">
         <p className="text-sm text-slate-500">Total parcial</p>

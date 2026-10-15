@@ -72,7 +72,7 @@ function ListaItens({
             {link && (
               <Link
                 to={link}
-                className="flex min-h-12 items-center rounded bg-amber-700 px-4 text-sm font-medium text-white"
+                className="btn bg-amber-500 text-slate-50 flex min-h-12 items-center text-sm"
               >
                 Resolver →
               </Link>
@@ -104,9 +104,9 @@ export function ChecklistPage() {
     : 0;
 
   return (
-    <main className="mx-auto max-w-3xl p-4 sm:p-8">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <VoltarAdmin />
-      <h1 className="mb-2 text-2xl font-semibold text-slate-800">Checklist do dia</h1>
+      <h1 className="mb-2 text-3xl font-bold">Checklist do dia</h1>
       <p className="mb-6 text-sm text-slate-500">
         Confere se cada modalidade está pronta pra começar. Onde tiver ⚠️, clique em
         "Resolver" pra ir direto pra tela que arruma.

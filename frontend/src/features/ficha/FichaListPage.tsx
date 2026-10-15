@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, extrairErro } from "../../api/client";
+import { Aviso } from "../../components/Aviso";
 import { useAuthStore } from "../../lib/auth-store";
 import { rotuloNivel } from "../../lib/nivel";
 
@@ -108,7 +109,7 @@ function SlotFicha({
             <button
               type="button"
               onClick={() => onCriar(nivel)}
-              className="rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white"
+              className="btn-primary text-sm"
             >
               Criar ficha
             </button>
@@ -117,7 +118,7 @@ function SlotFicha({
       </div>
 
       {erro && (
-        <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <Aviso tipo="erro">
           <p>{erro.mensagem}</p>
           {erro.codigo === "FICHA_POSSUI_LANCAMENTOS" && (
             <button
@@ -128,7 +129,7 @@ function SlotFicha({
               Depreciar em vez de excluir
             </button>
           )}
-        </div>
+        </Aviso>
       )}
     </li>
   );
@@ -182,8 +183,8 @@ export function FichaListPage() {
   const statusInativos = ["SUBSTITUIDA", "DEPRECADA"];
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-3xl font-bold">
         Fichas de {modalidade?.nome ?? "..."}
       </h1>
 

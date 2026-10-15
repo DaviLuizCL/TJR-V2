@@ -19,8 +19,8 @@ export function RankingPage() {
   });
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="mb-6 text-2xl font-semibold text-slate-800">Classificacao</h1>
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-3xl font-bold">Classificacao</h1>
       <RankingClassificacao modalidades={modalidades} mensagemVazia="Nenhum ranking liberado ainda." />
     </main>
   );

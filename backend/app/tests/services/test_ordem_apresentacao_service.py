@@ -234,3 +234,19 @@ async def test_gerar_sequencia_pdf_sem_equipe_ainda_gera_pdf(db_session):
     pdf = await gerar_sequencia_pdf(db_session, modalidade.id)
 
     assert pdf.startswith(b"%PDF")
+
+
+async def test_gerar_sequencia_pdf_nao_avisa_ordem_nao_sorteada_no_telao(db_session, monkeypatch):
+    # Pedido do coordenador (14/10/2026): o PDF vai pro telao; se esquecer de
+    # sortear algum nivel, "ordem nao sorteada" fica feio na frente do publico.
+    # A lista sai em ordem alfabetica, sem comentario.
+    from reportlab import rl_config
+
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    modalidade = await _criar_modalidade(db_session)
+    await _inscrever(db_session, modalidade, "Alfa")
+
+    pdf = await gerar_sequencia_pdf(db_session, modalidade.id)
+
+    assert b"Alfa" in pdf
+    assert b"sorteada" not in pdf

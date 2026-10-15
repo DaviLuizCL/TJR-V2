@@ -340,7 +340,7 @@ describe("PontuarCombatePage", () => {
     expect(screen.queryByLabelText(/filtrar por nivel/i)).not.toBeInTheDocument();
   });
 
-  it("agrupa as partidas em secoes de fase (semifinal, final) num bracket de 4 equipes", async () => {
+  it("agrupa o mata-mata por rodada, sem adivinhar nome de fase (semifinal/final)", async () => {
     mockGet({
       rodadas: [
         { id: "rod-1", numero: 1 },
@@ -386,10 +386,13 @@ describe("PontuarCombatePage", () => {
 
     renderPage();
 
-    const semifinal = await screen.findByRole("heading", { name: /semifinal/i });
-    const final = await screen.findByRole("heading", { name: /^final$/i });
+    // Chaveamento e montado na mao (out/2026): o sistema nao sabe se a rodada 2
+    // e a final ou uma semifinal ainda incompleta, entao so diz "Rodada N".
+    const semifinal = await screen.findByRole("heading", { name: /^rodada 1$/i });
+    const final = await screen.findByRole("heading", { name: /^rodada 2$/i });
+    expect(screen.queryByRole("heading", { name: /final/i })).not.toBeInTheDocument();
 
-    // rodada mais nova (final, rodada 2) fica em cima da mais antiga (semifinal, rodada 1)
+    // rodada mais nova (rodada 2) fica em cima da mais antiga (rodada 1)
     expect(
       final.compareDocumentPosition(semifinal) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -399,55 +402,6 @@ describe("PontuarCombatePage", () => {
 
     const secaoFinal = final.closest("section")!;
     expect(within(secaoFinal).getAllByRole("listitem")).toHaveLength(1);
-  });
-
-  it("secao com nome de fase (oitavas) fica acima de uma secao 'Rodada N' generica mais antiga, mesmo com escalas de ordenacao diferentes", async () => {
-    // Bracket de 20 equipes: precisa de 5 rodadas (ceil(log2(20))). A rodada
-    // 1 e grande demais pra ter nome (cai no fallback "Rodada 1"), mas a
-    // rodada 2 ja tem nome ("Oitavas de Final"). Regressao do bug onde as
-    // duas escalas de ordenacao (fallback vs nomeada) nao eram compativeis:
-    // "Oitavas" (uma rodada mais nova) acabava caindo depois de "Rodada 1"
-    // (mais antiga) na tela.
-    const partidasRodada1 = Array.from({ length: 10 }, (_, i) => ({
-      id: `par-r1-${i}`,
-      rodada_id: "rod-1",
-      equipe_a_id: `eq-${i * 2}`,
-      equipe_b_id: `eq-${i * 2 + 1}`,
-      vencedor_id: null,
-      nivel: 1,
-      status: "AGENDADA",
-      criado_em: `2026-08-05T10:00:${String(i).padStart(2, "0")}Z`,
-    }));
-    mockGet({
-      rodadas: [
-        { id: "rod-1", numero: 1 },
-        { id: "rod-2", numero: 2 },
-      ],
-      partidasPorRodada: {
-        "rod-1": partidasRodada1,
-        "rod-2": [
-          {
-            id: "par-oitavas",
-            rodada_id: "rod-2",
-            equipe_a_id: "eq-0",
-            equipe_b_id: "eq-2",
-            vencedor_id: null,
-            nivel: 1,
-            status: "AGENDADA",
-            criado_em: "2026-08-05T11:00:00Z",
-          },
-        ],
-      },
-    });
-
-    renderPage();
-
-    const oitavas = await screen.findByRole("heading", { name: /oitavas de final/i });
-    const rodada1 = await screen.findByRole("heading", { name: /^rodada 1$/i });
-
-    expect(
-      oitavas.compareDocumentPosition(rodada1) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
   it("agrupa tudo em 'Fase de Grupos' quando a modalidade e todos-contra-todos", async () => {
@@ -503,7 +457,7 @@ describe("PontuarCombatePage", () => {
     expect(screen.queryByRole("heading", { name: /^fase de grupos$/i })).not.toBeInTheDocument();
   });
 
-  it("mata-mata de 1 rodada que comeca so na rodada 2 (pos fase de grupos) mostra 'Final', nao 'Rodada 2'", async () => {
+  it("mata-mata depois da fase de grupos aparece como 'Rodada 2', sem virar 'Final'", async () => {
     // Bug real achado testando ao vivo: nomeFase recebia o numero ABSOLUTO
     // da rodada (2), nao o numero relativo ao inicio do mata-mata daquele
     // nivel -- um bracket de 1 rodada so (2 equipes) que comeca na rodada 2
@@ -547,11 +501,11 @@ describe("PontuarCombatePage", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: /^final$/i })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /^rodada 2$/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^rodada 2$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /final/i })).not.toBeInTheDocument();
   });
 
-  it("mostra 'Fase de Grupos' e 'Final' juntas quando niveis diferentes da mesma modalidade tem formato diferente", async () => {
+  it("mostra 'Fase de Grupos' e 'Rodada N' juntas quando niveis diferentes da mesma modalidade tem formato diferente", async () => {
     // gerar_chaveamento_confronto decide por nivel (<=5 equipes = todos-
     // contra-todos, 6+ = mata-mata) -- o agrupamento aqui e por
     // partida.formato_chaveamento, nao mais por um campo unico da
@@ -589,7 +543,8 @@ describe("PontuarCombatePage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: /fase de grupos/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /^final$/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^rodada \d+$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /final/i })).not.toBeInTheDocument();
   });
 
   it("mostra as partidas pendentes antes das ja decididas dentro da mesma fase", async () => {
