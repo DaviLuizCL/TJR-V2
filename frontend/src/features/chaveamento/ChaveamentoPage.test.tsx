@@ -167,7 +167,7 @@ describe("ChaveamentoPage", () => {
     expect(within(seletorModalidade).queryByText("Danca")).not.toBeInTheDocument();
 
     // um unico nivel presente nas partidas: nao mostra seletor de nivel
-    expect(screen.queryByLabelText(/^nivel$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^nível$/i)).not.toBeInTheDocument();
   });
 
   it("mostra mensagem quando o evento nao tem modalidade de combate", async () => {
@@ -304,7 +304,7 @@ describe("ChaveamentoPage", () => {
     expect(screen.getByText("Equipe Nivel 1 B")).toBeInTheDocument();
     expect(screen.queryByText("Equipe Nivel 2 A")).not.toBeInTheDocument();
 
-    const seletorNivel = screen.getByLabelText(/^nivel$/i);
+    const seletorNivel = screen.getByLabelText(/^nível$/i);
     await userEvent.selectOptions(seletorNivel, "2");
 
     expect(await screen.findByText("Equipe Nivel 2 A")).toBeInTheDocument();

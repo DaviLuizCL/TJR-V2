@@ -310,7 +310,7 @@ describe("PontuarCombatePage", () => {
     await screen.findByText(/equipe x/i);
     expect(screen.getByText(/equipe z/i)).toBeInTheDocument();
 
-    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nivel/i), "1");
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nível/i), "1");
 
     expect(screen.getByText(/equipe x/i)).toBeInTheDocument();
     expect(screen.queryByText(/equipe z/i)).not.toBeInTheDocument();
@@ -337,7 +337,7 @@ describe("PontuarCombatePage", () => {
     renderPage();
 
     await screen.findByText(/equipe x/i);
-    expect(screen.queryByLabelText(/filtrar por nivel/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/filtrar por nível/i)).not.toBeInTheDocument();
   });
 
   it("agrupa o mata-mata por rodada, sem adivinhar nome de fase (semifinal/final)", async () => {
@@ -634,7 +634,7 @@ describe("PontuarCombatePage", () => {
 
     renderPage("/eventos/evt-1/modalidades/mod-1/pontuar?nivel=2");
 
-    const select = (await screen.findByLabelText(/filtrar por nivel/i)) as HTMLSelectElement;
+    const select = (await screen.findByLabelText(/filtrar por nível/i)) as HTMLSelectElement;
     expect(select.value).toBe("2");
     expect(await screen.findByText(/equipe z/i)).toBeInTheDocument();
     expect(screen.queryByText(/equipe x/i)).not.toBeInTheDocument();
@@ -669,7 +669,7 @@ describe("PontuarCombatePage", () => {
     });
 
     renderPage();
-    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por nivel/i), "1");
+    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por nível/i), "1");
 
     const card = (await screen.findByText(/equipe x/i)).closest("a")!;
     expect(card).toHaveAttribute(

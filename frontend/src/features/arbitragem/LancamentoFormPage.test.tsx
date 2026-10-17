@@ -521,7 +521,7 @@ describe("LancamentoFormPage", () => {
 
     renderPage();
 
-    const selectNivel = await screen.findByLabelText(/nivel/i);
+    const selectNivel = await screen.findByLabelText(/nível/i);
     await userEvent.selectOptions(selectNivel, "3");
 
     const selectEquipe = screen.getByLabelText(/^equipe$/i);
@@ -928,7 +928,7 @@ describe("LancamentoFormPage", () => {
 
       expect(await screen.findByText("Lombada")).toBeInTheDocument();
       expect(screen.queryByLabelText(/^equipe$/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/filtrar por nivel/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/filtrar por nível/i)).not.toBeInTheDocument();
       expect(screen.getByText(/equipe x/i)).toBeInTheDocument();
     });
 

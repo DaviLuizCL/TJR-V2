@@ -238,7 +238,7 @@ export function ChaveamentoPage() {
                   className="mb-1 block text-sm font-medium text-slate-700"
                   htmlFor="nivel-chaveamento"
                 >
-                  Nivel
+                  Nível
                 </label>
                 <select
                   id="nivel-chaveamento"

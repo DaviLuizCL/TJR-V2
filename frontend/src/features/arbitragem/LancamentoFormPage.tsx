@@ -493,7 +493,7 @@ export function LancamentoFormPage() {
               className="mb-1 block text-sm font-medium text-slate-700"
               htmlFor="filtro-nivel"
             >
-              Filtrar por nivel
+              Filtrar por nível
             </label>
             <select
               id="filtro-nivel"

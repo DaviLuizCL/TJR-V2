@@ -230,7 +230,7 @@ describe("EquipeListPage", () => {
 
     await screen.findByRole("button", { name: /criar equipe/i });
     await userEvent.type(screen.getByLabelText(/nome da equipe/i), "Equipe Nova");
-    await userEvent.selectOptions(screen.getByLabelText(/nivel da equipe/i), "1");
+    await userEvent.selectOptions(screen.getByLabelText(/nível da equipe/i), "1");
     await userEvent.click(screen.getByRole("button", { name: /criar equipe/i }));
 
     await waitFor(() =>
@@ -262,7 +262,7 @@ describe("EquipeListPage", () => {
     await within(secaoModalidades).findByLabelText("Sumô RC 1,5 kg");
     expect(within(secaoModalidades).queryByLabelText("Sumô")).not.toBeInTheDocument();
 
-    await userEvent.selectOptions(screen.getByLabelText(/nivel da equipe/i), "2");
+    await userEvent.selectOptions(screen.getByLabelText(/nível da equipe/i), "2");
 
     expect(within(secaoModalidades).getByLabelText("Sumô")).toBeInTheDocument();
     expect(within(secaoModalidades).queryByLabelText("Sumô RC 1,5 kg")).not.toBeInTheDocument();
@@ -320,7 +320,7 @@ describe("EquipeListPage", () => {
 
     await screen.findByRole("button", { name: /criar equipe/i });
     await userEvent.type(screen.getByLabelText(/nome da equipe/i), "   ");
-    await userEvent.selectOptions(screen.getByLabelText(/nivel da equipe/i), "1");
+    await userEvent.selectOptions(screen.getByLabelText(/nível da equipe/i), "1");
     await userEvent.click(screen.getByRole("button", { name: /criar equipe/i }));
 
     expect(await screen.findByText(/informe o nome da equipe/i)).toBeInTheDocument();
@@ -338,7 +338,7 @@ describe("EquipeListPage", () => {
 
     await screen.findByRole("button", { name: /criar equipe/i });
     await userEvent.type(screen.getByLabelText(/nome da equipe/i), "  Equipe Nova  ");
-    await userEvent.selectOptions(screen.getByLabelText(/nivel da equipe/i), "1");
+    await userEvent.selectOptions(screen.getByLabelText(/nível da equipe/i), "1");
     await userEvent.click(screen.getByRole("button", { name: /criar equipe/i }));
 
     await waitFor(() =>

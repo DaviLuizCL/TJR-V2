@@ -221,7 +221,7 @@ describe("PontuarPage", () => {
 
     renderPage();
 
-    expect(await screen.findByLabelText(/filtrar por nivel/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/filtrar por nível/i)).toBeInTheDocument();
   });
 
   it("nao mostra o filtro de nivel quando todas as equipes inscritas sao do mesmo nivel", async () => {
@@ -230,7 +230,7 @@ describe("PontuarPage", () => {
     renderPage();
 
     await screen.findByText("Equipe X");
-    expect(screen.queryByLabelText(/filtrar por nivel/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/filtrar por nível/i)).not.toBeInTheDocument();
   });
 
   it("filtra os cards pendentes pelo nivel selecionado", async () => {
@@ -244,7 +244,7 @@ describe("PontuarPage", () => {
     renderPage();
 
     await screen.findByText("Equipe X");
-    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nivel/i), "3");
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nível/i), "3");
 
     expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
     expect(screen.getByText("Equipe Y")).toBeInTheDocument();
@@ -267,7 +267,7 @@ describe("PontuarPage", () => {
     await screen.findByText("Equipe X");
     expect(screen.getByText(/1 equipe.*completa/i)).toBeInTheDocument();
 
-    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nivel/i), "1");
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nível/i), "1");
 
     expect(screen.queryByText(/equipe.*completa/i)).not.toBeInTheDocument();
   });
@@ -414,7 +414,7 @@ describe("PontuarPage", () => {
 
     renderPage("/eventos/evt-1/modalidades/mod-1/pontuar?nivel=2");
 
-    const select = (await screen.findByLabelText(/filtrar por nivel/i)) as HTMLSelectElement;
+    const select = (await screen.findByLabelText(/filtrar por nível/i)) as HTMLSelectElement;
     expect(select.value).toBe("2");
     expect(await screen.findByText("Equipe Y")).toBeInTheDocument();
     expect(screen.queryByText("Equipe X")).not.toBeInTheDocument();
@@ -433,7 +433,7 @@ describe("PontuarPage", () => {
     });
 
     renderPage();
-    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por nivel/i), "1");
+    await userEvent.selectOptions(await screen.findByLabelText(/filtrar por nível/i), "1");
 
     const card = (await screen.findByText("Equipe X")).closest("a")!;
     expect(card).toHaveAttribute(
@@ -489,10 +489,10 @@ describe("PontuarPage", () => {
     renderPage();
     await screen.findByText("Equipe X");
 
-    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nivel/i), "1");
+    await userEvent.selectOptions(screen.getByLabelText(/filtrar por nível/i), "1");
     await userEvent.selectOptions(screen.getByLabelText(/filtrar por rodada/i), "1");
 
-    expect((screen.getByLabelText(/filtrar por nivel/i) as HTMLSelectElement).value).toBe("1");
+    expect((screen.getByLabelText(/filtrar por nível/i) as HTMLSelectElement).value).toBe("1");
     expect((screen.getByLabelText(/filtrar por rodada/i) as HTMLSelectElement).value).toBe("1");
     expect(screen.getByText("Equipe X")).toBeInTheDocument();
     expect(screen.queryByText("Equipe Y")).not.toBeInTheDocument();

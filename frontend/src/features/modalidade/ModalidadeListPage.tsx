@@ -53,12 +53,15 @@ function ModalidadeItem({
 
   return (
     <li className="rounded border border-slate-200 bg-white px-4 py-3 hover:border-slate-400">
-      <div className="flex items-center justify-between">
-        <Link to={`/eventos/${eventoId}/modalidades/${modalidade.id}/editar`} className="flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <Link
+          to={`/eventos/${eventoId}/modalidades/${modalidade.id}/editar`}
+          className="min-w-0 flex-1"
+        >
           <p className="font-medium text-slate-800">{modalidade.nome}</p>
           <p className="text-sm text-slate-500">{modalidade.tipo_disputa}</p>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
             {modalidade.status}
           </span>
@@ -69,19 +72,19 @@ function ModalidadeItem({
           </span>
           <Link
             to={`/eventos/${eventoId}/modalidades/${modalidade.id}/fichas`}
-            className="text-sm font-medium text-slate-700 underline"
+            className="inline-flex min-h-10 items-center text-sm font-medium text-slate-700 underline"
           >
             Fichas
           </Link>
           <Link
             to={`/eventos/${eventoId}/modalidades/${modalidade.id}/inscricoes`}
-            className="text-sm font-medium text-slate-700 underline"
+            className="inline-flex min-h-10 items-center text-sm font-medium text-slate-700 underline"
           >
-            Inscricoes
+            Inscrições
           </Link>
           <Link
             to={`/eventos/${eventoId}/modalidades/${modalidade.id}/rodadas`}
-            className="text-sm font-medium text-slate-700 underline"
+            className="inline-flex min-h-10 items-center text-sm font-medium text-slate-700 underline"
           >
             Rodadas
           </Link>
@@ -137,9 +140,9 @@ export function ModalidadeListPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold">Modalidades</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {ehCoordenador && (
             <Link
               to="/equipes"

@@ -57,7 +57,7 @@ function EquipeEditForm({
       </div>
       <div>
         <label className="block text-xs text-slate-600" htmlFor={`nivel-editar-${equipe.id}`}>
-          Nivel
+          Nível
         </label>
         <select
           id={`nivel-editar-${equipe.id}`}
@@ -435,7 +435,7 @@ export function EquipeListPage() {
             </div>
             <div>
               <label className="mb-1 block text-sm text-slate-600" htmlFor="filtro-nivel">
-                Filtrar por nivel
+                Filtrar por nível
               </label>
               <select
                 id="filtro-nivel"
@@ -637,7 +637,7 @@ export function EquipeListPage() {
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="nivel">
-              Nivel da equipe
+              Nível da equipe
             </label>
             <select
               id="nivel"

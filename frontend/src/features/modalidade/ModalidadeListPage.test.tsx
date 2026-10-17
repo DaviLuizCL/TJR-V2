@@ -190,7 +190,7 @@ describe("ModalidadeListPage", () => {
 
     renderPage();
 
-    const linkInscricoes = await screen.findByRole("link", { name: /inscricoes/i });
+    const linkInscricoes = await screen.findByRole("link", { name: /inscrições/i });
     expect(linkInscricoes).toHaveAttribute("href", "/eventos/evt-1/modalidades/m1/inscricoes");
 
     const linkRodadas = screen.getByRole("link", { name: /rodadas/i });
