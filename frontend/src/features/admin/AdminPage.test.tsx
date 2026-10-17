@@ -60,6 +60,19 @@ describe("AdminPage", () => {
     ).toHaveTextContent(`${window.location.origin}/sequencia`);
   });
 
+  it("cartao de juizes avisa quantos pedidos de acesso estao esperando", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: string) =>
+      path === "/api/v1/solicitacoes-acesso"
+        ? ({ data: [{ id: "s1" }, { id: "s2" }], error: undefined } as never)
+        : ({ data: undefined, error: undefined } as never),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText("2 pedidos de acesso esperando"),
+    ).toBeInTheDocument();
+  });
+
   it("nao tem cartao de fichas (coordenador nao altera ficha)", () => {
     renderPage();
 

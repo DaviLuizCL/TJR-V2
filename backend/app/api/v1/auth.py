@@ -16,6 +16,7 @@ from app.db.session import get_db
 from app.models.usuario import Usuario
 from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse
 from app.schemas.usuario import UsuarioOut
+from app.services import solicitacao_acesso as solicitacao_service
 
 router = APIRouter()
 
@@ -38,6 +39,14 @@ async def login(dados: LoginRequest, db: AsyncSession = Depends(get_db)) -> Toke
         status_code=401,
     )
 
+    if usuario is None and await solicitacao_service.tem_solicitacao_pendente(
+        db, dados.email, dados.senha
+    ):
+        raise AppError(
+            codigo="ACESSO_AGUARDANDO_APROVACAO",
+            mensagem="Seu pedido de acesso ainda esta esperando a aprovacao da coordenacao.",
+            status_code=403,
+        )
     if usuario is None or not usuario.ativo:
         raise credenciais_invalidas
     if not verificar_senha(dados.senha, usuario.senha_hash):

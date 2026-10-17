@@ -12,6 +12,7 @@ import { ResetarChaveamentoAdminPage } from "./features/admin/ResetarChaveamento
 import { LancamentoFormPage } from "./features/arbitragem/LancamentoFormPage";
 import { PartidaScorerPage } from "./features/arbitragem/PartidaScorerPage";
 import { LoginPage } from "./features/auth/LoginPage";
+import { PedirAcessoPage } from "./features/auth/PedirAcessoPage";
 import { EquipeListPage } from "./features/equipe/EquipeListPage";
 import { EquipeSubmissoesPage } from "./features/equipe/EquipeSubmissoesPage";
 import { EventoSelectPage } from "./features/evento/EventoSelectPage";
@@ -52,6 +53,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<InicioPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/pedir-acesso" element={<PedirAcessoPage />} />
         <Route path="/eventos/:eventoId/ranking" element={<RankingPage />} />
         <Route path="/sequencia" element={<SequenciaPublicaPage />} />
         <Route path="/sequencia/:modalidade" element={<SequenciaPublicaPage />} />

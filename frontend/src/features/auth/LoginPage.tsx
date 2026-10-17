@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 
 import { api, extrairErro } from "../../api/client";
@@ -20,6 +20,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const definirSessao = useAuthStore((state) => state.definirSessao);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
+  const [aguardandoAprovacao, setAguardandoAprovacao] = useState(false);
   const {
     register,
     handleSubmit,
@@ -28,11 +29,17 @@ export function LoginPage() {
 
   async function onSubmit(dados: FormData) {
     setErroGeral(null);
+    setAguardandoAprovacao(false);
 
     const { data, error } = await api.POST("/api/v1/auth/login", { body: dados });
 
     if (error || !data) {
-      setErroGeral(extrairErro(error).mensagem);
+      const erro = extrairErro(error);
+      if (erro.codigo === "ACESSO_AGUARDANDO_APROVACAO") {
+        setAguardandoAprovacao(true);
+      } else {
+        setErroGeral(erro.mensagem);
+      }
       return;
     }
 
@@ -100,12 +107,23 @@ export function LoginPage() {
             {erroGeral}
           </Aviso>
         )}
+        {aguardandoAprovacao && (
+          <Aviso tipo="info" className="mb-3">
+            Seu pedido de acesso ainda não foi aprovado. Avise a coordenação no grupo dos juízes.
+          </Aviso>
+        )}
 
         <button type="submit" disabled={isSubmitting} className="btn-primary mt-2 min-h-12 w-full text-base">
           {isSubmitting ? "Entrando..." : "Entrar"}
         </button>
         <p className="mt-4 text-center text-xs text-slate-500">
           Esqueceu a senha? Peça pra coordenação trocar em Administração → Juízes e senhas.
+        </p>
+        <p className="mt-3 border-t border-slate-200 pt-3 text-center text-sm text-slate-600">
+          Sou juiz e ainda não tenho conta →{" "}
+          <Link to="/pedir-acesso" className="font-semibold text-neon hover:underline">
+            Pedir acesso
+          </Link>
         </p>
       </form>
     </main>

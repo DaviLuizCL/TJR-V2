@@ -19,6 +19,7 @@ from app.models.modalidade import (
 )
 from app.models.partida import Partida, PartidaStatus
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
+from app.models.solicitacao_acesso import SolicitacaoAcesso, SolicitacaoStatus
 from app.models.usuario import Papel, Usuario
 
 __all__ = [
@@ -50,6 +51,8 @@ __all__ = [
     "PartidaStatus",
     "ModoHorario",
     "Rodada",
+    "SolicitacaoAcesso",
+    "SolicitacaoStatus",
     "RodadaStatus",
     "Papel",
     "Usuario",

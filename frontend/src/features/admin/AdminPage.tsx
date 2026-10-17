@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -11,9 +12,13 @@ interface Cartao {
   titulo: string;
   descricao: string;
   destino: string;
+  selo?: string;
 }
 
-function cartoes(eventoId: string): { secao: string; itens: Cartao[] }[] {
+function cartoes(
+  eventoId: string,
+  pedidosAcesso: number,
+): { secao: string; itens: Cartao[] }[] {
   const evento = `/eventos/${eventoId}`;
   return [
     {
@@ -57,8 +62,14 @@ function cartoes(eventoId: string): { secao: string; itens: Cartao[] }[] {
         {
           icone: "🔑",
           titulo: "Juízes e senhas",
-          descricao: "Cadastrar juiz, trocar senha esquecida, desativar conta.",
+          descricao: "Aprovar pedido de acesso, cadastrar juiz, trocar senha esquecida, desativar conta.",
           destino: "/usuarios",
+          selo:
+            pedidosAcesso === 1
+              ? "1 pedido de acesso esperando"
+              : pedidosAcesso > 1
+                ? `${pedidosAcesso} pedidos de acesso esperando`
+                : undefined,
         },
         {
           icone: "📥",
@@ -98,6 +109,13 @@ export function AdminPage() {
   const [baixando, setBaixando] = useState<"backup" | "relatorio" | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const { data: pedidosAcesso } = useQuery({
+    queryKey: ["solicitacoes-acesso"],
+    queryFn: async () => {
+      const { data } = await api.GET("/api/v1/solicitacoes-acesso");
+      return Array.isArray(data) ? data : [];
+    },
+  });
 
   useEffect(() => {
     if (eventoId) definirEventoAtual(eventoId);
@@ -142,7 +160,7 @@ export function AdminPage() {
         descricao="Tudo que o coordenador precisa pra tocar o evento. Em dúvida, comece pelo checklist do dia."
       />
 
-      {cartoes(eventoId!).map(({ secao, itens }) => (
+      {cartoes(eventoId!, pedidosAcesso?.length ?? 0).map(({ secao, itens }) => (
         <section key={secao} className="mb-8">
           <h2 className="eyebrow mb-3">
             {secao}
@@ -172,6 +190,11 @@ export function AdminPage() {
                     )}
                   </span>
                   <span className="block text-sm text-slate-500">{cartao.descricao}</span>
+                  {cartao.selo && (
+                    <span className="chip mt-2 border-amber-500/40 bg-amber-50 text-amber-700">
+                      {cartao.selo}
+                    </span>
+                  )}
                 </span>
               </Link>
             ))}

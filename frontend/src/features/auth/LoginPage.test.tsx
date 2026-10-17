@@ -141,4 +141,28 @@ describe("LoginPage", () => {
     expect(await screen.findByText(/email ou senha invalidos/i)).toBeInTheDocument();
     expect(navigateMock).not.toHaveBeenCalled();
   });
+
+  it("tem link pro juiz sem conta pedir acesso", () => {
+    renderPage();
+
+    expect(screen.getByRole("link", { name: /pedir acesso/i })).toHaveAttribute(
+      "href",
+      "/pedir-acesso",
+    );
+  });
+
+  it("avisa com calma quando o pedido de acesso ainda nao foi aprovado", async () => {
+    vi.mocked(api.POST).mockResolvedValue({
+      data: undefined,
+      error: { erro: { codigo: "ACESSO_AGUARDANDO_APROVACAO", mensagem: "x" } },
+    } as never);
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/e-mail/i), "juiz.novo@tjr.app");
+    await userEvent.type(screen.getByLabelText(/senha/i), "segredo1");
+    await userEvent.click(screen.getByRole("button", { name: /entrar/i }));
+
+    expect(await screen.findByText(/ainda não foi aprovado/i)).toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
 });

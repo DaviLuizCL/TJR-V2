@@ -23,6 +23,7 @@ from app.api.v1 import (
     publico,
     ranking,
     rodadas,
+    solicitacoes_acesso,
     usuarios,
 )
 from app.core.config import settings
@@ -56,6 +57,7 @@ app.include_router(chave.router, prefix="/api/v1", tags=["chave"])
 app.include_router(arenas.router, prefix="/api/v1", tags=["arenas"])
 app.include_router(agendamentos.router, prefix="/api/v1", tags=["agendamentos"])
 app.include_router(usuarios.router, prefix="/api/v1", tags=["usuarios"])
+app.include_router(solicitacoes_acesso.router, prefix="/api/v1", tags=["solicitacoes-acesso"])
 app.include_router(admin.router, prefix="/api/v1", tags=["admin"])
 
 

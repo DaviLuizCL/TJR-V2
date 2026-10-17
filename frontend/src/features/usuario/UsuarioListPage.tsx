@@ -7,6 +7,7 @@ import { z } from "zod";
 import { api, extrairErro } from "../../api/client";
 import { Aviso } from "../../components/Aviso";
 import { CampoSenha } from "../../components/CampoSenha";
+import { PedidosAcesso } from "./PedidosAcesso";
 
 const PAPEIS = ["ARBITRO", "SECRETARIA", "COORDENADOR"] as const;
 
@@ -235,6 +236,8 @@ export function UsuarioListPage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       <h1 className="mb-6 text-3xl font-bold">Staff</h1>
+
+      <PedidosAcesso />
 
       <section className="mb-10 rounded-lg border border-slate-200 bg-white p-6">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-slate-500">
