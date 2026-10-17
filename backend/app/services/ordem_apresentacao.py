@@ -117,6 +117,7 @@ async def definir_ordem(
 class EquipeNaSequencia:
     nome: str
     presente: bool
+    equipe_id: UUID | None = None
 
 
 @dataclass
@@ -158,7 +159,10 @@ async def listar_sequencia(db: AsyncSession, modalidade_id: UUID) -> list[Sequen
             SequenciaNivel(
                 nivel=nivel,
                 sorteada=any(inscricao.ordem_apresentacao is not None for _, inscricao in itens),
-                equipes=[EquipeNaSequencia(nome=e.nome, presente=e.presente) for e, _ in itens],
+                equipes=[
+                    EquipeNaSequencia(nome=e.nome, presente=e.presente, equipe_id=e.id)
+                    for e, _ in itens
+                ],
             )
         )
     return sequencia

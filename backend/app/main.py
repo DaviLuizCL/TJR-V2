@@ -20,6 +20,7 @@ from app.api.v1 import (
     inscricoes,
     lancamentos,
     modalidades,
+    publico,
     ranking,
     rodadas,
     usuarios,
@@ -49,6 +50,7 @@ app.include_router(fichas.router, prefix="/api/v1", tags=["fichas"])
 app.include_router(grupos.router, prefix="/api/v1", tags=["grupos"])
 app.include_router(criterios.router, prefix="/api/v1", tags=["criterios"])
 app.include_router(ranking.router, prefix="/api/v1", tags=["ranking"])
+app.include_router(publico.router, prefix="/api/v1", tags=["publico"])
 app.include_router(chaveamento.router, prefix="/api/v1", tags=["chaveamento"])
 app.include_router(chave.router, prefix="/api/v1", tags=["chave"])
 app.include_router(arenas.router, prefix="/api/v1", tags=["arenas"])

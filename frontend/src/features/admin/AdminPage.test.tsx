@@ -45,10 +45,19 @@ describe("AdminPage", () => {
     [/equipes e presen/i, "/equipes"],
     [/sequ[eê]ncia de competi/i, "/eventos/evt-1/competicoes?aba=individual&sub=ordem"],
     [/resetar chaveamento/i, "/eventos/evt-1/admin/resetar-chaveamento"],
+    [/p[aá]gina dos professores/i, "/sequencia"],
   ])("cartao %s leva pra %s", (nome, href) => {
     renderPage();
 
     expect(screen.getByRole("link", { name: nome })).toHaveAttribute("href", href);
+  });
+
+  it("cartao dos professores mostra o endereco completo pra copiar", () => {
+    renderPage();
+
+    expect(
+      screen.getByRole("link", { name: /p[aá]gina dos professores/i }),
+    ).toHaveTextContent(`${window.location.origin}/sequencia`);
   });
 
   it("nao tem cartao de fichas (coordenador nao altera ficha)", () => {

@@ -664,6 +664,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/publico/sequencia": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Obter Sequencia Publica */
+        get: operations["obter_sequencia_publica_api_v1_publico_sequencia_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual": {
         parameters: {
             query?: never;
@@ -906,6 +923,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/solicitacoes-acesso": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar Solicitacoes */
+        get: operations["listar_solicitacoes_api_v1_solicitacoes_acesso_get"];
+        put?: never;
+        /** Solicitar Acesso */
+        post: operations["solicitar_acesso_api_v1_solicitacoes_acesso_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/solicitacoes-acesso/{solicitacao_id}/aprovar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Aprovar Solicitacao */
+        post: operations["aprovar_solicitacao_api_v1_solicitacoes_acesso__solicitacao_id__aprovar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/solicitacoes-acesso/{solicitacao_id}/recusar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recusar Solicitacao */
+        post: operations["recusar_solicitacao_api_v1_solicitacoes_acesso__solicitacao_id__recusar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/checklist": {
         parameters: {
             query?: never;
@@ -1013,6 +1082,15 @@ export interface components {
              * Format: date-time
              */
             atualizado_em: string;
+        };
+        /** AprovarSolicitacaoIn */
+        AprovarSolicitacaoIn: {
+            /**
+             * Papel
+             * @default ARBITRO
+             * @enum {string}
+             */
+            papel: "ARBITRO" | "COORDENADOR";
         };
         /** ArenaCreate */
         ArenaCreate: {
@@ -1363,6 +1441,21 @@ export interface components {
              * Format: date-time
              */
             atualizado_em: string;
+        };
+        /** EquipePublicaOut */
+        EquipePublicaOut: {
+            /** Nome */
+            nome: string;
+            /** Posicao */
+            posicao: number;
+            /** Presente */
+            presente: boolean;
+            /** Rodadas Competidas */
+            rodadas_competidas: number[];
+            /** Proxima */
+            proxima: boolean;
+            /** Equipes Na Frente */
+            equipes_na_frente: number | null;
         };
         /** EquipeUpdate */
         EquipeUpdate: {
@@ -1932,6 +2025,20 @@ export interface components {
              */
             atualizado_em: string;
         };
+        /** ModalidadePublicaOut */
+        ModalidadePublicaOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+            /** Rodadas */
+            rodadas: number[];
+            /** Niveis */
+            niveis: components["schemas"]["NivelPublicoOut"][];
+        };
         /**
          * ModalidadeStatus
          * @enum {string}
@@ -1999,6 +2106,13 @@ export interface components {
          * @enum {string}
          */
         ModoHorario: "MANUAL" | "AUTOMATICO";
+        /** NivelPublicoOut */
+        NivelPublicoOut: {
+            /** Nivel */
+            nivel: number;
+            /** Equipes */
+            equipes: components["schemas"]["EquipePublicaOut"][];
+        };
         /** Pagina[AgendamentoOut] */
         Pagina_AgendamentoOut_: {
             /** Itens */
@@ -2298,6 +2412,44 @@ export interface components {
             /** Modificadores Aplicados */
             modificadores_aplicados: components["schemas"]["ModificadorAplicado"][];
         };
+        /** SolicitacaoAcessoCreate */
+        SolicitacaoAcessoCreate: {
+            /** Nome */
+            nome: string;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Senha */
+            senha: string;
+        };
+        /**
+         * SolicitacaoAcessoOut
+         * @description Sem senha_hash: o coordenador so precisa ver quem esta pedindo.
+         */
+        SolicitacaoAcessoOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+            /** Email */
+            email: string;
+            status: components["schemas"]["SolicitacaoStatus"];
+            /**
+             * Criado Em
+             * Format: date-time
+             */
+            criado_em: string;
+        };
+        /**
+         * SolicitacaoStatus
+         * @enum {string}
+         */
+        SolicitacaoStatus: "PENDENTE" | "APROVADA" | "RECUSADA";
         /** SortearOrdemIn */
         SortearOrdemIn: {
             /** Nivel */
@@ -4063,6 +4215,26 @@ export interface operations {
             };
         };
     };
+    obter_sequencia_publica_api_v1_publico_sequencia_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModalidadePublicaOut"][];
+                };
+            };
+        };
+    };
     criar_partida_manual_api_v1_modalidades__modalidade_id__chaveamento_partida_manual_post: {
         parameters: {
             query?: never;
@@ -4640,6 +4812,123 @@ export interface operations {
                 "application/json": components["schemas"]["SenhaIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_solicitacoes_api_v1_solicitacoes_acesso_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SolicitacaoAcessoOut"][];
+                };
+            };
+        };
+    };
+    solicitar_acesso_api_v1_solicitacoes_acesso_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SolicitacaoAcessoCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SolicitacaoAcessoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    aprovar_solicitacao_api_v1_solicitacoes_acesso__solicitacao_id__aprovar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                solicitacao_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AprovarSolicitacaoIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsuarioOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recusar_solicitacao_api_v1_solicitacoes_acesso__solicitacao_id__recusar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                solicitacao_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {

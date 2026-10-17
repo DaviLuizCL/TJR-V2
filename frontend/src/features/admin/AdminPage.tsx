@@ -43,6 +43,12 @@ function cartoes(eventoId: string): { secao: string; itens: Cartao[] }[] {
           descricao: "Marcar equipe ausente, renomear, mudar de modalidade.",
           destino: "/equipes",
         },
+        {
+          icone: "📣",
+          titulo: "Página dos professores",
+          descricao: `Aberta, sem senha: quem já competiu e quem é a próxima. Mande este endereço no grupo: ${window.location.origin}/sequencia`,
+          destino: "/sequencia",
+        },
       ],
     },
     {

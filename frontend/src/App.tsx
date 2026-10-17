@@ -29,6 +29,8 @@ import { ModalidadeWizardPage } from "./features/modalidade/ModalidadeWizardPage
 import { RodadaListPage } from "./features/modalidade/RodadaListPage";
 import { RodadaSubmissoesPage } from "./features/modalidade/RodadaSubmissoesPage";
 import { OrdemApresentacaoPage } from "./features/ordem/OrdemApresentacaoPage";
+import { InicioPage } from "./features/inicio/InicioPage";
+import { SequenciaPublicaPage } from "./features/publico/SequenciaPublicaPage";
 import { RankingPage } from "./features/ranking/RankingPage";
 import { UsuarioListPage } from "./features/usuario/UsuarioListPage";
 
@@ -48,8 +50,11 @@ export default function App() {
     <>
       <AvisosFlutuantes />
       <Routes>
+        <Route path="/" element={<InicioPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/eventos/:eventoId/ranking" element={<RankingPage />} />
+        <Route path="/sequencia" element={<SequenciaPublicaPage />} />
+        <Route path="/sequencia/:modalidade" element={<SequenciaPublicaPage />} />
 
         <Route element={<AppLayout />}>
           <Route path="/eventos" element={<EventoSelectPage />} />
