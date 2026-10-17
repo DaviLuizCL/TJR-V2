@@ -128,6 +128,7 @@ use exatamente estas palavras em models, endpoints, tipos e componentes.
 | `consolidacao` | Como as rodadas viram a nota final da equipe. |
 | `desempate` | Regras ordenadas para desempatar a classificação. |
 | `rubrica` | Confirmação/assinatura do árbitro e do capitão que fecha o lançamento. |
+| `solicitacao_acesso` | Pedido de conta feito pelo próprio juiz (sem login). Vira `usuario` só quando um coordenador aprova. |
 
 **Nunca use:** `form`, `sheet`, `score_card`, `match_form`, `bracket_form` — é `ficha`,
 `criterio`, `lancamento`, `chaveamento`.
@@ -1577,3 +1578,39 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
      montado na mão, o sistema não sabe se a última rodada é a final. Eliminatória aparece como
      "Rodada N"; "Fase de Grupos" e nome de chave continuam, porque o coordenador escolhe isso ao
      criar o confronto. Quem venceu fica no card de cada partida e no ranking.
+
+   **Telas pros professores (parte pública) + pedido de acesso do juiz** (17/10/2026). Primeira
+   parte do pedido "telas pros professores": a parte **pública** (sem login). A conta de professor
+   com equipes vinculadas é a próxima etapa, ainda não feita. Tudo em TDD, verificado no Chromium
+   contra a stack de teste `tjr-ui`.
+
+   - **Cronograma público** (`/sequencia` e `/sequencia/<slug-da-modalidade>`, ex.:
+     `/sequencia/danca`; `lib/slug.ts`). Só modalidade `INDIVIDUAL`: equipes na ordem da sequência
+     por nível, selo por rodada ("✓ Rodada 1" = já competiu), "Próxima", "Ausente" e "N equipes na
+     frente". **Nenhuma nota** (ranking continua só pra staff). Atualiza sozinha a cada 30s.
+     Backend: `GET /api/v1/publico/sequencia` (`services/publico.py`, aberto pra `PUBLICO`) acha o
+     evento único sozinho, porque o link não carrega id de evento (pedido do usuário: o site é só
+     do TJR). "Já competiu" = lançamento não `ANULADO` em todas as tentativas da rodada
+     (`PENDENTE` conta). A fila é a mesma do Pontuar: rodada mais atrasada primeiro, depois a
+     ordem; ausente e quem terminou ficam fora (`equipes_na_frente = null`). A fila é **por
+     nível**: se no ginásio for uma fila só pra modalidade, é mudança nova.
+   - **Tela inicial** (`/`, `features/inicio/InicioPage`): card com "Cronograma" (vai pra
+     `/sequencia`) e "Entrar" (vai pro `/login`). O cartão "Página dos professores" no painel de
+     Administração mostra o endereço pra copiar.
+   - **Pedido de acesso do juiz** (`/pedir-acesso`, link no login): nome, e-mail e senha, sem
+     e-mail de confirmação. Fica em `solicitacao_acesso` (migration `0e78daa3bd20`) só com o hash
+     da senha; a conta só nasce quando o coordenador aprova em "Juízes e senhas"
+     (`PedidosAcesso.tsx`, selo de quantos esperam no cartão da Administração), **como juiz ou como
+     coordenador**. Aprovar/recusar grava `audit_log` (`APROVAR_ACESSO`/`RECUSAR_ACESSO`, com o
+     papel). Login de quem ainda espera, com a senha certa do pedido, responde `403
+     ACESSO_AGUARDANDO_APROVACAO` e a tela explica. A auditoria de quem é juiz de verdade é humana
+     (o coordenador confere no grupo dos juízes).
+   - **Bug corrigido no Pontuar** (achado ao verificar o cronograma pontuando de verdade): a fila
+     do juiz contava lançamento `ANULADO` como feito, então a equipe cuja nota foi anulada pulava
+     pra rodada seguinte e o juiz não tinha onde lançar.
+   - **Teste de usabilidade** (Playwright, todas as rotas por papel em 390px e 1280px + 12 fluxos
+     clicando de verdade). Achados corrigidos: tela de Modalidades estourava a largura no celular;
+     o menu, aberto direto por link num aparelho sem evento guardado, apontava tudo pra `/eventos`
+     e acendia 4 links juntos (agora o `Header` lê o evento do endereço); acentos ("Inscrições",
+     "nível"). Sem erro de JS, sem 5xx, sem rolagem horizontal no resto.
+
