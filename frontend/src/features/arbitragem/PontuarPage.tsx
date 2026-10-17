@@ -142,8 +142,9 @@ export function PontuarPage() {
     for (const rodada of rodadasOrdenadas) {
       const lancamentosDaRodada = lancamentosPorRodada.get(rodada.id) ?? [];
       for (let tentativa = 1; tentativa <= tentativasPorRodada; tentativa++) {
+        // Anulado nao conta: o coordenador anulou pra equipe refazer.
         const jaTem = lancamentosDaRodada.some(
-          (l) => l.equipe_id === equipeId && l.tentativa === tentativa,
+          (l) => l.equipe_id === equipeId && l.tentativa === tentativa && l.status !== "ANULADO",
         );
         if (!jaTem) return { rodada, tentativa };
       }

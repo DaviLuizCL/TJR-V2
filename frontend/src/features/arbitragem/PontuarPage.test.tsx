@@ -112,6 +112,20 @@ describe("PontuarPage", () => {
     expect(within(cardY).getByText(/rodada 2/i)).toBeInTheDocument();
   });
 
+  it("lancamento anulado nao conta: a equipe volta a ter aquela rodada pendente", async () => {
+    mockGet({
+      lancamentosPorRodada: {
+        "rod-1": [{ id: "l1", equipe_id: "eq-2", tentativa: 1, status: "ANULADO" }],
+      },
+    });
+
+    renderPage();
+
+    await screen.findByText("Equipe X");
+    const cardY = screen.getByText("Equipe Y").closest("a")!;
+    expect(within(cardY).getByText(/rodada 1/i)).toBeInTheDocument();
+  });
+
   it("mostra aviso de lancamento pendente de confirmacao quando a equipe tem um em aberto", async () => {
     mockGet({
       lancamentosPorRodada: {
