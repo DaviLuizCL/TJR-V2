@@ -18,12 +18,15 @@ function classesLink({ isActive }: { isActive: boolean }) {
 }
 
 export function Header() {
-  const eventoAtualId = useEventoStore((state) => state.eventoAtualId);
+  const eventoGuardado = useEventoStore((state) => state.eventoAtualId);
   const usuario = useAuthStore((state) => state.usuario);
   const papel = usuario?.papel;
   const sair = useAuthStore((state) => state.sair);
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  // Primeiro acesso por um link direto (ex.: /eventos/:id/admin/checklist) ainda
+  // nao guardou o evento: le do endereco, senao todo link cai em /eventos.
+  const eventoAtualId = eventoGuardado ?? pathname.match(/^\/eventos\/([^/]+)/)?.[1] ?? null;
   // Pontuar/rodadas/sequencia moram debaixo de /modalidades/:id na URL, mas pro
   // usuario fazem parte de Competicoes - acende o link certo.
   const emCompeticao = /\/(competicoes|pontuar|rodadas|ordem|lancamentos|partidas)/.test(pathname);

@@ -7,9 +7,9 @@ import { useAuthStore } from "../lib/auth-store";
 import { useEventoStore } from "../lib/evento-store";
 import { Header } from "./Header";
 
-function renderHeader() {
+function renderHeader(url = "/eventos") {
   return render(
-    <MemoryRouter initialEntries={["/eventos"]}>
+    <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/login" element={<div>TELA DE LOGIN</div>} />
         <Route path="*" element={<Header />} />
@@ -53,6 +53,28 @@ describe("Header", () => {
       "/eventos",
     );
     expect(screen.getByRole("link", { name: /painel/i })).toHaveAttribute("href", "/eventos");
+  });
+
+  it("sem evento guardado, mas com o evento no endereco, usa o evento do endereco", () => {
+    renderHeader("/eventos/evt-7/admin/corrigir");
+
+    expect(screen.getByRole("link", { name: /modalidades/i })).toHaveAttribute(
+      "href",
+      "/eventos/evt-7/modalidades",
+    );
+    expect(screen.getByRole("link", { name: /administra/i })).toHaveAttribute(
+      "href",
+      "/eventos/evt-7/admin",
+    );
+  });
+
+  it("acende so o link da tela atual, nunca todos de uma vez", () => {
+    renderHeader("/eventos/evt-7/admin/corrigir");
+
+    const ativos = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") === "page" || link.className.includes("ring-1"));
+    expect(ativos.map((link) => link.textContent)).toEqual([expect.stringMatching(/administra/i)]);
   });
 
   it("com evento atual definido, linka direto para os hubs daquele evento", () => {
