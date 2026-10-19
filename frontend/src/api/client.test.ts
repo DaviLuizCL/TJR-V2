@@ -18,6 +18,24 @@ beforeEach(() => {
   });
 });
 
+describe("client — token da requisição", () => {
+  it("Authorization passado na chamada vale mais que o token guardado de uma sessão antiga", async () => {
+    // Login com sessão vencida ainda guardada: a tela pede /auth/me com o
+    // token novo, e o guardado (inválido) não pode tomar o lugar dele.
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ id: "u1", nome: "Admin", email: "admin@tjr.app", papel: "COORDENADOR" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.GET("/api/v1/auth/me", { headers: { Authorization: "Bearer token-do-login" } });
+
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.headers.get("Authorization")).toBe("Bearer token-do-login");
+
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("client — renovação de sessão em 401", () => {
   it("ao receber 401, chama /auth/refresh e repete a requisição original com o novo token", async () => {
     let chamada = 0;

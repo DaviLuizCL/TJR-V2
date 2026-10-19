@@ -63,7 +63,9 @@ async function renovarSessao(): Promise<string | null> {
 api.use({
   onRequest({ request, id }) {
     const token = useAuthStore.getState().accessToken;
-    if (token) {
+    // Quem passou Authorization na chamada (o /auth/me logo depois do login)
+    // manda: o guardado pode ser de uma sessao antiga ja invalida.
+    if (token && !request.headers.has("Authorization")) {
       request.headers.set("Authorization", `Bearer ${token}`);
     }
     requisicoesEmVoo.set(id, request.clone());
