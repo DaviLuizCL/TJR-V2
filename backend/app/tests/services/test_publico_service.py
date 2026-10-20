@@ -1,9 +1,11 @@
 import uuid
 
+from app.models.equipe import Equipe
 from app.models.ficha import FichaStatus
+from app.models.inscricao import Inscricao
 from app.models.lancamento import Lancamento, LancamentoStatus
 from app.models.modalidade import TipoDisputa
-from app.services.publico import sequencia_publica_do_evento
+from app.services.publico import equipes_publicas_do_evento, sequencia_publica_do_evento
 from app.tests.services.test_checklist_service import (
     _arbitro,
     _evento,
@@ -206,3 +208,69 @@ async def test_sequencia_publica_sem_equipes_na_frente_pra_quem_ja_terminou(db_s
     terminou_out, falta_out = dados.niveis[0].equipes
     assert terminou_out.equipes_na_frente is None
     assert falta_out.equipes_na_frente == 0
+
+
+async def test_equipes_publicas_junta_as_modalidades_de_uma_mesma_equipe(db_session):
+    evento = await _evento(db_session)
+    danca = await _modalidade(db_session, evento, nome="Dança")
+    sumo = await _modalidade(db_session, evento, nome="Sumô", tipo=TipoDisputa.CONFRONTO)
+    equipe = await _inscrever(db_session, sumo, "Hefesto Tech", nivel=3)
+    db_session.add(Inscricao(equipe_id=equipe.id, modalidade_id=danca.id))
+    await db_session.flush()
+
+    (dados,) = await equipes_publicas_do_evento(db_session, evento.id)
+
+    assert dados.nome == "Hefesto Tech"
+    assert dados.nivel == 3
+    assert dados.modalidades == ["Dança", "Sumô"]
+
+
+async def test_equipes_publicas_ordena_por_nivel_e_nome(db_session):
+    evento = await _evento(db_session)
+    modalidade = await _modalidade(db_session, evento)
+    await _inscrever(db_session, modalidade, "Zeta", nivel=2)
+    await _inscrever(db_session, modalidade, "Beta", nivel=3)
+    await _inscrever(db_session, modalidade, "Alfa", nivel=2)
+
+    equipes = await equipes_publicas_do_evento(db_session, evento.id)
+
+    assert [(e.nivel, e.nome) for e in equipes] == [(2, "Alfa"), (2, "Zeta"), (3, "Beta")]
+
+
+async def test_equipes_publicas_mostra_equipe_sem_modalidade(db_session):
+    # Professor precisa ver que a equipe ficou sem inscricao, pra pedir correcao.
+    evento = await _evento(db_session)
+    db_session.add(Equipe(nome="Sem Modalidade", nivel=2))
+    await db_session.flush()
+
+    (dados,) = await equipes_publicas_do_evento(db_session, evento.id)
+
+    assert dados.nome == "Sem Modalidade"
+    assert dados.modalidades == []
+
+
+async def test_equipes_publicas_esconde_equipe_desativada(db_session):
+    evento = await _evento(db_session)
+    modalidade = await _modalidade(db_session, evento)
+    await _inscrever(db_session, modalidade, "Ativa")
+    desativada = await _inscrever(db_session, modalidade, "Desativada")
+    desativada.ativo = False
+    await db_session.flush()
+
+    equipes = await equipes_publicas_do_evento(db_session, evento.id)
+
+    assert [e.nome for e in equipes] == ["Ativa"]
+
+
+async def test_equipes_publicas_ignora_modalidade_de_outro_evento(db_session):
+    evento = await _evento(db_session)
+    outro = await _evento(db_session)
+    danca = await _modalidade(db_session, evento, nome="Dança")
+    antiga = await _modalidade(db_session, outro, nome="Modalidade Antiga")
+    equipe = await _inscrever(db_session, danca, "Equipe A")
+    db_session.add(Inscricao(equipe_id=equipe.id, modalidade_id=antiga.id))
+    await db_session.flush()
+
+    (dados,) = await equipes_publicas_do_evento(db_session, evento.id)
+
+    assert dados.modalidades == ["Dança"]

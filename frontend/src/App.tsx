@@ -31,6 +31,7 @@ import { RodadaListPage } from "./features/modalidade/RodadaListPage";
 import { RodadaSubmissoesPage } from "./features/modalidade/RodadaSubmissoesPage";
 import { OrdemApresentacaoPage } from "./features/ordem/OrdemApresentacaoPage";
 import { InicioPage } from "./features/inicio/InicioPage";
+import { EquipesPublicasPage } from "./features/publico/EquipesPublicasPage";
 import { SequenciaPublicaPage } from "./features/publico/SequenciaPublicaPage";
 import { RankingPage } from "./features/ranking/RankingPage";
 import { UsuarioListPage } from "./features/usuario/UsuarioListPage";
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/pedir-acesso" element={<PedirAcessoPage />} />
         <Route path="/eventos/:eventoId/ranking" element={<RankingPage />} />
         <Route path="/sequencia" element={<SequenciaPublicaPage />} />
+        <Route path="/equipes-inscritas" element={<EquipesPublicasPage />} />
         <Route path="/sequencia/:modalidade" element={<SequenciaPublicaPage />} />
 
         <Route element={<AppLayout />}>

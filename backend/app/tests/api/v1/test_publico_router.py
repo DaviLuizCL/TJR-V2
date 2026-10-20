@@ -49,3 +49,27 @@ async def test_endereco_antigo_com_id_do_evento_nao_existe_mais(client):
 
     assert resposta.status_code == 404
     assert resposta.json()["erro"]["codigo"] != "EVENTO_NAO_ENCONTRADO"
+
+
+async def test_equipes_publicas_abre_sem_login(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-pub-2@tjr.app")
+    evento_id = await _criar_evento(client, headers)
+    modalidade_id = await _criar_modalidade(client, headers, evento_id, [1, 2], nome="Dança")
+    equipe_id = await _criar_equipe(client, headers, nivel=2, nome="Equipe A")
+    await client.post(
+        "/api/v1/inscricoes",
+        json={"equipe_id": equipe_id, "modalidade_id": modalidade_id},
+        headers=headers,
+    )
+
+    resposta = await client.get("/api/v1/publico/equipes")
+
+    assert resposta.status_code == 200
+    assert resposta.json() == [{"nome": "Equipe A", "nivel": 2, "modalidades": ["Dança"]}]
+
+
+async def test_equipes_publicas_sem_evento_cadastrado_retorna_404(client):
+    resposta = await client.get("/api/v1/publico/equipes")
+
+    assert resposta.status_code == 404
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_NAO_ENCONTRADO"

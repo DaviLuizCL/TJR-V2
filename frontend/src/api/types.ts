@@ -681,6 +681,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/publico/equipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar Equipes Publicas */
+        get: operations["listar_equipes_publicas_api_v1_publico_equipes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modalidades/{modalidade_id}/chaveamento/partida-manual": {
         parameters: {
             query?: never;
@@ -1415,6 +1432,15 @@ export interface components {
              * @default true
              */
             ativo: boolean;
+        };
+        /** EquipeInscritaPublicaOut */
+        EquipeInscritaPublicaOut: {
+            /** Nome */
+            nome: string;
+            /** Nivel */
+            nivel: number;
+            /** Modalidades */
+            modalidades: string[];
         };
         /** EquipeOut */
         EquipeOut: {
@@ -4231,6 +4257,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModalidadePublicaOut"][];
+                };
+            };
+        };
+    };
+    listar_equipes_publicas_api_v1_publico_equipes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquipeInscritaPublicaOut"][];
                 };
             };
         };

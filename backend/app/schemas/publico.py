@@ -28,3 +28,11 @@ class ModalidadePublicaOut(BaseModel):
     nome: str
     rodadas: list[int]
     niveis: list[NivelPublicoOut]
+
+
+class EquipeInscritaPublicaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    nome: str
+    nivel: int
+    modalidades: list[str]

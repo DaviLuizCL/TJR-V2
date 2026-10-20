@@ -11,12 +11,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
+from app.models.equipe import Equipe
 from app.models.evento import Evento
+from app.models.inscricao import Inscricao
 from app.models.lancamento import Lancamento, LancamentoStatus
 from app.models.modalidade import Modalidade, TipoDisputa
 from app.models.rodada import Rodada
 from app.services.evento import obter_evento
 from app.services.ordem_apresentacao import listar_sequencia
+
+
+@dataclass
+class EquipeInscritaPublica:
+    nome: str
+    nivel: int
+    modalidades: list[str]
 
 
 @dataclass
@@ -69,7 +78,7 @@ async def _rodadas_competidas_por_equipe(
     return competidas
 
 
-async def sequencia_publica(db: AsyncSession) -> list[ModalidadePublica]:
+async def _evento_unico_id(db: AsyncSession) -> UUID:
     """Sistema e exclusivo do TJR, com um evento so (criar_evento recusa o
     segundo): o link publico nao carrega id de evento."""
     evento_id = await db.scalar(select(Evento.id).order_by(Evento.criado_em).limit(1))
@@ -77,7 +86,45 @@ async def sequencia_publica(db: AsyncSession) -> list[ModalidadePublica]:
         raise AppError(
             codigo="EVENTO_NAO_ENCONTRADO", mensagem="Evento nao encontrado.", status_code=404
         )
-    return await sequencia_publica_do_evento(db, evento_id)
+    return evento_id
+
+
+async def sequencia_publica(db: AsyncSession) -> list[ModalidadePublica]:
+    return await sequencia_publica_do_evento(db, await _evento_unico_id(db))
+
+
+async def equipes_publicas(db: AsyncSession) -> list[EquipeInscritaPublica]:
+    return await equipes_publicas_do_evento(db, await _evento_unico_id(db))
+
+
+async def equipes_publicas_do_evento(
+    db: AsyncSession, evento_id: UUID
+) -> list[EquipeInscritaPublica]:
+    """Toda equipe ativa com as modalidades do evento em que esta inscrita, pro
+    professor conferir o cadastro. Equipe sem modalidade nenhuma aparece tambem:
+    e justamente o caso que ele precisa ver pra pedir correcao."""
+    equipes = (
+        await db.scalars(
+            select(Equipe).where(Equipe.ativo.is_(True)).order_by(Equipe.nivel, Equipe.nome)
+        )
+    ).all()
+    inscricoes = await db.execute(
+        select(Inscricao.equipe_id, Modalidade.nome)
+        .join(Modalidade, Modalidade.id == Inscricao.modalidade_id)
+        .where(Modalidade.evento_id == evento_id)
+        .order_by(Modalidade.nome)
+    )
+    modalidades_por_equipe: dict[UUID, list[str]] = {}
+    for equipe_id, nome in inscricoes.tuples():
+        modalidades_por_equipe.setdefault(equipe_id, []).append(nome)
+    return [
+        EquipeInscritaPublica(
+            nome=equipe.nome,
+            nivel=equipe.nivel,
+            modalidades=modalidades_por_equipe.get(equipe.id, []),
+        )
+        for equipe in equipes
+    ]
 
 
 async def sequencia_publica_do_evento(db: AsyncSession, evento_id: UUID) -> list[ModalidadePublica]:
