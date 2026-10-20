@@ -1,47 +1,37 @@
-# Deploy — como mexer no servidor de produção (EC2)
+# Deploy — como mexer no servidor de produção (VM em Patos)
 
-Este projeto roda em produção num servidor EC2 separado do seu ambiente de
-desenvolvimento local. Este guia explica como qualquer notebook seu consegue
-se conectar nele e como fazer o deploy de uma mudança.
+Desde 19/10/2026 o sistema roda numa VM Ubuntu emprestada por um dev de Patos
+(o EC2 antigo morreu em 10/10/2026). Este guia explica como entrar nela e como
+fazer o deploy de uma mudança.
 
 ## Dados do servidor
 
-- **Endereço**: `tjr.pontuai.online` (também responde pelo IP direto, mas o
-  domínio é mais estável)
-- **Usuário SSH**: `ec2-user`
-- **Chave**: `tjr-2026.pem` — é a chave privada, dá acesso total ao servidor.
-  **Nunca** faça commit dela no git, nunca mande por e-mail/chat em texto
-  puro. Transfira só por canal seguro (AirDrop, pen drive, `scp` entre suas
-  próprias máquinas, ou um gerenciador de senhas com anexo).
-- **Repo no servidor**: `/home/ec2-user/TJR-V2`
+- **Endereço do app**: `https://tjr.pontuai.online`, via **Cloudflare Tunnel**
+  (o DNS do `pontuai.online` está na Cloudflare; o domínio continua registrado
+  na Hostinger). Não existe porta aberta na rede da VM: o HTTPS é da própria
+  Cloudflare, sem certbot/Let's Encrypt.
+- **Máquina**: Ubuntu 24.04, 2 CPUs, 3,8 GB de RAM, sem swap (vale criar 2 GB),
+  usuário `dev` (grupo `docker`, `sudo` sem senha).
+- **Repo no servidor**: `/home/dev/TJR-V2` (clone HTTPS do GitHub, repo público).
+- **Acesso**: **não tem SSH direto**. A VM expõe um terminal web (ttyd) por um
+  túnel rápido `*.trycloudflare.com`, e esse link **muda sempre que a VM ou o
+  túnel reinicia** — quem passa o link novo é o dev de Patos. Login: usuário
+  `dev` + senha que ele passou (não fica neste repo, que é público).
 
-## 1. Configurar um notebook novo
+## 1. Como o app chega na internet
 
-Copie o arquivo `tjr-2026.pem` pra dentro de `~/.ssh/` do notebook novo (por
-qualquer canal seguro dos listados acima), depois:
+O túnel do app é um serviço do sistema e volta sozinho no boot:
 
-```bash
-chmod 400 ~/.ssh/tjr-2026.pem
-```
+- serviço `cloudflared` (`systemctl status cloudflared`), config em
+  `/etc/cloudflared/config.yml` (túnel `tjr`, `tjr.pontuai.online` →
+  `http://localhost:80`) e credencial `/etc/cloudflared/<id>.json`;
+- o certificado de conta (`~/.cloudflared/cert.pem`) também ficou na VM e dá
+  poder de criar/apagar túneis no `pontuai.online`.
 
-Adicione isso ao final do seu `~/.ssh/config` (crie o arquivo se não existir):
+O terminal web é outro serviço, montado pelo dev de Patos
+(`ttyd.service` + `cloudflared-terminal.service`). Não misturar os dois.
 
-```
-Host tjr-ec2
-  HostName tjr.pontuai.online
-  User ec2-user
-  IdentityFile ~/.ssh/tjr-2026.pem
-  IdentitiesOnly yes
-```
-
-Teste:
-
-```bash
-ssh tjr-ec2
-```
-
-Se conectar sem pedir senha, está pronto. (Nesta máquina aqui — a que o
-Claude Code está usando — esse atalho já está configurado.)
+Os containers sobem sozinhos no boot (`restart: unless-stopped`).
 
 ## 2. Deploy de uma mudança de código
 
@@ -54,9 +44,8 @@ git add <arquivos>
 git commit -m "sua mensagem"
 git push origin main
 
-# 2. No servidor, puxar e reconstruir
-ssh tjr-ec2
-cd TJR-V2
+# 2. No terminal web da VM, puxar e reconstruir
+cd ~/TJR-V2
 git pull origin main
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
@@ -64,12 +53,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose exec -T api alembic upgrade head
 ```
 
-`docker compose` aqui **não precisa de `sudo`** — o usuário `ec2-user` já
-está no grupo `docker`.
+`alembic` e `python` rodam **dentro** do container (`docker compose exec -T api ...`),
+não no host: não instale `alembic` pelo apt.
 
-O front detecta sozinho se existe certificado HTTPS
-(`/etc/letsencrypt/live/tjr.pontuai.online/`, já configurado nesse servidor)
-e sobe em HTTPS automaticamente — não precisa fazer nada extra com isso.
+Banco novo do zero (foi o caso em 19/10/2026): depois do `up -d --build`, rodar
+`alembic upgrade head` e `python -m app.db.seed --apenas-estrutura` (evento, modalidades,
+fichas e o `admin@tjr.app`, sem equipe fictícia).
 
 ## 3. Substituir o banco de produção pelo do seu ambiente local
 
@@ -81,17 +70,17 @@ nenhuma pontuação real registrada que você queira manter (confira antes:
 `select count(*) from lancamento;` deve ser 0, ou você vai perder pontuação
 de verdade).
 
+Sem SSH não tem `scp`: o arquivo do dump precisa chegar na VM por outro caminho
+(ex.: link de download temporário e `curl -o` no terminal web).
+
 ```bash
 # 1. No seu ambiente local: gerar o dump
 docker compose exec -T db pg_dump -U tjr -d tjr --data-only --disable-triggers -F c > /tmp/tjr_data.dump
 
-# 2. Enviar pro servidor
-scp -i ~/.ssh/tjr-2026.pem /tmp/tjr_data.dump tjr-ec2:/tmp/tjr_data.dump
-# (com o Host configurado no ~/.ssh/config, dá pra usar so "tjr-ec2:/tmp/..." mesmo sem repetir -i)
+# 2. Levar o arquivo pra VM em /tmp/tjr_data.dump
 
-# 3. No servidor: recriar o banco do zero e restaurar
-ssh tjr-ec2
-cd TJR-V2
+# 3. Na VM: recriar o banco do zero e restaurar
+cd ~/TJR-V2
 docker compose stop api
 docker compose exec -T db psql -U tjr -d postgres -c "DROP DATABASE tjr;"
 docker compose exec -T db psql -U tjr -d postgres -c "CREATE DATABASE tjr OWNER tjr;"
@@ -119,7 +108,7 @@ O botão **Administração → Baixar backup** gera um arquivo `tjr-backup-AAAA-
 Isso **apaga o banco atual** e põe o backup no lugar. Mesmos cuidados da seção 3.
 
 ```bash
-cd TJR-V2
+cd ~/TJR-V2
 docker compose stop api
 docker compose exec -T db psql -U tjr -d postgres -c "DROP DATABASE tjr;"
 docker compose exec -T db psql -U tjr -d postgres -c "CREATE DATABASE tjr OWNER tjr;"
@@ -133,21 +122,25 @@ O erro `unrecognized configuration parameter "transaction_timeout"` no `pg_resto
 normal e inofensivo: o 17 manda um parâmetro que o servidor 16 não conhece. O resto
 restaura normalmente (testado em 10/10/2026: contagens e versão da migration batem).
 
-## 4. Comandos úteis do dia a dia
+## 4. Comandos úteis do dia a dia (no terminal web, dentro de `~/TJR-V2`)
 
 ```bash
-ssh tjr-ec2 "cd TJR-V2 && docker compose ps"                    # ver status
-ssh tjr-ec2 "cd TJR-V2 && docker compose logs api --tail 50"    # logs da api
-ssh tjr-ec2 "cd TJR-V2 && docker compose logs front --tail 50"  # logs do front
-ssh tjr-ec2 "cd TJR-V2 && docker compose exec -T db psql -U tjr -d tjr -c 'SELECT ...'"  # consultar o banco direto
+docker compose ps                    # ver status
+docker compose logs api --tail 50    # logs da api
+docker compose logs front --tail 50  # logs do front
+docker compose exec -T db psql -U tjr -d tjr -c 'SELECT ...'  # consultar o banco direto
+docker stats --no-stream             # memória/CPU por container
+systemctl status cloudflared         # túnel do app
 ```
 
 ## 5. O que NÃO fazer
 
 - Não rode `docker compose up` (sem `-f docker-compose.prod.yml`) no
   servidor — isso troca pro modo dev e derruba o acesso público.
-- Não apague `/etc/letsencrypt` nem mexa nos arquivos de certificado —
-  quem renova é o certbot do próprio host, fora do docker.
-- Não faça commit de `tjr-2026.pem`, `.env`, `pessoas.csv`,
-  `saida_credenciais.csv` ou qualquer planilha de equipe real — todos já
-  estão no `.gitignore`, mas confira antes de qualquer `git add` mais amplo.
+- Não pare nem desinstale o serviço `cloudflared` (o do app) nem o
+  `cloudflared-terminal`/`ttyd` (o do terminal): sem o primeiro o site some,
+  sem o segundo ninguém entra na VM.
+- Não crie hostname público pro terminal (porta 7681) no túnel do app sem
+  proteger com Cloudflare Access — ele dá acesso total à máquina.
+- Não faça commit de `.env`, `pessoas.csv`, `saida_credenciais.csv`, senha da
+  VM, token de túnel ou qualquer planilha de equipe real — o repo é público.

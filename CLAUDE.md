@@ -3,11 +3,11 @@
 Contexto permanente do projeto. Leia este arquivo inteiro antes de escrever qualquer código.
 O que **fazer agora** está no prompt da sessão, não aqui. Aqui está **como fazer**.
 
-> **⚠ Servidor de produção fora do ar desde 10/10/2026** (EC2 `tjr.pontuai.online` morreu).
-> Até subir de novo, **todo desenvolvimento e teste é local**: stack dev desta máquina
-> (`docker compose up -d`, sem o `-f docker-compose.prod.yml`), nada de deploy/SSH. O banco
-> local é só de desenvolvimento — pode subir, migrar e rodar teste à vontade. Quando o servidor
-> voltar, apague este aviso.
+> **Produção desde 19/10/2026: VM Ubuntu em Patos** (o EC2 morreu em 10/10/2026), em
+> `https://tjr.pontuai.online` via Cloudflare Tunnel. Sem SSH: acesso por terminal web cujo link
+> muda. Como entrar e fazer deploy está no `DEPLOY.md`. Banco de produção começou do zero em
+> 19/10 (só estrutura + admin; equipes cadastradas na mão). A stack dev desta máquina continua
+> sendo o lugar de desenvolver e testar.
 
 ---
 
@@ -1614,3 +1614,35 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
      e acendia 4 links juntos (agora o `Header` lê o evento do endereço); acentos ("Inscrições",
      "nível"). Sem erro de JS, sem 5xx, sem rolagem horizontal no resto.
 
+
+   **Servidor novo (VM em Patos) + equipes inscritas pros professores** (19/10/2026).
+   - **Migração de servidor**: o EC2 morto foi trocado por uma VM Ubuntu 24.04 emprestada por um
+     dev de Patos (2 CPUs, 3,8 GB, sem swap). Sem SSH: a VM expõe um terminal web (ttyd) num túnel
+     rápido `*.trycloudflare.com` que muda de endereço a cada reinício. O DNS do `pontuai.online`
+     saiu da Hostinger (o registro continua lá) pra Cloudflare, e o app sai por um túnel com nome
+     (`tjr`, serviço `cloudflared`, `/etc/cloudflared/config.yml` → `localhost:80`), criado pela
+     linha de comando (`cloudflared tunnel login/create/route dns`), porque o painel Zero Trust
+     pedia cartão. HTTPS agora é da Cloudflare; o certbot/Let's Encrypt do EC2 não existe mais (o
+     front cai sozinho no `nginx.http.conf` sem certificado). Banco começou do zero (sem backup, por
+     decisão do usuário): `alembic upgrade head` + `seed --apenas-estrutura`, com senha nova e
+     aleatória pro `admin@tjr.app`. Detalhes de operação no `DEPLOY.md`. Medido com o sistema no ar:
+     api ~80 MB, db ~66 MB, máquina com 3 GB livres; o que pesa é o build, não o uso.
+   - **Bug de login corrigido** (achado na troca de servidor): o interceptador de `api/client.ts`
+     trocava o `Authorization` passado na chamada pelo token guardado no navegador. Quem fazia
+     login com uma sessão antiga ainda salva (no caso, a do EC2, assinada com outra chave) recebia
+     401 no `/auth/me`, ficava com papel vazio e perdia o link de Administração. Agora o token
+     guardado só entra quando a chamada não trouxe o seu.
+   - **Equipes inscritas** (`/equipes-inscritas`, sem login, botão "👥 Equipes inscritas" na tela
+     inicial): pro professor conferir o cadastro antes do evento. Toda equipe `ativo`, por nível
+     (1 = ABSOLUTO), uma vez só com todas as modalidades do evento em que está; equipe sem
+     modalidade aparece com aviso amarelo pra avisar a coordenação (é o erro que mais interessa
+     achar). Busca por nome e filtro por modalidade. Sem nota e sem presença. Backend:
+     `GET /api/v1/publico/equipes` (`publico.equipes_publicas`, mesmo achado de evento único do
+     cronograma, extraído pra `_evento_unico_id`).
+   - Suíte: backend 638, frontend 514, typecheck/lint/ruff limpos.
+   - **Pendências**: trocar a senha do `admin@tjr.app` (passou pelo chat); criar swap de 2 GB na
+     VM; avisar o dev de Patos que o terminal web está aberto pra internet com `sudo` sem senha
+     (trocar a senha do `dev`, e no futuro Cloudflare Access); conta de professor com equipes
+     vinculadas continua sem fazer. Na máquina local, outro projeto do usuário ocupa as portas
+     5432/8000: pra testar o TJR sem mexer nele, subir com `-p tjr-teste` e um override que zera
+     `ports` do `db`/`api`.
