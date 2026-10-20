@@ -12,6 +12,7 @@ function renderPage() {
         <Route path="/" element={<InicioPage />} />
         <Route path="/sequencia" element={<p>pagina da sequencia</p>} />
         <Route path="/equipes-inscritas" element={<p>pagina das equipes</p>} />
+        <Route path="/regras" element={<p>pagina das regras</p>} />
         <Route path="/login" element={<p>pagina de login</p>} />
       </Routes>
     </MemoryRouter>,
@@ -19,10 +20,11 @@ function renderPage() {
 }
 
 describe("InicioPage", () => {
-  it("mostra so as tres opcoes: Cronograma, Equipes inscritas e Entrar", () => {
+  it("mostra so as quatro opcoes: Cronograma, Equipes inscritas, Regras e Entrar", () => {
     renderPage();
 
-    expect(screen.getAllByRole("link")).toHaveLength(3);
+    expect(screen.getAllByRole("link")).toHaveLength(4);
+    expect(screen.getByRole("link", { name: /regras/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /cronograma/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /equipes inscritas/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /entrar/i })).toBeInTheDocument();
@@ -42,6 +44,14 @@ describe("InicioPage", () => {
     await userEvent.click(screen.getByRole("link", { name: /equipes inscritas/i }));
 
     expect(screen.getByText("pagina das equipes")).toBeInTheDocument();
+  });
+
+  it("Regras leva pros PDFs de regras das modalidades", async () => {
+    renderPage();
+
+    await userEvent.click(screen.getByRole("link", { name: /regras/i }));
+
+    expect(screen.getByText("pagina das regras")).toBeInTheDocument();
   });
 
   it("Entrar leva pro login", async () => {

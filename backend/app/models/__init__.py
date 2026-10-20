@@ -18,6 +18,7 @@ from app.models.modalidade import (
     TipoDisputa,
 )
 from app.models.partida import Partida, PartidaStatus
+from app.models.regra_modalidade import RegraModalidade, TipoRegra
 from app.models.rodada import ModoHorario, Rodada, RodadaStatus
 from app.models.solicitacao_acesso import SolicitacaoAcesso, SolicitacaoStatus
 from app.models.usuario import Papel, Usuario
@@ -50,7 +51,9 @@ __all__ = [
     "Partida",
     "PartidaStatus",
     "ModoHorario",
+    "RegraModalidade",
     "Rodada",
+    "TipoRegra",
     "SolicitacaoAcesso",
     "SolicitacaoStatus",
     "RodadaStatus",

@@ -126,6 +126,17 @@ describe("PainelPage", () => {
     expect(within(card).getByText("Saiu da area: -5")).toBeInTheDocument();
   });
 
+  it("tem a aba Regra da modalidade", async () => {
+    mockGet();
+
+    renderPage();
+    await screen.findByRole("tab", { name: "Sumo" });
+
+    await userEvent.click(screen.getByRole("tab", { name: "Regra da modalidade" }));
+
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith("/api/v1/publico/regras"));
+  });
+
   it("filtra as submissoes por modalidade", async () => {
     mockGet();
 

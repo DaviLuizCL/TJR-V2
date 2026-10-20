@@ -992,6 +992,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modalidades/{modalidade_id}/regras/{tipo}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Enviar Regra */
+        put: operations["enviar_regra_api_v1_modalidades__modalidade_id__regras__tipo__put"];
+        post?: never;
+        /** Remover Regra */
+        delete: operations["remover_regra_api_v1_modalidades__modalidade_id__regras__tipo__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/publico/regras": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar Regras Publicas */
+        get: operations["listar_regras_publicas_api_v1_publico_regras_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/publico/modalidades/{modalidade_id}/regras/{tipo}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Baixar Regra */
+        get: operations["baixar_regra_api_v1_publico_modalidades__modalidade_id__regras__tipo__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/checklist": {
         parameters: {
             query?: never;
@@ -1163,6 +1215,14 @@ export interface components {
             niveis_aplicaveis?: number[] | null;
             /** Ativo */
             ativo?: boolean | null;
+        };
+        /** Body_enviar_regra_api_v1_modalidades__modalidade_id__regras__tipo__put */
+        Body_enviar_regra_api_v1_modalidades__modalidade_id__regras__tipo__put: {
+            /**
+             * Arquivo
+             * Format: binary
+             */
+            arquivo: string;
         };
         /** Body_importar_equipes_api_v1_admin_importar_equipes_post */
         Body_importar_equipes_api_v1_admin_importar_equipes_post: {
@@ -1940,6 +2000,18 @@ export interface components {
             /** Senha */
             senha: string;
         };
+        /** ModalidadeComRegrasOut */
+        ModalidadeComRegrasOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+            /** Regras */
+            regras: components["schemas"]["RegraResumoOut"][];
+        };
         /** ModalidadeCreate */
         ModalidadeCreate: {
             /**
@@ -2341,6 +2413,17 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** RegraResumoOut */
+        RegraResumoOut: {
+            tipo: components["schemas"]["TipoRegra"];
+            /** Nome Arquivo */
+            nome_arquivo: string;
+            /**
+             * Atualizado Em
+             * Format: date-time
+             */
+            atualizado_em: string;
+        };
         /** RelatorioImportacao */
         RelatorioImportacao: {
             /** Simulacao */
@@ -2486,6 +2569,11 @@ export interface components {
          * @enum {string}
          */
         TipoDisputa: "INDIVIDUAL" | "CONFRONTO";
+        /**
+         * TipoRegra
+         * @enum {string}
+         */
+        TipoRegra: "MANUAL" | "CADERNO_ALUNO";
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -4982,6 +5070,124 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enviar_regra_api_v1_modalidades__modalidade_id__regras__tipo__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+                tipo: components["schemas"]["TipoRegra"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_enviar_regra_api_v1_modalidades__modalidade_id__regras__tipo__put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegraResumoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remover_regra_api_v1_modalidades__modalidade_id__regras__tipo__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+                tipo: components["schemas"]["TipoRegra"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_regras_publicas_api_v1_publico_regras_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModalidadeComRegrasOut"][];
+                };
+            };
+        };
+    };
+    baixar_regra_api_v1_publico_modalidades__modalidade_id__regras__tipo__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modalidade_id: string;
+                tipo: components["schemas"]["TipoRegra"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

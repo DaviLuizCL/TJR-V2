@@ -4,9 +4,10 @@ import { useParams } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { RankingClassificacao, type ModalidadeAba } from "../ranking/RankingClassificacao";
+import { RegrasModalidadeTab } from "./RegrasModalidadeTab";
 import { SubmissoesTab } from "./SubmissoesTab";
 
-type Aba = "ranking" | "submissoes";
+type Aba = "ranking" | "submissoes" | "regras";
 
 // Ranking reconectado a pedido do coordenador: uso interno (staff que ve o
 // Painel), independente de `ranking_liberado` (esse campo so controla a
@@ -38,7 +39,7 @@ export function PainelPage() {
     <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
       <h1 className="mb-6 text-3xl font-bold">Painel</h1>
 
-      <div role="tablist" className="mb-6 flex gap-2 border-b border-slate-200">
+      <div role="tablist" className="mb-6 flex flex-wrap gap-2 border-b border-slate-200">
         <button
           role="tab"
           type="button"
@@ -57,6 +58,15 @@ export function PainelPage() {
         >
           Submissões
         </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={aba === "regras"}
+          onClick={() => setAba("regras")}
+          className={classesAba("regras")}
+        >
+          Regra da modalidade
+        </button>
       </div>
 
       {aba === "ranking" && (
@@ -68,6 +78,7 @@ export function PainelPage() {
       {aba === "submissoes" && eventoId && (
         <SubmissoesTab eventoId={eventoId} modalidades={modalidades} />
       )}
+      {aba === "regras" && <RegrasModalidadeTab />}
     </main>
   );
 }

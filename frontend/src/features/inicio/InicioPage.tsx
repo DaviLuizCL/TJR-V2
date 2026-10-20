@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 // Porta de entrada do site: o publico (professor, torcida) vai pro cronograma
-// ou confere as equipes inscritas sem senha; a equipe do evento (juiz, coordenacao) entra pelo login.
+// confere as equipes inscritas ou le as regras sem senha; a equipe do evento (juiz, coordenacao) entra pelo login.
 export function InicioPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
@@ -26,6 +26,12 @@ export function InicioPage() {
           <span>👥 Equipes inscritas</span>
           <span className="text-xs font-normal normal-case tracking-normal text-slate-500">
             Confira nível e modalidades da sua equipe
+          </span>
+        </Link>
+        <Link to="/regras" className="btn-secondary min-h-16 flex-col gap-0 text-lg">
+          <span>📘 Regras</span>
+          <span className="text-xs font-normal normal-case tracking-normal text-slate-500">
+            Manual e caderninho de cada modalidade
           </span>
         </Link>
         <Link to="/login" className="btn-secondary min-h-16 flex-col gap-0 text-lg">

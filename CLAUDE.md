@@ -1646,3 +1646,16 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
      vinculadas continua sem fazer. Na máquina local, outro projeto do usuário ocupa as portas
      5432/8000: pra testar o TJR sem mexer nele, subir com `-p tjr-teste` e um override que zera
      `ports` do `db`/`api`.
+
+   **Regras da modalidade em PDF** (20/10/2026). Dois PDFs por modalidade: `MANUAL` (manual
+   completo) e `CADERNO_ALUNO` (caderninho do aluno), tabela `regra_modalidade` (migration
+   `90d3bc1c543a`, único por modalidade+tipo). O PDF fica **no banco** (`LargeBinary`), não em
+   disco: entra no backup do `pg_dump` e sobrevive a troca de servidor. Enviar de novo troca o
+   arquivo, sem versão (regra não é dado de pontuação). Recusa o que não começa com `%PDF`
+   (`422 ARQUIVO_NAO_E_PDF`) e acima de 30 MB (`ARQUIVO_GRANDE_DEMAIS`); o nginx ganhou
+   `client_max_body_size 32m` no `/api/` (o padrão é 1 MB). Rotas: `PUT`/`DELETE
+   /modalidades/{id}/regras/{tipo}` (só `COORDENADOR`), `GET /publico/regras` e `GET
+   /publico/modalidades/{id}/regras/{tipo}` (abertos, PDF `inline` pra abrir no celular). Front:
+   aba "Regra da modalidade" no Painel (`RegrasModalidadeTab`, só coordenador envia/remove) e
+   botão "📘 Regras" na tela inicial → `/regras` (`RegrasPublicasPage`, só lista modalidade que
+   tem algum PDF). `baseUrl` passou a ser exportado de `api/client.ts` pro link direto do PDF.

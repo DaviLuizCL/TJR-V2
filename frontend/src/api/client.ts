@@ -11,7 +11,7 @@ import type { paths } from "./types";
 // query string), e um `new URL` de string relativa sem base lanca
 // `TypeError: Invalid URL` -- `location.origin` sempre resolve pra uma URL
 // absoluta valida.
-const baseUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
+export const baseUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
 
 export const api = createClient<paths>({
   baseUrl,
