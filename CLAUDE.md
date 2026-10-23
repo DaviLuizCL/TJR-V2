@@ -1659,3 +1659,14 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
    aba "Regra da modalidade" no Painel (`RegrasModalidadeTab`, só coordenador envia/remove) e
    botão "📘 Regras" na tela inicial → `/regras` (`RegrasPublicasPage`, só lista modalidade que
    tem algum PDF). `baseUrl` passou a ser exportado de `api/client.ts` pro link direto do PDF.
+
+   **ABSOLUTO virou nivel 0; Nivel 1 existe de verdade** (23/10/2026). Ate aqui o nivel 1 era
+   reaproveitado como "ABSOLUTO" (so rotulo). Com equipes reais de nivel 1 no TJR Patos, os dois
+   precisaram existir juntos: ABSOLUTO = `nivel 0` (igual a planilha oficial), 1 a 4 = Nivel 1 a 4.
+   Rotulo unico no back (`services/nivel.py::rotulo_nivel`, usado por checklist, PDF do telao e
+   relatorio) e no front (`lib/nivel.ts`). `Equipe.nivel` aceita 0..4; importacao mantem o 0 (nao
+   converte mais pra 1); seed: Sumo RC 1,5 kg e Sumo 3 kg com `niveis_aplicaveis=[0]`. Sem
+   migration (o inteiro e livre no banco). Em producao, as equipes de Corrida/Sumo RC/Sumo 3 kg
+   foram passadas pra 0 e essas modalidades pra `[0]`; os Resgates aceitam 1 a 4.
+   **Cuidado com `if nivel:`** (0 e falso): use `is not None`.
+

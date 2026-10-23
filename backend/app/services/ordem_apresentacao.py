@@ -25,6 +25,7 @@ from app.models.inscricao import Inscricao
 from app.models.modalidade import Modalidade, TipoDisputa
 from app.services.audit import registrar_audit_log
 from app.services.modalidade import obter_modalidade
+from app.services.nivel import rotulo_nivel
 
 
 def _exigir_individual(modalidade: Modalidade) -> None:
@@ -168,11 +169,6 @@ async def listar_sequencia(db: AsyncSession, modalidade_id: UUID) -> list[Sequen
     return sequencia
 
 
-def _rotulo_nivel(nivel: int) -> str:
-    # Mesmo rotulo do front (lib/nivel.ts): nivel 1 e exibido como ABSOLUTO.
-    return "ABSOLUTO" if nivel == 1 else f"Nível {nivel}"
-
-
 async def gerar_sequencia_pdf(db: AsyncSession, modalidade_id: UUID) -> bytes:
     """PDF pra projetar no telao: paisagem, letra grande, uma pagina por nivel."""
     modalidade = await obter_modalidade(db, modalidade_id)
@@ -203,7 +199,7 @@ async def gerar_sequencia_pdf(db: AsyncSession, modalidade_id: UUID) -> bytes:
         if indice > 0:
             elementos.append(PageBreak())
         elementos += [
-            Paragraph(f"{escape(modalidade.nome)} · {_rotulo_nivel(nivel.nivel)}", titulo),
+            Paragraph(f"{escape(modalidade.nome)} · {rotulo_nivel(nivel.nivel)}", titulo),
             Paragraph("Sequência de competição", subtitulo),
             Spacer(1, 0.6 * cm),
         ]

@@ -60,7 +60,7 @@ async def _cenario(db):
                 evento_id=evento.id,
                 nome=nome,
                 tipo_disputa=TipoDisputa.INDIVIDUAL,
-                niveis_aplicaveis=[1, 2, 3, 4],
+                niveis_aplicaveis=[0, 1, 2, 3, 4],
                 ficha_unica_entre_niveis=False,
                 qtd_rodadas=2,
                 consolidacao=Consolidacao.SOMA_RODADAS,
@@ -96,7 +96,9 @@ async def test_importar_cria_equipes_e_inscricoes(db_session):
     assert await _contar(db_session, Equipe) == 2
 
 
-async def test_importar_nivel_0_vira_nivel_1(db_session):
+async def test_importar_nivel_0_fica_no_absoluto(db_session):
+    # Desde 23/10/2026 o ABSOLUTO e o nivel 0 (igual a planilha oficial) e o
+    # nivel 1 e o Nivel 1 de verdade; antes o 0 virava 1.
     coordenador, evento = await _cenario(db_session)
     planilha = _xlsx([CABECALHO, ["Sumô", "0.0", "E", "M", "Absolutos"]])
 
@@ -105,7 +107,7 @@ async def test_importar_nivel_0_vira_nivel_1(db_session):
     )
 
     equipe = await db_session.scalar(select(Equipe).where(Equipe.nome == "Absolutos"))
-    assert equipe.nivel == 1
+    assert equipe.nivel == 0
 
 
 async def test_importar_em_modo_simulacao_nao_grava_nada(db_session):

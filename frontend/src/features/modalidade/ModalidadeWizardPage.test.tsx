@@ -121,11 +121,22 @@ describe("ModalidadeWizardPage - criacao", () => {
     expect((opcoes as { body: Record<string, unknown> }).body).toMatchObject({
       nome: "Sumo de Robos",
       tipo_disputa: "CONFRONTO",
-      niveis_aplicaveis: [1],
+      niveis_aplicaveis: [0],
       qtd_rodadas: 3,
       evento_id: "evt-1",
     });
     expect(navigateMock).toHaveBeenCalledWith("/eventos/evt-1/modalidades");
+  });
+
+  it("oferece ABSOLUTO e Nível 1 como niveis separados", async () => {
+    renderCriar();
+    await userEvent.type(screen.getByLabelText(/nome da modalidade/i), "Sumo de Robos");
+    await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
+    await userEvent.click(screen.getByLabelText(/^confronto$/i));
+    await userEvent.click(screen.getByRole("button", { name: /avancar/i }));
+
+    expect(screen.getByLabelText(/^absoluto$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^nível 1$/i)).toBeInTheDocument();
   });
 
   it("ao marcar ficha unica entre niveis, seleciona todos os niveis automaticamente e nao bloqueia o avanco", async () => {

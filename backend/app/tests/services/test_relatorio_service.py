@@ -324,8 +324,8 @@ def test_montar_secao_modalidade_separa_cada_nivel_em_secao_propria():
     )
 
     textos = [getattr(e, "text", None) for e in elementos]
-    indice_nivel_1 = textos.index("Nivel 1")
-    indice_nivel_2 = textos.index("Nivel 2")
+    indice_nivel_1 = textos.index("Nível 1")
+    indice_nivel_2 = textos.index("Nível 2")
     assert indice_nivel_1 < indice_nivel_2
 
     tabela_nivel_1 = elementos[indice_nivel_1 + 1]
@@ -337,6 +337,22 @@ def test_montar_secao_modalidade_separa_cada_nivel_em_secao_propria():
     linhas_nivel_2 = tabela_nivel_2._cellvalues
     assert any("Equipe Nivel 2" in str(celula) for linha in linhas_nivel_2 for celula in linha)
     assert not any("Equipe Nivel 1" in str(celula) for linha in linhas_nivel_2 for celula in linha)
+
+
+def test_montar_secao_modalidade_chama_o_nivel_0_de_absoluto():
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    modalidade = SimpleNamespace(tipo_disputa=TipoDisputa.INDIVIDUAL, formato_chaveamento=None)
+    equipe_abs = uuid.uuid4()
+    classificacao = [{"equipe_id": equipe_abs, "nota_final": 10, "posicao": 1}]
+    equipes_por_id = {equipe_abs: SimpleNamespace(nome="Equipe Absoluta", nivel=0)}
+
+    elementos = _montar_secao_modalidade(
+        getSampleStyleSheet(), modalidade, classificacao, equipes_por_id
+    )
+
+    textos = [getattr(e, "text", None) for e in elementos]
+    assert "ABSOLUTO" in textos
 
 
 # ---------- pontuacao no relatorio (nota por rodada / placar do confronto) ----------

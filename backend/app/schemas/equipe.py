@@ -8,13 +8,13 @@ from app.schemas.common import NomeObrigatorio
 
 class EquipeCreate(BaseModel):
     nome: NomeObrigatorio
-    nivel: int = Field(ge=1, le=4)
+    nivel: int = Field(ge=0, le=4)
     ativo: bool = True
 
 
 class EquipeUpdate(BaseModel):
     nome: NomeObrigatorio | None = None
-    nivel: int | None = Field(default=None, ge=1, le=4)
+    nivel: int | None = Field(default=None, ge=0, le=4)
     ativo: bool | None = None
     presente: bool | None = None
 

@@ -241,6 +241,31 @@ describe("EquipeListPage", () => {
     );
   });
 
+  it("cria uma equipe no ABSOLUTO, separado do Nível 1", async () => {
+    mockGetEquipes({ itens: [], total: 0, page: 1, size: 50 });
+    vi.mocked(api.POST).mockResolvedValue({
+      data: { id: "nova-equipe", nome: "Equipe Absoluta", nivel: 0, ativo: true },
+      error: undefined,
+    } as never);
+
+    renderPage();
+
+    await screen.findByRole("button", { name: /criar equipe/i });
+    const seletor = screen.getByLabelText(/nível da equipe/i);
+    expect(within(seletor).getByRole("option", { name: "ABSOLUTO" })).toHaveValue("0");
+    expect(within(seletor).getByRole("option", { name: "Nível 1" })).toHaveValue("1");
+    await userEvent.type(screen.getByLabelText(/nome da equipe/i), "Equipe Absoluta");
+    await userEvent.selectOptions(seletor, "0");
+    await userEvent.click(screen.getByRole("button", { name: /criar equipe/i }));
+
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith(
+        "/api/v1/equipes",
+        expect.objectContaining({ body: { nome: "Equipe Absoluta", nivel: 0, ativo: true } }),
+      ),
+    );
+  });
+
   it("formulario de criar equipe mostra so as modalidades compativeis com o nivel selecionado", async () => {
     mockGetEquipes(
       { itens: [], total: 0, page: 1, size: 50 },

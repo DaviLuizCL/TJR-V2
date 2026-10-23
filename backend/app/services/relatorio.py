@@ -23,6 +23,7 @@ from app.models.rodada import Rodada
 from app.services.consolidacao import calcular_classificacao
 from app.services.evento import obter_evento
 from app.services.modalidade import obter_modalidade
+from app.services.nivel import rotulo_nivel
 
 _FUSO_FORTALEZA = ZoneInfo("America/Fortaleza")
 
@@ -215,7 +216,7 @@ def _montar_secao_modalidade(
     for nivel in sorted(grupos_por_nivel, key=lambda n: (n is None, n)):
         elementos.append(
             Paragraph(
-                f"Nivel {nivel}" if nivel is not None else "Nivel nao identificado",
+                rotulo_nivel(nivel) if nivel is not None else "Nivel nao identificado",
                 estilos["Heading3"],
             )
         )

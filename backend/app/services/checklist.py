@@ -19,15 +19,11 @@ from app.models.partida import Partida
 from app.models.rodada import Rodada
 from app.models.usuario import Papel, Usuario
 from app.schemas.checklist import ChecklistItem, ChecklistModalidade, ChecklistOut
-
-
-def _rotulo_nivel(nivel: int) -> str:
-    # Mesmo rotulo do front (lib/nivel.ts): nivel 1 e exibido como ABSOLUTO.
-    return "ABSOLUTO" if nivel == 1 else f"Nível {nivel}"
+from app.services.nivel import rotulo_nivel
 
 
 def _lista_niveis(niveis) -> str:
-    return ", ".join(_rotulo_nivel(n) for n in sorted(niveis))
+    return ", ".join(rotulo_nivel(n) for n in sorted(niveis))
 
 
 def _plural(qtd: int, singular: str, plural: str) -> str:

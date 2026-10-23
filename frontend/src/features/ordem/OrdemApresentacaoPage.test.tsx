@@ -84,7 +84,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     expect(nomesDaSecao(nivel1)).toEqual(["Gama", "Alfa", "Beta"]);
     expect(screen.getByRole("region", { name: /n[ií]vel 2/i })).toBeInTheDocument();
   });
@@ -94,7 +94,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     expect(within(nivel1).getByText(/ordem ainda n[aã]o foi sorteada/i)).toBeInTheDocument();
   });
 
@@ -103,7 +103,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     await userEvent.click(within(nivel1).getByRole("button", { name: /sortear ordem/i }));
 
     expect(api.POST).toHaveBeenCalledWith(
@@ -120,7 +120,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     await userEvent.click(within(nivel1).getByRole("button", { name: /sortear de novo/i }));
     expect(api.POST).not.toHaveBeenCalled();
 
@@ -133,7 +133,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     await userEvent.click(within(nivel1).getByRole("button", { name: /subir beta/i }));
 
     expect(api.PUT).toHaveBeenCalledWith(
@@ -149,7 +149,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     await userEvent.click(within(nivel1).getByRole("button", { name: /descer alfa/i }));
 
     expect(api.PUT).toHaveBeenCalledWith(
@@ -165,7 +165,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     expect(within(nivel1).getByRole("button", { name: /subir alfa/i })).toBeDisabled();
     expect(within(nivel1).getByRole("button", { name: /descer gama/i })).toBeDisabled();
   });
@@ -185,7 +185,7 @@ describe("OrdemApresentacaoPage", () => {
     URL.revokeObjectURL = vi.fn();
     mockGet({ "eq-a": 1, "eq-b": 2, "eq-c": 3 });
     renderPage();
-    await screen.findByRole("region", { name: /absoluto/i });
+    await screen.findByRole("region", { name: /n[ií]vel 1/i });
     vi.mocked(api.GET).mockResolvedValueOnce({ data: new Blob(["%PDF"]), error: undefined } as never);
 
     await userEvent.click(screen.getByRole("button", { name: /pdf pro tel[aã]o/i }));
@@ -212,7 +212,7 @@ describe("OrdemApresentacaoPage", () => {
 
     renderPage();
 
-    const nivel1 = await screen.findByRole("region", { name: /absoluto/i });
+    const nivel1 = await screen.findByRole("region", { name: /n[ií]vel 1/i });
     expect(nomesDaSecao(nivel1)).toEqual(["Alfa", "Beta", "Gama"]);
     expect(within(nivel1).queryByRole("button")).not.toBeInTheDocument();
   });

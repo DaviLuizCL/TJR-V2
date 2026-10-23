@@ -66,7 +66,7 @@ function LinhaLancamento({
         <div>
           <p className="text-lg font-semibold text-slate-800">{lancamento.equipe_nome}</p>
           <p className="text-sm text-slate-500">
-            {lancamento.nivel ? `${rotuloNivel(lancamento.nivel)} · ` : ""}
+            {lancamento.nivel != null ? `${rotuloNivel(lancamento.nivel)} · ` : ""}
             Rodada {lancamento.rodada_numero} · Tentativa {lancamento.tentativa} · por{" "}
             {lancamento.responsavel_nome}
           </p>

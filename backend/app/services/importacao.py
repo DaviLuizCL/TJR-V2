@@ -6,8 +6,8 @@ chama este servico.
 
 Le a planilha so com biblioteca padrao (zipfile + xml.etree, sem dependencia
 nova). Colunas usadas: A = DESAFIO, B = NIVEL, E = nome da EQUIPE. Mapeia o
-DESAFIO pro nome real da modalidade (MAPA_MODALIDADE); nivel 0 da planilha vira
-nivel 1 (ABSOLUTO); ignora a linha de teste ("... NAO CONSIDERAR") e desafio
+DESAFIO pro nome real da modalidade (MAPA_MODALIDADE); nivel 0 da planilha e o
+ABSOLUTO; ignora a linha de teste ("... NAO CONSIDERAR") e desafio
 sem modalidade no sistema (ex.: "Registro Multimidiatico").
 
 Equipe com o MESMO nome no MESMO nivel e reaproveitada entre modalidades; com o
@@ -144,11 +144,10 @@ async def _importar_linhas(
 
         try:
             # A planilha pode salvar o nivel como float ("2.0"); int() direto falha.
-            nivel_planilha = int(float(nivel_bruto))
+            nivel_sistema = int(float(nivel_bruto))
         except ValueError:
             erros.append(f"Linha {numero_linha}: nivel invalido '{nivel_bruto}'.")
             continue
-        nivel_sistema = 1 if nivel_planilha == 0 else nivel_planilha
 
         equipe = await db.scalar(
             select(Equipe).where(Equipe.nome == nome_equipe, Equipe.nivel == nivel_sistema)

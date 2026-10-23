@@ -795,15 +795,15 @@ async def test_seed_modalidades_sumo_rc_e_sumo_3kg_tem_as_mesmas_regras_do_sumo(
 
 
 async def test_seed_modalidades_sumo_rc_e_sumo_3kg_sao_so_nivel_absoluto(db_session):
-    # Nivel 1 e reaproveitado como "ABSOLUTO" (rotulo so no front) -- essas
-    # 2 modalidades so tem equipe nivel 0/ABSOLUTO na planilha real, entao
-    # niveis_aplicaveis fica restrito a [1] em vez do [1,2,3,4] padrao.
+    # ABSOLUTO e o nivel 0 (desde 23/10/2026; antes reaproveitava o 1) --
+    # essas 2 modalidades so tem equipe ABSOLUTO, entao niveis_aplicaveis
+    # fica restrito a [0].
     evento = await seed_evento(db_session)
     modalidades = await seed_modalidades(db_session, evento)
 
     por_nome = {m.nome: m for m in modalidades}
-    assert por_nome["Sumô RC 1,5 kg"].niveis_aplicaveis == [1]
-    assert por_nome["Sumô 3 kg"].niveis_aplicaveis == [1]
+    assert por_nome["Sumô RC 1,5 kg"].niveis_aplicaveis == [0]
+    assert por_nome["Sumô 3 kg"].niveis_aplicaveis == [0]
     assert por_nome["Sumô"].niveis_aplicaveis == [1, 2, 3, 4]
 
 

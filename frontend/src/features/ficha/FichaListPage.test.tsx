@@ -58,7 +58,7 @@ describe("FichaListPage", () => {
           data: {
             id: "mod-1",
             nome: "Sumo de Robos",
-            niveis_aplicaveis: [1, 2],
+            niveis_aplicaveis: [0, 2],
             ficha_unica_entre_niveis: false,
           },
           error: undefined,

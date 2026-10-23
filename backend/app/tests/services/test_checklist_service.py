@@ -193,6 +193,18 @@ async def test_ordem_pendente_aponta_nivel_sem_sorteio(db_session):
     assert "ABSOLUTO" not in item.mensagem
 
 
+async def test_ordem_pendente_distingue_absoluto_de_nivel_1(db_session):
+    evento = await _evento(db_session)
+    modalidade = await _modalidade(db_session, evento)
+    await _inscrever(db_session, modalidade, "A", nivel=0, ordem=None)
+    await _inscrever(db_session, modalidade, "B", nivel=1, ordem=None)
+
+    item = _item(await _secao_da(db_session, evento, modalidade), "ORDEM")
+
+    assert "ABSOLUTO" in item.mensagem
+    assert "Nível 1" in item.mensagem
+
+
 async def test_ordem_ok_quando_todo_nivel_foi_sorteado(db_session):
     evento = await _evento(db_session)
     modalidade = await _modalidade(db_session, evento)

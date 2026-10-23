@@ -221,8 +221,8 @@ describe("RankingPage", () => {
             modalidade_nome: "Resgate",
             ranking_liberado: true,
             itens: [
-              { equipe_id: "eq-1", equipe_nome: "N1 Primeiro", equipe_nivel: 1, nota_final: 50, posicao: 1 },
-              { equipe_id: "eq-2", equipe_nome: "N1 Segundo", equipe_nivel: 1, nota_final: 30, posicao: 2 },
+              { equipe_id: "eq-1", equipe_nome: "N1 Primeiro", equipe_nivel: 0, nota_final: 50, posicao: 1 },
+              { equipe_id: "eq-2", equipe_nome: "N1 Segundo", equipe_nivel: 0, nota_final: 30, posicao: 2 },
               { equipe_id: "eq-3", equipe_nome: "N2 Primeiro", equipe_nivel: 2, nota_final: 1000, posicao: 1 },
             ],
           },

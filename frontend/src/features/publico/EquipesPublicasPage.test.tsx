@@ -12,7 +12,7 @@ vi.mock("../../api/client", () => ({
 }));
 
 const EQUIPES = [
-  { nome: "Alfa", nivel: 1, modalidades: ["Corrida de Carros Autônomos"] },
+  { nome: "Alfa", nivel: 0, modalidades: ["Corrida de Carros Autônomos"] },
   { nome: "Hefesto Tech", nivel: 3, modalidades: ["Cabo de Guerra", "Dança", "Sumô"] },
   { nome: "Sem Nada", nivel: 3, modalidades: [] },
 ];
@@ -59,7 +59,7 @@ describe("EquipesPublicasPage", () => {
     expect(within(cartao).getByText("3 modalidades")).toBeInTheDocument();
   });
 
-  it("separa as equipes por nivel, com nivel 1 como ABSOLUTO", async () => {
+  it("separa as equipes por nivel, com nivel 0 como ABSOLUTO", async () => {
     renderPage();
 
     const absoluto = await screen.findByRole("region", { name: /absoluto/i });

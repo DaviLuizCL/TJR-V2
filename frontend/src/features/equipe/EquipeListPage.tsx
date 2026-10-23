@@ -10,11 +10,11 @@ import { Aviso } from "../../components/Aviso";
 import { useAuthStore } from "../../lib/auth-store";
 import { rotuloNivel } from "../../lib/nivel";
 
-const NIVEIS = [1, 2, 3, 4] as const;
+const NIVEIS = [0, 1, 2, 3, 4] as const;
 
 const schema = z.object({
   nome: z.string().trim().min(1, "Informe o nome da equipe"),
-  nivel: z.coerce.number().int().min(1).max(4),
+  nivel: z.coerce.number().int().min(0).max(4),
   modalidadeIds: z.array(z.string()).default([]),
 });
 

@@ -213,7 +213,7 @@ function EtapaNiveis({ form }: { form: UseFormReturn<FormData> }) {
                 Niveis aplicaveis
               </legend>
               <div className="flex gap-4">
-                {[1, 2, 3, 4].map((nivel) => (
+                {[0, 1, 2, 3, 4].map((nivel) => (
                   <label key={nivel} className="inline-flex items-center gap-2">
                     <input
                       type="checkbox"

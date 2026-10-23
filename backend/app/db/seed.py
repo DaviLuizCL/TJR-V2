@@ -50,15 +50,14 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         # Mesmas regras do Sumô normal (mesmo formato, mesma ficha) -- a
         # diferenca e so a categoria do robo (controlado por radio em vez de
         # autonomo), que nao afeta nenhuma regra de pontuacao/chaveamento. So
-        # tem equipe nivel 0/ABSOLUTO na planilha real (niveis_aplicaveis=[1],
-        # nivel 1 e o rotulo "ABSOLUTO" no front -- ver lib/nivel.ts).
+        # tem equipe ABSOLUTO (nivel 0) na planilha real.
         nome="Sumô RC 1,5 kg",
         tipo_disputa=TipoDisputa.CONFRONTO,
         qtd_rodadas=5,
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.SOMA_RODADAS,
         decisao_partida=DecisaoPartida.SOMA_PONTOS,
-        niveis_aplicaveis=[1],
+        niveis_aplicaveis=[0],
     ),
     dict(
         # Mesma regra do Sumô normal, so muda a categoria de peso do robo
@@ -70,7 +69,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         tentativas_por_rodada=2,
         consolidacao=Consolidacao.SOMA_RODADAS,
         decisao_partida=DecisaoPartida.SOMA_PONTOS,
-        niveis_aplicaveis=[1],
+        niveis_aplicaveis=[0],
     ),
     dict(
         nome="Cabo de Guerra",
@@ -97,7 +96,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         pausa_entre_rodadas_seg=60,
     ),
     dict(
-        # Sem equipe nivel 1/ABSOLUTO na planilha real pra essas duas -- so
+        # Sem equipe ABSOLUTO/nivel 1 na planilha de 2026 pra essas duas -- so
         # niveis 2, 3 e 4, que e exatamente onde as arenas dedicadas por
         # nivel existem (ver seed_arenas/_MODALIDADES_ARENA_POR_NIVEL).
         nome="Resgate no Plano",

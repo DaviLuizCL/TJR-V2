@@ -101,6 +101,27 @@ function linha(nomeEquipe: string): HTMLElement {
 }
 
 describe("CorrigirPontuacaoPage", () => {
+  it("mostra ABSOLUTO pra nota de equipe do nivel 0", async () => {
+    vi.mocked(api.GET).mockImplementation(async (path: string) => {
+      if (path === "/api/v1/modalidades") {
+        return {
+          data: { itens: [{ id: "mod-1", nome: "Dança" }], total: 1, page: 1, size: 100 },
+        } as never;
+      }
+      if (path === "/api/v1/lancamentos/auditoria") {
+        return {
+          data: { itens: [{ ...LANCAMENTOS[0], nivel: 0 }], total: 1, page: 1, size: 200 },
+        } as never;
+      }
+      return { data: undefined } as never;
+    });
+    renderPage();
+    await escolherModalidade();
+
+    await screen.findByText("Robotech");
+    expect(within(linha("Robotech")).getByText(/ABSOLUTO ·/)).toBeInTheDocument();
+  });
+
   it("lista as notas lancadas da modalidade escolhida", async () => {
     renderPage();
     await escolherModalidade();

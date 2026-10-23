@@ -58,6 +58,23 @@ async def test_criar_equipe_com_nivel_invalido_retorna_422(client, db_session):
     assert resposta.status_code == 422
 
 
+async def test_criar_equipe_no_absoluto_nivel_0_retorna_201(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-equipes-abs@tjr.app")
+
+    resposta = await client.post("/api/v1/equipes", json=_payload(nivel=0), headers=headers)
+
+    assert resposta.status_code == 201
+    assert resposta.json()["nivel"] == 0
+
+
+async def test_criar_equipe_com_nivel_negativo_retorna_422(client, db_session):
+    headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-equipes-neg@tjr.app")
+
+    resposta = await client.post("/api/v1/equipes", json=_payload(nivel=-1), headers=headers)
+
+    assert resposta.status_code == 422
+
+
 async def test_listar_equipes_filtra_por_nivel(client, db_session):
     headers = await _auth_header(client, db_session, Papel.COORDENADOR, "coord-equipes-3@tjr.app")
     await client.post("/api/v1/equipes", json=_payload(nome="E1", nivel=1), headers=headers)
