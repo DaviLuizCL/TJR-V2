@@ -51,7 +51,7 @@ MODALIDADES_TJR: tuple[dict, ...] = (
         # diferenca e so a categoria do robo (controlado por radio em vez de
         # autonomo), que nao afeta nenhuma regra de pontuacao/chaveamento. So
         # tem equipe ABSOLUTO (nivel 0) na planilha real.
-        nome="Sumô RC 1,5 kg",
+        nome="Sumô Controlado",
         tipo_disputa=TipoDisputa.CONFRONTO,
         qtd_rodadas=5,
         tentativas_por_rodada=2,
@@ -531,7 +531,7 @@ def _ficha_viagem(*, inclui_reinicio: bool) -> tuple[tuple[str, tuple[dict, ...]
 
 FICHAS_TJR: dict[str, tuple[tuple[str, tuple[dict, ...]], ...]] = {
     "Sumô": _FICHA_SUMO,
-    "Sumô RC 1,5 kg": _FICHA_SUMO,
+    "Sumô Controlado": _FICHA_SUMO,
     "Sumô 3 kg": _FICHA_SUMO,
     "Cabo de Guerra": _FICHA_CABO_DE_GUERRA,
     "Corrida de Carros Autônomos": _FICHA_CORRIDA_DE_CARROS,

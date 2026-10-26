@@ -37,6 +37,12 @@ function cartoes(
           destino: `${evento}/admin/corrigir`,
         },
         {
+          icone: "🥊",
+          titulo: "Montar confrontos",
+          descricao: "Escolhe quem enfrenta quem nas modalidades de combate, rodada por rodada.",
+          destino: `${evento}/admin/montar-confrontos`,
+        },
+        {
           icone: "🔢",
           titulo: "Sequência de competição",
           descricao: "Sorteia a ordem das equipes (individuais) e gera o PDF pro telão.",

@@ -1,5 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { type DragEvent, useState } from "react";
 
 import { api, extrairErro } from "../../api/client";
 import { Aviso } from "../../components/Aviso";
@@ -37,9 +37,13 @@ interface PartidaItem {
 export function ChaveamentoManualBuilder({
   modalidadeId,
   onFechar,
+  comoPagina = false,
 }: {
   modalidadeId: string;
-  onFechar: () => void;
+  onFechar?: () => void;
+  // true = conteudo direto na pagina (cartao da Administracao); false = janela
+  // por cima da tela de Rodadas.
+  comoPagina?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [nivelSelecionado, setNivelSelecionado] = useState<number | "">("");
@@ -50,6 +54,8 @@ export function ChaveamentoManualBuilder({
   const [formato, setFormato] = useState<Formato>("MATA_MATA");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [arrastandoId, setArrastandoId] = useState<string | null>(null);
+  const [slotSobre, setSlotSobre] = useState<"A" | "B" | null>(null);
 
   const { data: equipes } = useQuery({
     queryKey: ["equipes", "chaveamento-manual-builder"],
@@ -122,6 +128,78 @@ export function ChaveamentoManualBuilder({
   );
   const aceitaBye = formato === "MATA_MATA";
 
+  // Toque na A, toque na B: tocar numa escolhida desmarca; com as duas ja
+  // escolhidas, o toque troca a B.
+  function tocarEquipe(id: string) {
+    if (id === equipeAId) {
+      setEquipeAId(equipeBId === BYE ? "" : equipeBId);
+      if (equipeBId === BYE) return;
+      setEquipeBId("");
+      return;
+    }
+    if (id === equipeBId) {
+      setEquipeBId("");
+      return;
+    }
+    if (!equipeAId) setEquipeAId(id);
+    else setEquipeBId(id);
+  }
+
+  function tocarBye() {
+    if (equipeBId === BYE) setEquipeBId("");
+    else if (equipeAId) setEquipeBId(BYE);
+  }
+
+  // Arrastar o nome pro quadro A ou B (o toque continua valendo). Soltar num
+  // quadro ocupado troca a equipe dele; se a equipe estava no outro lado,
+  // ela sai de la pra nao repetir.
+  function soltarNoLado(lado: "A" | "B") {
+    const id = arrastandoId;
+    setArrastandoId(null);
+    setSlotSobre(null);
+    if (!id) return;
+    if (lado === "A") {
+      if (id === BYE) return;
+      if (equipeBId === id) setEquipeBId("");
+      setEquipeAId(id);
+    } else {
+      if (equipeAId === id) setEquipeAId("");
+      setEquipeBId(id);
+    }
+  }
+
+  function propsArrastavel(id: string) {
+    return {
+      draggable: true,
+      onDragStart: (evento: DragEvent) => {
+        evento.dataTransfer?.setData("text/plain", id);
+        setArrastandoId(id);
+      },
+      onDragEnd: () => {
+        setArrastandoId(null);
+        setSlotSobre(null);
+      },
+    };
+  }
+
+  function propsSlot(lado: "A" | "B") {
+    return {
+      "data-testid": lado === "A" ? "slot-a" : "slot-b",
+      onDragOver: (evento: DragEvent) => {
+        evento.preventDefault();
+        setSlotSobre(lado);
+      },
+      onDragLeave: () => setSlotSobre(null),
+      onDrop: (evento: DragEvent) => {
+        evento.preventDefault();
+        soltarNoLado(lado);
+      },
+      className: `rounded border-2 border-dashed px-3 py-3 ${
+        slotSobre === lado ? "border-neon bg-neon-soft" : "border-slate-300"
+      }`,
+    };
+  }
+
   async function invalidar() {
     await queryClient.invalidateQueries({ queryKey: ["rodadas", "chaveamento-manual-builder"] });
     await queryClient.invalidateQueries({ queryKey: ["partidas", "chaveamento-manual-builder"] });
@@ -154,41 +232,41 @@ export function ChaveamentoManualBuilder({
     await invalidar();
   }
 
-  return (
-    <div
-      role="dialog"
-      aria-label="Montar chaveamento manual"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-    >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="mb-1 text-lg font-semibold text-slate-800">Montar chaveamento manual</h2>
+  const conteudo = (
+      <>
+        {!comoPagina && (
+          <h2 className="mb-1 text-lg font-semibold text-slate-800">Montar chaveamento manual</h2>
+        )}
         <p className="mb-4 text-sm text-slate-500">
           Escolha a rodada, o tipo e as duas equipes e salve — o confronto já vira um card pro
           árbitro pontuar. O sistema não gera nem avança chaveamento sozinho: semifinal e final
           também são montadas aqui.
         </p>
 
-        {niveis.length > 1 && (
+        {niveis.length > 0 && (
           <div className="mb-4">
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="nivel-manual">
-              Nível
-            </label>
-            <select
-              id="nivel-manual"
-              value={nivelAtivo}
-              onChange={(e) => {
-                setNivelSelecionado(Number(e.target.value));
-                setEquipeAId("");
-                setEquipeBId("");
-              }}
-              className="w-full rounded border border-slate-300 px-3 py-2"
-            >
+            <p className="mb-1 text-sm font-medium text-slate-700">Nível</p>
+            <div role="group" aria-label="Nível" className="flex flex-wrap gap-2">
               {niveis.map((n) => (
-                <option key={n} value={n}>
+                <button
+                  key={n}
+                  type="button"
+                  aria-pressed={n === nivelAtivo}
+                  onClick={() => {
+                    setNivelSelecionado(n);
+                    setEquipeAId("");
+                    setEquipeBId("");
+                  }}
+                  className={`min-h-12 rounded border px-4 text-sm font-semibold ${
+                    n === nivelAtivo
+                      ? "border-neon bg-neon-soft text-slate-900"
+                      : "border-slate-300 text-slate-700"
+                  }`}
+                >
                   {rotuloNivel(n)}
-                </option>
+                </button>
               ))}
-            </select>
+            </div>
           </div>
         )}
 
@@ -230,46 +308,66 @@ export function ChaveamentoManualBuilder({
           </div>
         </div>
 
-        <div className="mb-4 flex gap-3">
-          <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="equipe-a-manual">
-              Equipe A
-            </label>
-            <select
-              id="equipe-a-manual"
-              value={equipeAId}
-              onChange={(e) => setEquipeAId(e.target.value)}
-              className="w-full rounded border border-slate-300 px-3 py-2"
-            >
-              <option value="">Selecione</option>
-              {elegiveis.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nome}
-                </option>
-              ))}
-            </select>
+        <div className="mb-3 grid grid-cols-2 gap-3 text-sm">
+          <div {...propsSlot("A")}>
+            <span className="block text-xs uppercase tracking-wide text-slate-500">Equipe A</span>
+            <span data-testid="lado-a" className="font-semibold text-slate-800">
+              {equipePorId.get(equipeAId)?.nome ?? "—"}
+            </span>
           </div>
-          <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="equipe-b-manual">
-              Equipe B
-            </label>
-            <select
-              id="equipe-b-manual"
-              value={equipeBId}
-              onChange={(e) => setEquipeBId(e.target.value)}
-              className="w-full rounded border border-slate-300 px-3 py-2"
-            >
-              <option value="">Selecione</option>
-              {aceitaBye && <option value={BYE}>— Bye (sem adversário) —</option>}
-              {elegiveis
-                .filter((e) => e.id !== equipeAId)
-                .map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nome}
-                  </option>
-                ))}
-            </select>
+          <div {...propsSlot("B")}>
+            <span className="block text-xs uppercase tracking-wide text-slate-500">Equipe B</span>
+            <span data-testid="lado-b" className="font-semibold text-slate-800">
+              {equipeBId === BYE ? "Bye (sem adversário)" : (equipePorId.get(equipeBId)?.nome ?? "—")}
+            </span>
           </div>
+        </div>
+
+        <p className="mb-2 text-sm font-medium text-slate-700">
+          Toque nas duas equipes do confronto (ou arraste o nome pro quadro A ou B)
+        </p>
+        <div role="group" aria-label="Equipes disponíveis" className="mb-4 flex flex-wrap gap-2">
+          {elegiveis.map((e) => {
+            const lado = e.id === equipeAId ? "A" : e.id === equipeBId ? "B" : null;
+            return (
+              <button
+                key={e.id}
+                type="button"
+                {...propsArrastavel(e.id)}
+                aria-pressed={lado !== null}
+                onClick={() => tocarEquipe(e.id)}
+                className={`min-h-12 rounded border px-3 text-sm font-medium ${
+                  lado
+                    ? "border-neon bg-neon-soft text-slate-900"
+                    : "border-slate-300 text-slate-700"
+                }`}
+              >
+                {e.nome}
+                {lado && <span className="ml-2 chip">{lado}</span>}
+              </button>
+            );
+          })}
+          {aceitaBye && (
+            <button
+              type="button"
+              {...propsArrastavel(BYE)}
+              aria-pressed={equipeBId === BYE}
+              onClick={tocarBye}
+              disabled={!equipeAId}
+              className={`min-h-12 rounded border border-dashed px-3 text-sm font-medium disabled:opacity-40 ${
+                equipeBId === BYE
+                  ? "border-neon bg-neon-soft text-slate-900"
+                  : "border-slate-300 text-slate-500"
+              }`}
+            >
+              Bye (sem adversário)
+            </button>
+          )}
+          {elegiveis.length === 0 && (
+            <p className="text-sm text-slate-500">
+              Todas as equipes deste nível já têm confronto nesta rodada.
+            </p>
+          )}
         </div>
 
         {erro && <Aviso tipo="erro" className="mb-4">{erro}</Aviso>}
@@ -298,15 +396,30 @@ export function ChaveamentoManualBuilder({
           )}
         </ul>
 
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onFechar}
-            className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-          >
-            Fechar
-          </button>
-        </div>
+        {onFechar && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onFechar}
+              className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+            >
+              Fechar
+            </button>
+          </div>
+        )}
+      </>
+  );
+
+  if (comoPagina) return <section>{conteudo}</section>;
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Montar chaveamento manual"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+        {conteudo}
       </div>
     </div>
   );

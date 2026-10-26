@@ -786,12 +786,23 @@ async def test_seed_modalidades_sumo_rc_e_sumo_3kg_tem_as_mesmas_regras_do_sumo(
     por_nome = {m.nome: m for m in modalidades}
     sumo = por_nome["Sumô"]
 
-    for nome in ("Sumô RC 1,5 kg", "Sumô 3 kg"):
+    for nome in ("Sumô Controlado", "Sumô 3 kg"):
         outro = por_nome[nome]
         assert outro.tipo_disputa == sumo.tipo_disputa == TipoDisputa.CONFRONTO
         assert outro.formato_chaveamento == sumo.formato_chaveamento is None
         assert outro.tentativas_por_rodada == sumo.tentativas_por_rodada == 2
         assert outro.decisao_partida == sumo.decisao_partida == DecisaoPartida.SOMA_PONTOS
+
+
+async def test_seed_modalidades_nao_tem_mais_o_nome_sumo_rc(db_session):
+    # Renomeado pra "Sumô Controlado" em 26/10/2026: "Sumô RC 1,5 kg" e "Sumô"
+    # confundiam (o 1,5 kg parecia o peso do Sumô autonomo).
+    evento = await seed_evento(db_session)
+    modalidades = await seed_modalidades(db_session, evento)
+
+    nomes = {m.nome for m in modalidades}
+    assert "Sumô RC 1,5 kg" not in nomes
+    assert "Sumô Controlado" in nomes
 
 
 async def test_seed_modalidades_sumo_rc_e_sumo_3kg_sao_so_nivel_absoluto(db_session):
@@ -802,7 +813,7 @@ async def test_seed_modalidades_sumo_rc_e_sumo_3kg_sao_so_nivel_absoluto(db_sess
     modalidades = await seed_modalidades(db_session, evento)
 
     por_nome = {m.nome: m for m in modalidades}
-    assert por_nome["Sumô RC 1,5 kg"].niveis_aplicaveis == [0]
+    assert por_nome["Sumô Controlado"].niveis_aplicaveis == [0]
     assert por_nome["Sumô 3 kg"].niveis_aplicaveis == [0]
     assert por_nome["Sumô"].niveis_aplicaveis == [1, 2, 3, 4]
 
@@ -812,7 +823,7 @@ async def test_seed_fichas_sumo_rc_e_sumo_3kg_tem_criterio_escala_resultado_do_c
     modalidades = await seed_modalidades(db_session, evento)
     await seed_fichas(db_session, modalidades)
 
-    for nome in ("Sumô RC 1,5 kg", "Sumô 3 kg"):
+    for nome in ("Sumô Controlado", "Sumô 3 kg"):
         criterio = await _criterio_unico_da_modalidade(db_session, modalidades, nome)
         assert criterio.nome == "Resultado do combate"
         assert criterio.tipo == CriterioTipo.ESCALA

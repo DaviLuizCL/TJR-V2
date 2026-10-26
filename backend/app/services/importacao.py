@@ -42,7 +42,7 @@ MAPA_MODALIDADE = {
     "Resgate no Plano": "Resgate no Plano",
     "Viagem ao Centro da Terra": "Viagem ao Centro da Terra",
     "Dança de Robôs": "Dança",
-    "Sumô RC 1,5 kg": "Sumô RC 1,5 kg",
+    "Sumô RC 1,5 kg": "Sumô Controlado",
     "Sumô": "Sumô",
     "Sumô 3 kg": "Sumô 3 kg",
     "Cabo de Guerra": "Cabo de Guerra",

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,13 +11,27 @@ vi.mock("../../api/client", () => ({
   extrairErro: () => ({ codigo: "ERRO_DESCONHECIDO", mensagem: "Ocorreu um erro inesperado." }),
 }));
 
-function renderBuilder(onFechar = vi.fn()) {
+function renderBuilder(onFechar = vi.fn(), comoPagina = false) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <ChaveamentoManualBuilder modalidadeId="mod-1" onFechar={onFechar} />
+      <ChaveamentoManualBuilder
+        modalidadeId="mod-1"
+        onFechar={comoPagina ? undefined : onFechar}
+        comoPagina={comoPagina}
+      />
     </QueryClientProvider>,
   );
+}
+
+// Equipes viraram botoes (toque na A, toque na B): a lista suspensa nativa
+// fechava sozinha dentro da janela com rolagem.
+function grupoEquipes() {
+  return screen.getByRole("group", { name: /equipes disponíveis/i });
+}
+
+function botaoEquipe(nome: string) {
+  return within(grupoEquipes()).queryByRole("button", { name: new RegExp(`^${nome}`) });
 }
 
 function mockDados(partidasExistentes: Record<string, unknown>[] = []) {
@@ -83,10 +97,13 @@ beforeEach(() => {
 });
 
 async function escolherEquipes(a: string, b: string) {
-  const selectA = screen.getByLabelText(/equipe a/i);
-  await within(selectA).findByText("Equipe A");
-  await userEvent.selectOptions(selectA, a);
-  await userEvent.selectOptions(screen.getByLabelText(/equipe b/i), b);
+  await within(grupoEquipes()).findByRole("button", { name: new RegExp(`^${a}`) });
+  await userEvent.click(botaoEquipe(a)!);
+  if (b === "BYE") {
+    await userEvent.click(screen.getByRole("button", { name: /bye/i }));
+  } else {
+    await userEvent.click(botaoEquipe(b)!);
+  }
 }
 
 const PARTIDA_A_X_B_RODADA_1 = {
@@ -99,26 +116,44 @@ const PARTIDA_A_X_B_RODADA_1 = {
 };
 
 describe("ChaveamentoManualBuilder", () => {
-  it("mostra as equipes elegiveis do nivel selecionado nos dois seletores", async () => {
+  it("mostra as equipes elegiveis do nivel selecionado como botoes", async () => {
     mockDados();
     renderBuilder();
 
-    const selectA = screen.getByLabelText(/equipe a/i);
-    await within(selectA).findByText("Equipe A");
-    expect(within(selectA).getByText("Equipe B")).toBeInTheDocument();
-    expect(within(selectA).queryByText("Equipe D")).not.toBeInTheDocument();
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe A/ });
+    expect(botaoEquipe("Equipe B")).toBeInTheDocument();
+    expect(botaoEquipe("Equipe D")).not.toBeInTheDocument();
   });
 
   it("equipe marcada como ausente nao aparece nas opcoes", async () => {
     mockDados();
     renderBuilder();
 
-    const selectA = screen.getByLabelText(/equipe a/i);
-    await within(selectA).findByText("Equipe A");
-    expect(within(selectA).queryByText("Equipe Ausente")).not.toBeInTheDocument();
-    expect(
-      within(screen.getByLabelText(/equipe b/i)).queryByText("Equipe Ausente"),
-    ).not.toBeInTheDocument();
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe A/ });
+    expect(botaoEquipe("Equipe Ausente")).not.toBeInTheDocument();
+  });
+
+  it("primeiro toque vira a equipe A, segundo vira a equipe B", async () => {
+    mockDados();
+    renderBuilder();
+
+    await escolherEquipes("Equipe C", "Equipe A");
+
+    expect(screen.getByTestId("lado-a")).toHaveTextContent("Equipe C");
+    expect(screen.getByTestId("lado-b")).toHaveTextContent("Equipe A");
+    expect(botaoEquipe("Equipe C")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("tocar de novo numa equipe escolhida desmarca", async () => {
+    mockDados();
+    renderBuilder();
+
+    await escolherEquipes("Equipe A", "Equipe B");
+    await userEvent.click(botaoEquipe("Equipe A")!);
+
+    expect(screen.getByTestId("lado-a")).not.toHaveTextContent("Equipe A");
+    expect(botaoEquipe("Equipe A")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /salvar confronto/i })).toBeDisabled();
   });
 
   it("comeca na ultima rodada que ja existe", async () => {
@@ -128,16 +163,13 @@ describe("ChaveamentoManualBuilder", () => {
     await waitFor(() => expect(screen.getByLabelText(/^rodada$/i)).toHaveValue(1));
   });
 
-  it("equipe que ja tem partida na rodada escolhida some dos seletores e aparece na lista", async () => {
+  it("equipe que ja tem partida na rodada escolhida some das opcoes e aparece na lista", async () => {
     mockDados([PARTIDA_A_X_B_RODADA_1]);
     renderBuilder();
 
-    const selectA = screen.getByLabelText(/equipe a/i);
-    await within(selectA).findByText("Equipe C");
-    await waitFor(() =>
-      expect(within(selectA).queryByText("Equipe A")).not.toBeInTheDocument(),
-    );
-    expect(within(selectA).queryByText("Equipe B")).not.toBeInTheDocument();
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe C/ });
+    await waitFor(() => expect(botaoEquipe("Equipe A")).not.toBeInTheDocument());
+    expect(botaoEquipe("Equipe B")).not.toBeInTheDocument();
     expect(await screen.findByText(/equipe a.*x.*equipe b/i)).toBeInTheDocument();
   });
 
@@ -150,9 +182,8 @@ describe("ChaveamentoManualBuilder", () => {
     await userEvent.clear(rodada);
     await userEvent.type(rodada, "2");
 
-    const selectA = screen.getByLabelText(/equipe a/i);
-    await within(selectA).findByText("Equipe A");
-    expect(within(selectA).getByText("Equipe B")).toBeInTheDocument();
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe A/ });
+    expect(botaoEquipe("Equipe B")).toBeInTheDocument();
     expect(screen.queryByText(/equipe a.*x.*equipe b/i)).not.toBeInTheDocument();
   });
 
@@ -161,7 +192,7 @@ describe("ChaveamentoManualBuilder", () => {
     vi.mocked(api.POST).mockResolvedValue({ data: { id: "p-nova" }, error: undefined } as never);
     renderBuilder();
 
-    await escolherEquipes("eq-a", "eq-b");
+    await escolherEquipes("Equipe A", "Equipe B");
     await userEvent.selectOptions(screen.getByLabelText(/^tipo$/i), "MATA_MATA");
     await userEvent.click(screen.getByRole("button", { name: /salvar confronto/i }));
 
@@ -187,7 +218,7 @@ describe("ChaveamentoManualBuilder", () => {
     renderBuilder();
 
     await userEvent.selectOptions(screen.getByLabelText(/^tipo$/i), "TODOS_CONTRA_TODOS");
-    await escolherEquipes("eq-a", "eq-c");
+    await escolherEquipes("Equipe A", "Equipe C");
     await userEvent.click(screen.getByRole("button", { name: /salvar confronto/i }));
 
     await waitFor(() =>
@@ -204,11 +235,10 @@ describe("ChaveamentoManualBuilder", () => {
     mockDados();
     renderBuilder();
 
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe A/ });
     await userEvent.selectOptions(screen.getByLabelText(/^tipo$/i), "TODOS_CONTRA_TODOS");
 
-    expect(
-      within(screen.getByLabelText(/equipe b/i)).queryByText(/bye/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /bye/i })).not.toBeInTheDocument();
   });
 
   it("salva um bye em confronto eliminatorio", async () => {
@@ -217,7 +247,7 @@ describe("ChaveamentoManualBuilder", () => {
     renderBuilder();
 
     await userEvent.selectOptions(screen.getByLabelText(/^tipo$/i), "MATA_MATA");
-    await escolherEquipes("eq-a", "__BYE__");
+    await escolherEquipes("Equipe A", "BYE");
     await userEvent.click(screen.getByRole("button", { name: /salvar confronto/i }));
 
     await waitFor(() =>
@@ -230,6 +260,18 @@ describe("ChaveamentoManualBuilder", () => {
     );
   });
 
+  it("depois de salvar limpa a escolha pra montar o proximo", async () => {
+    mockDados();
+    vi.mocked(api.POST).mockResolvedValue({ data: { id: "p-nova" }, error: undefined } as never);
+    renderBuilder();
+
+    await escolherEquipes("Equipe A", "Equipe B");
+    await userEvent.click(screen.getByRole("button", { name: /salvar confronto/i }));
+
+    await waitFor(() => expect(screen.getByTestId("lado-a")).not.toHaveTextContent("Equipe A"));
+    expect(screen.getByTestId("lado-b")).not.toHaveTextContent("Equipe B");
+  });
+
   it("mostra a mensagem de erro quando o backend recusa", async () => {
     mockDados();
     vi.mocked(api.POST).mockResolvedValue({
@@ -238,7 +280,7 @@ describe("ChaveamentoManualBuilder", () => {
     } as never);
     renderBuilder();
 
-    await escolherEquipes("eq-a", "eq-b");
+    await escolherEquipes("Equipe A", "Equipe B");
     await userEvent.click(screen.getByRole("button", { name: /salvar confronto/i }));
 
     expect(await screen.findByText(/ocorreu um erro inesperado/i)).toBeInTheDocument();
@@ -248,11 +290,90 @@ describe("ChaveamentoManualBuilder", () => {
     mockDados();
     renderBuilder();
 
-    await within(screen.getByLabelText(/equipe a/i)).findByText("Equipe A");
-    await userEvent.selectOptions(await screen.findByLabelText(/^nível$/i), "3");
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe A/ });
+    const niveis = screen.getByRole("group", { name: /^nível$/i });
+    expect(within(niveis).getByRole("button", { name: "Nível 2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(within(niveis).getByRole("button", { name: "Nível 3" }));
 
-    const selectA = screen.getByLabelText(/equipe a/i);
-    await within(selectA).findByText("Equipe D");
-    expect(within(selectA).queryByText("Equipe A")).not.toBeInTheDocument();
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe D/ });
+    expect(botaoEquipe("Equipe A")).not.toBeInTheDocument();
+  });
+
+  it("mostra o nivel mesmo quando a modalidade so tem equipe de um nivel", async () => {
+    mockDados();
+    vi.mocked(api.GET).mockImplementation(async (path: unknown) => {
+      if (path === "/api/v1/equipes") {
+        return { data: { itens: [{ id: "eq-d", nome: "Equipe D", nivel: 3 }] } } as never;
+      }
+      if (path === "/api/v1/inscricoes") {
+        return { data: { itens: [{ equipe_id: "eq-d", modalidade_id: "mod-1" }] } } as never;
+      }
+      return { data: { itens: [] } } as never;
+    });
+    renderBuilder();
+
+    const niveis = await screen.findByRole("group", { name: /^nível$/i });
+    expect(within(niveis).getByRole("button", { name: "Nível 3" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("arrastar a equipe pro quadro da equipe B escolhe ela como B", async () => {
+    mockDados();
+    renderBuilder();
+
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe C/ });
+    fireEvent.dragStart(botaoEquipe("Equipe C")!, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.dragOver(screen.getByTestId("slot-b"));
+    fireEvent.drop(screen.getByTestId("slot-b"));
+
+    expect(screen.getByTestId("lado-b")).toHaveTextContent("Equipe C");
+    expect(screen.getByTestId("lado-a")).toHaveTextContent("—");
+  });
+
+  it("arrastar pra um quadro ja ocupado troca a equipe dele", async () => {
+    mockDados();
+    renderBuilder();
+
+    await escolherEquipes("Equipe A", "Equipe B");
+    fireEvent.dragStart(botaoEquipe("Equipe C")!, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.drop(screen.getByTestId("slot-a"));
+
+    expect(screen.getByTestId("lado-a")).toHaveTextContent("Equipe C");
+    expect(screen.getByTestId("lado-b")).toHaveTextContent("Equipe B");
+  });
+
+  it("arrastar a equipe B pro quadro A troca de lado sem repetir", async () => {
+    mockDados();
+    renderBuilder();
+
+    await escolherEquipes("Equipe A", "Equipe B");
+    fireEvent.dragStart(botaoEquipe("Equipe B")!, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.drop(screen.getByTestId("slot-a"));
+
+    expect(screen.getByTestId("lado-a")).toHaveTextContent("Equipe B");
+    expect(screen.getByTestId("lado-b")).toHaveTextContent("—");
+  });
+
+  it("como pagina, nao abre janela por cima nem tem botao de fechar", async () => {
+    mockDados();
+    renderBuilder(vi.fn(), true);
+
+    await within(grupoEquipes()).findByRole("button", { name: /^Equipe A/ });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^fechar$/i })).not.toBeInTheDocument();
+  });
+
+  it("como janela, o botao fechar chama onFechar", async () => {
+    mockDados();
+    const onFechar = vi.fn();
+    renderBuilder(onFechar);
+
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^fechar$/i }));
+    expect(onFechar).toHaveBeenCalled();
   });
 });

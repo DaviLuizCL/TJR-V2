@@ -1670,3 +1670,20 @@ raiz do repo — checar lá antes de perguntar "o que fazer agora".
    foram passadas pra 0 e essas modalidades pra `[0]`; os Resgates aceitam 1 a 4.
    **Cuidado com `if nivel:`** (0 e falso): use `is not None`.
 
+
+   **Montar confrontos pela Administração + Sumô Controlado** (26/10/2026).
+   - `niveis_aplicaveis` aceita 0 (ABSOLUTO): `_validar_niveis_aplicaveis` recusava fora de 1..4, e a
+     tela já oferecia a caixinha ABSOLUTO (commit `5b0a339`). Em produção, as equipes e as
+     modalidades Corrida/Sumô 3 kg/Sumô Controlado já estão em nível 0 (conferido no ar).
+   - Cartão **"🥊 Montar confrontos"** na Administração (`admin/MontarConfrontosAdminPage`,
+     `/eventos/:id/admin/montar-confrontos`, só `COORDENADOR`): escolhe a modalidade de combate e
+     monta os confrontos na própria página (`ChaveamentoManualBuilder` com `comoPagina`, sem janela
+     por cima). No builder (vale também pra janela da `RodadaListPage`), equipe deixou de ser
+     `<select>`: são botões (1º toque = A, 2º = B, tocar de novo desmarca) e dá pra arrastar o nome
+     pro quadro A/B (drag nativo do HTML, sem biblioteca; no celular o toque é o caminho garantido).
+     Nível virou botões e aparece sempre, mesmo com um nível só. Motivo: a lista suspensa fechava
+     sozinha na janela com rolagem (não reproduzido no headless; hipótese).
+   - **"Sumô RC 1,5 kg" virou "Sumô Controlado"** (o "1,5 kg" confundia com o Sumô autônomo;
+     são modalidades diferentes, rádio-controlado × autônomo). Renomeado em produção pela API;
+     seed criando com o nome novo; a importação continua aceitando "Sumô RC 1,5 kg" da planilha
+     oficial e manda pro "Sumô Controlado".

@@ -54,7 +54,7 @@ async def _cenario(db):
     )
     db.add_all([coordenador, evento])
     await db.flush()
-    for nome in ("Dança", "Sumô"):
+    for nome in ("Dança", "Sumô", "Sumô Controlado"):
         db.add(
             Modalidade(
                 evento_id=evento.id,
@@ -94,6 +94,25 @@ async def test_importar_cria_equipes_e_inscricoes(db_session):
     assert relatorio.inscricoes_novas == 3
     assert relatorio.erros == []
     assert await _contar(db_session, Equipe) == 2
+
+
+async def test_importar_sumo_rc_da_planilha_vai_pro_sumo_controlado(db_session):
+    # A planilha oficial chama de "Sumô RC 1,5 kg"; no sistema virou "Sumô
+    # Controlado" (26/10/2026) pra ninguem confundir com o Sumô autonomo.
+    coordenador, evento = await _cenario(db_session)
+    planilha = _xlsx([CABECALHO, ["Sumô RC 1,5 kg", "2", "E", "M", "Controlaço"]])
+
+    await importar_planilha(
+        db_session, planilha, evento_id=evento.id, usuario_id=coordenador.id, simular=False
+    )
+
+    modalidade = await db_session.scalar(
+        select(Modalidade)
+        .join(Inscricao, Inscricao.modalidade_id == Modalidade.id)
+        .join(Equipe, Equipe.id == Inscricao.equipe_id)
+        .where(Equipe.nome == "Controlaço")
+    )
+    assert modalidade.nome == "Sumô Controlado"
 
 
 async def test_importar_nivel_0_fica_no_absoluto(db_session):

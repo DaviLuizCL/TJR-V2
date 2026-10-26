@@ -45,6 +45,7 @@ describe("AdminPage", () => {
     [/equipes e presen/i, "/equipes"],
     [/sequ[eê]ncia de competi/i, "/eventos/evt-1/competicoes?aba=individual&sub=ordem"],
     [/resetar chaveamento/i, "/eventos/evt-1/admin/resetar-chaveamento"],
+    [/montar confrontos/i, "/eventos/evt-1/admin/montar-confrontos"],
     [/p[aá]gina dos professores/i, "/sequencia"],
   ])("cartao %s leva pra %s", (nome, href) => {
     renderPage();

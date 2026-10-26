@@ -8,6 +8,7 @@ import { AdminPage } from "./features/admin/AdminPage";
 import { ChecklistPage } from "./features/admin/ChecklistPage";
 import { CorrigirPontuacaoPage } from "./features/admin/CorrigirPontuacaoPage";
 import { ImportarEquipesPage } from "./features/admin/ImportarEquipesPage";
+import { MontarConfrontosAdminPage } from "./features/admin/MontarConfrontosAdminPage";
 import { ResetarChaveamentoAdminPage } from "./features/admin/ResetarChaveamentoAdminPage";
 import { LancamentoFormPage } from "./features/arbitragem/LancamentoFormPage";
 import { PartidaScorerPage } from "./features/arbitragem/PartidaScorerPage";
@@ -135,6 +136,14 @@ export default function App() {
             element={
               <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
                 <ImportarEquipesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/eventos/:eventoId/admin/montar-confrontos"
+            element={
+              <ProtectedRoute papeisPermitidos={["COORDENADOR"]}>
+                <MontarConfrontosAdminPage />
               </ProtectedRoute>
             }
           />
