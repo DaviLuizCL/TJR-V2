@@ -1,0 +1,39 @@
+# Deploy na VM de Patos. A VM nao tem SSH: quem roda isto e um runner do
+# GitHub Actions instalado nela (rotulo tjr-vm), que so faz conexao de saida
+# pro GitHub. Instalacao do runner: DEPLOY.md, secao "Deploy pelo GitHub".
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, tjr-vm]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: /home/dev/TJR-V2
+    steps:
+      - name: Baixar o codigo novo
+        run: git pull --ff-only origin main
+
+      - name: Rebuild e subir (modo producao)
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+      - name: Migrations
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api alembic upgrade head
+
+      - name: Conferir se o site respondeu
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost/api/v1/health && exit 0
+            sleep 2
+          done
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+          exit 1

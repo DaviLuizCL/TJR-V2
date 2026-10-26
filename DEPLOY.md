@@ -60,6 +60,34 @@ Banco novo do zero (foi o caso em 19/10/2026): depois do `up -d --build`, rodar
 `alembic upgrade head` e `python -m app.db.seed --apenas-estrutura` (evento, modalidades,
 fichas e o `admin@tjr.app`, sem equipe fictícia).
 
+## 2b. Deploy pelo GitHub (sem precisar do terminal web)
+
+Desde 26/10/2026 a VM tem um runner do GitHub Actions (nome `vm-patos`, rótulo `tjr-vm`,
+pasta `~/actions-runner`, roda como serviço do `dev`). Ele só faz conexão de saída pro
+GitHub, então não depende do link do ttyd. O workflow é `.github/workflows/deploy.yml`:
+
+- **Automático**: todo push na `main` faz `git pull` + `up -d --build` + `alembic upgrade
+  head` na VM e confere `http://localhost/api/v1/health`.
+- **Manual**: GitHub → aba **Actions** → **Deploy** → **Run workflow** (dá pelo celular).
+
+O repositório é público: a política de Actions exige aprovação pra workflow de qualquer
+colaborador externo (`all_external_contributors`). Não mude isso, senão um pull request
+de estranho poderia rodar comando na VM.
+
+Instalar de novo (VM nova ou runner quebrado), no terminal web, como `dev`. O `TOKEN` sai
+de GitHub → Settings → Actions → Runners → New self-hosted runner (vale 1 hora):
+
+```bash
+mkdir -p ~/actions-runner && cd ~/actions-runner
+curl -fsSL -o runner.tgz https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz
+tar xzf runner.tgz
+./config.sh --unattended --url https://github.com/DaviLuizCL/TJR-V2 --token TOKEN --name vm-patos --labels tjr-vm --replace
+sudo ./svc.sh install dev && sudo ./svc.sh start
+```
+
+Ver se está vivo: `sudo ./svc.sh status` (na pasta) ou GitHub → Settings → Actions →
+Runners (tem que estar "Idle").
+
 ## 3. Substituir o banco de produção pelo do seu ambiente local
 
 Use isso quando você ajustou dado (equipes, chaveamento, etc.) no seu
