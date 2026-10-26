@@ -110,6 +110,46 @@ async def test_criar_modalidade_rejeita_nivel_fora_do_intervalo(db_session):
     assert exc_info.value.codigo == "NIVEIS_APLICAVEIS_INVALIDOS"
 
 
+async def test_criar_modalidade_aceita_nivel_absoluto(db_session):
+    evento = await _criar_evento(db_session)
+    coordenador = await _criar_coordenador(db_session)
+
+    modalidade = await criar_modalidade(
+        db_session, _payload(evento.id, niveis_aplicaveis=[0]), usuario_id=coordenador.id
+    )
+
+    assert modalidade.niveis_aplicaveis == [0]
+
+
+async def test_criar_modalidade_rejeita_nivel_negativo(db_session):
+    evento = await _criar_evento(db_session)
+    coordenador = await _criar_coordenador(db_session)
+
+    with pytest.raises(AppError) as exc_info:
+        await criar_modalidade(
+            db_session, _payload(evento.id, niveis_aplicaveis=[-1]), usuario_id=coordenador.id
+        )
+
+    assert exc_info.value.codigo == "NIVEIS_APLICAVEIS_INVALIDOS"
+
+
+async def test_atualizar_modalidade_aceita_trocar_para_nivel_absoluto(db_session):
+    evento = await _criar_evento(db_session)
+    coordenador = await _criar_coordenador(db_session)
+    modalidade = await criar_modalidade(
+        db_session, _payload(evento.id, niveis_aplicaveis=[1, 2]), usuario_id=coordenador.id
+    )
+
+    atualizada = await atualizar_modalidade(
+        db_session,
+        modalidade.id,
+        ModalidadeUpdate(niveis_aplicaveis=[0]),
+        usuario_id=coordenador.id,
+    )
+
+    assert atualizada.niveis_aplicaveis == [0]
+
+
 async def test_criar_modalidade_rejeita_niveis_duplicados(db_session):
     evento = await _criar_evento(db_session)
     coordenador = await _criar_coordenador(db_session)

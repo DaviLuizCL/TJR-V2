@@ -29,12 +29,12 @@ def _validar_niveis_aplicaveis(niveis_aplicaveis: list[int]) -> None:
     valido = (
         bool(niveis_aplicaveis)
         and len(set(niveis_aplicaveis)) == len(niveis_aplicaveis)
-        and all(1 <= n <= 4 for n in niveis_aplicaveis)
+        and all(0 <= n <= 4 for n in niveis_aplicaveis)
     )
     if not valido:
         raise AppError(
             codigo="NIVEIS_APLICAVEIS_INVALIDOS",
-            mensagem="niveis_aplicaveis deve conter valores unicos entre 1 e 4.",
+            mensagem="niveis_aplicaveis deve conter valores unicos entre 0 (ABSOLUTO) e 4.",
             status_code=422,
         )
 
